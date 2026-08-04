@@ -45,6 +45,42 @@ const MOBILE_QUERY = '(max-width: 640px)'
  * only the effect (client-only, runs after that first render commits)
  * corrects it to the real value and keeps it current thereafter.
  */
+/** Tags with native text-entry behavior of their own — see {@link isNavigationExempt}. */
+const TEXT_ENTRY_TAGS = new Set(['INPUT', 'TEXTAREA', 'SELECT'])
+
+/**
+ * Whether a keydown `target` should be exempt from `GuidedTour.tsx`'s
+ * root-level Arrow/Home/End (and, alongside its own activation-tag guard,
+ * Space) navigation shortcuts (plan Task 8, CI review round 2 on PR 93) —
+ * true for either of two unrelated reasons:
+ *
+ * 1. Text-entry contexts: a native `<input>`/`<textarea>`/`<select>`, or
+ *    any `isContentEditable` element. Nothing in M2 renders one of these
+ *    (`PortableText` only ever emits `<p>`/`<strong>`/`<em>`/`<a>`), but
+ *    M4's lead-capture form will, and a form field swallowing arrow-key
+ *    keystrokes as tour navigation instead of cursor movement/selection
+ *    would be a real regression then — cheap to guard against now.
+ * 2. Inside an open tooltip panel (`target.closest('.gt-tooltip')`): its
+ *    `PortableText` content can hold a focusable link today (`Tooltip.tsx`
+ *    already keeps the panel open while a link inside it has focus, per
+ *    WCAG 1.4.13). A keyboard user tabbed into that link pressing
+ *    Arrow/Home/End to read or navigate the link is not asking to advance
+ *    the tour — doing so anyway would both yank them to a different step
+ *    and, as a side effect, tear down the very panel they were reading
+ *    (`Step` closes the open tooltip on every step change).
+ *
+ * Deliberately narrower than a blanket "any focused interactive element"
+ * check: `.gt-next`/`.gt-prev`/hotspot buttons are themselves inside the
+ * tour and must keep responding to Arrow/Home/End while focused (the
+ * common case right after a click) — only these two specific contexts are
+ * exempt.
+ */
+export function isNavigationExempt(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  if (TEXT_ENTRY_TAGS.has(target.tagName) || target.isContentEditable) return true
+  return target.closest('.gt-tooltip') !== null
+}
+
 export function useIsMobile(): boolean {
   const [isMobile, setIsMobile] = useState(false)
 

@@ -1,6 +1,6 @@
 import {afterEach, describe, expect, test} from 'bun:test'
 
-import {prefersReducedMotion} from '../../src/react/helpers'
+import {isNavigationExempt, prefersReducedMotion} from '../../src/react/helpers'
 import {installMatchMedia} from '../setup/matchMedia'
 
 const QUERY = '(prefers-reduced-motion: reduce)'
@@ -60,5 +60,54 @@ describe('prefersReducedMotion', () => {
     } finally {
       globalThis.window = originalWindow
     }
+  })
+})
+
+// GuidedTour.tsx's root Arrow/Home/End (and, layered on its own
+// NATIVE_ACTIVATION_TAGS guard, Space) keydown handling defers to this —
+// exercised here against fabricated elements rather than through a full
+// `<GuidedTour>` render: nothing in M2 actually renders an
+// `<input>`/`<textarea>`/`<select>`/`contentEditable` element (only Task
+// 6's `PortableText` markup, and M4's lead-capture form doesn't exist
+// yet), so there is no real DOM-level fixture for the text-entry branch
+// to test through. The tooltip-panel branch *does* have a real fixture
+// (an open tooltip's link content) — covered separately in
+// `test/react/keyboard.test.tsx`'s DOM-level "ArrowRight on a focused
+// link inside an open tooltip panel" test, which exercises the actual
+// root `onKeyDown` wiring end to end.
+describe('isNavigationExempt', () => {
+  test('false for a target that is not an element at all', () => {
+    expect(isNavigationExempt(null)).toBe(false)
+  })
+
+  test('false for a plain, non-text-entry element outside any tooltip', () => {
+    expect(isNavigationExempt(document.createElement('div'))).toBe(false)
+    expect(isNavigationExempt(document.createElement('button'))).toBe(false)
+  })
+
+  test('true for native text-entry elements', () => {
+    expect(isNavigationExempt(document.createElement('input'))).toBe(true)
+    expect(isNavigationExempt(document.createElement('textarea'))).toBe(true)
+    expect(isNavigationExempt(document.createElement('select'))).toBe(true)
+  })
+
+  test('true for a contentEditable element', () => {
+    const editable = document.createElement('div')
+    editable.contentEditable = 'true'
+    expect(editable.isContentEditable).toBe(true)
+    expect(isNavigationExempt(editable)).toBe(true)
+  })
+
+  test('true for a target inside an open tooltip panel, false for one outside it', () => {
+    const panel = document.createElement('div')
+    panel.className = 'gt-tooltip'
+    const link = document.createElement('a')
+    panel.appendChild(link)
+
+    const outside = document.createElement('a')
+
+    expect(isNavigationExempt(link)).toBe(true)
+    expect(isNavigationExempt(panel)).toBe(true)
+    expect(isNavigationExempt(outside)).toBe(false)
   })
 })

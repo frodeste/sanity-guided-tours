@@ -41,6 +41,18 @@ function plainText(text: string): GuidedTourPortableText {
   ]
 }
 
+function linkContent(): GuidedTourPortableText {
+  return [
+    {
+      _type: 'block',
+      _key: 'block-1',
+      style: 'normal',
+      markDefs: [{_key: 'link-1', _type: 'link', href: 'https://example.com'}],
+      children: [{_type: 'span', _key: 'span-1', text: 'a link', marks: ['link-1']}],
+    },
+  ]
+}
+
 function tooltip(overrides: Partial<GuidedTourTooltip> & {_key: string}): GuidedTourTooltip {
   return {
     _type: 'guidedTourTooltip',
@@ -146,6 +158,52 @@ describe('keyboard: arrow navigation', () => {
     const {container} = render(<GuidedTour tour={threeStepTour()} />)
     fireEvent.keyDown(query(container, '.gt-tour'), {key: 'ArrowLeft'})
     expect(counterText(container)).toBe('1 / 3')
+  })
+
+  // The common case a blanket "any focused interactive element" exemption
+  // would have broken (CI review round 2 on PR 93): a mouse click on Next
+  // leaves it focused, and arrow keys must still navigate from there.
+  test('ArrowRight fired while focus is on the Next button still navigates', () => {
+    const {container} = render(<GuidedTour tour={threeStepTour()} />)
+    const nextButton = query(container, '.gt-next')
+    fireEvent.keyDown(nextButton, {key: 'ArrowRight'})
+    expect(counterText(container)).toBe('2 / 3')
+  })
+})
+
+describe('keyboard: navigation exemptions', () => {
+  // CI review round 2 on PR 93: Arrow/Home/End had no target guard at all,
+  // and an open tooltip's PortableText content can already hold a
+  // focusable link (Task 6, WCAG 1.4.13 — the panel stays open while a
+  // link inside it has focus). A keyboard user tabbed into that link
+  // pressing an arrow key to move the text cursor/selection, or just to
+  // read further, must not be yanked to a different step — which would
+  // also tear the panel down, since `Step` closes the open tooltip on
+  // every step change.
+  test('ArrowRight on a focused link inside an open tooltip panel does not navigate, and the tooltip stays open', () => {
+    const {container} = render(
+      <GuidedTour
+        tour={tour({
+          chapters: [
+            chapter([
+              step({
+                _key: 's1',
+                elements: [tooltip({_key: 't1', trigger: 'click', content: linkContent()})],
+              }),
+              step({_key: 's2'}),
+            ]),
+          ],
+        })}
+      />,
+    )
+
+    fireEvent.click(query(container, '.gt-tooltip-trigger'))
+    const link = query(container, '.gt-tooltip a')
+
+    fireEvent.keyDown(link, {key: 'ArrowRight'})
+
+    expect(counterText(container)).toBe('1 / 2')
+    expect(query(container, '.gt-tooltip-trigger').getAttribute('aria-expanded')).toBe('true')
   })
 })
 

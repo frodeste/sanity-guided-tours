@@ -14,6 +14,7 @@ import {
 import type {GuidedTourDoc} from '../queries/types'
 import {GuidedTourContext} from './context'
 import type {GuidedTourEventHandler} from './events'
+import {isNavigationExempt} from './helpers'
 import {defaultLabels, formatLabel, type GuidedTourLabels} from './labels'
 import {clampStep, firstStepOfChapter, flattenTour, nextStep, prevStep} from './navigation'
 import {missingRequired, personalizeText, resolveTokens} from './personalize'
@@ -57,8 +58,19 @@ function joinClassNames(...classNames: (string | false | undefined)[]): string {
 // "Space next ONLY when the event target isn't a button/link/input" —
 // never hijack activation). A Space keydown on any of these is left alone
 // entirely — no `preventDefault`, no navigation — so the browser's own
-// click-on-activation still fires exactly once.
+// click-on-activation still fires exactly once. `isNavigationExempt`
+// (./helpers) is Space's *other* guard, layered on top of this one (CI
+// review round 2 on PR 93) — the two check different things and neither
+// subsumes the other: this set exists so Space doesn't hijack a
+// button/link's own activation, `isNavigationExempt` so Space (like
+// Arrow/Home/End) doesn't yank a keyboard user out of a text field or an
+// open tooltip's content.
 const NATIVE_ACTIVATION_TAGS = new Set(['BUTTON', 'A', 'INPUT', 'TEXTAREA', 'SELECT'])
+
+// The four navigating keys `isNavigationExempt` (./helpers) guards — Space
+// is handled separately in the `switch` below since it layers a second,
+// independent guard (`NATIVE_ACTIVATION_TAGS` above) on top.
+const NAVIGATION_KEYS = new Set(['ArrowRight', 'ArrowLeft', 'Home', 'End'])
 
 // `--gt-progress-percent` is a CSS custom property, not a member of
 // `CSSProperties` — React's type doesn't model arbitrary custom
@@ -288,16 +300,24 @@ export function GuidedTour({
    * `test/react/keyboard.test.tsx`'s "multiple tours" suite): each
    * instance only ever sees keys that bubble up through its own subtree.
    *
-   * ←/→ prev/next, Home/End first/last, Space next (see
-   * `NATIVE_ACTIVATION_TAGS` above for the one exception). Every
-   * navigating key also moves focus to `.gt-stage` afterward — but only
-   * from here, not from `goTo`/`handleNext`/`handlePrev` themselves, so
-   * mouse-driven navigation (Next/Prev/dots/chapter menu/hotspot clicks)
-   * never yanks focus (plan Task 8's explicit "clicking a hotspot
-   * shouldn't yank focus"). The live-region announcement doesn't need any
-   * handling here at all — `announcement` below is recomputed from
-   * `currentIndex` on every render, so it already reflects mouse
-   * navigation too.
+   * ←/→ prev/next, Home/End first/last, Space next. All four of
+   * ←/→/Home/End defer to `isNavigationExempt` (./helpers, CI review round
+   * 2 on PR 93) — text-entry contexts and a focused link inside an open
+   * tooltip panel — before navigating; Space layers that same check on top
+   * of its own, narrower `NATIVE_ACTIVATION_TAGS` guard (a button/link
+   * must keep its native Space activation, which `isNavigationExempt`
+   * alone doesn't cover). Deliberately *not* a blanket "any focused
+   * interactive element" exemption: `.gt-next`/`.gt-prev`/hotspot buttons
+   * must keep responding to Arrow/Home/End while focused — the ordinary
+   * case right after a click — so only those two specific contexts opt
+   * out. Every navigating key also moves focus to `.gt-stage` afterward —
+   * but only from here, not from `goTo`/`handleNext`/`handlePrev`
+   * themselves, so mouse-driven navigation (Next/Prev/dots/chapter
+   * menu/hotspot clicks) never yanks focus (plan Task 8's explicit
+   * "clicking a hotspot shouldn't yank focus"). The live-region
+   * announcement doesn't need any handling here at all — `announcement`
+   * below is recomputed from `currentIndex` on every render, so it already
+   * reflects mouse navigation too.
    *
    * Escape closes whatever tooltip `Step` currently has open, via
    * `closeOpenTooltipRef` (see its doc comment on
@@ -321,6 +341,10 @@ export function GuidedTour({
       stageRef.current?.focus()
     }
 
+    if (NAVIGATION_KEYS.has(event.key) && isNavigationExempt(event.target)) {
+      return
+    }
+
     switch (event.key) {
       case 'ArrowRight':
         navigate(handleNext)
@@ -337,6 +361,9 @@ export function GuidedTour({
       case ' ': {
         const {target} = event
         if (target instanceof HTMLElement && NATIVE_ACTIVATION_TAGS.has(target.tagName)) {
+          return
+        }
+        if (isNavigationExempt(target)) {
           return
         }
         navigate(handleNext)
