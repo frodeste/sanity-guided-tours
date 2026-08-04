@@ -1,4 +1,4 @@
-import type {CSSProperties, ReactNode} from 'react'
+import type {CSSProperties, MouseEvent, ReactNode} from 'react'
 
 import type {GuidedTourHotspot} from '../queries/types'
 import {useGuidedTourContext} from './context'
@@ -53,9 +53,19 @@ export function Hotspot({hotspot, onActivate}: HotspotProps): ReactNode {
   // transform needed here.
   const style: CSSProperties = {left: `${x}%`, top: `${y}%`}
 
-  function handleClick(): void {
+  function handleClick(event: MouseEvent<HTMLAnchorElement | HTMLButtonElement>): void {
     trackerRef.current?.elementClicked({elementType: 'hotspot', elementKey: _key})
-    if (action !== 'link') onActivate()
+    if (action !== 'link') {
+      onActivate()
+      return
+    }
+    // A `link` hotspot missing `href` (schema-invalid, but reachable via
+    // an API/seed write that bypasses Studio validation) still renders a
+    // real, focusable `<a>` for the §8.6 carve-out's a11y semantics — but
+    // `href=""` is same-document, so leaving native navigation on would
+    // open a new `_blank` tab that just reloads the current page. Kill
+    // the navigation, keep the anchor.
+    if (href === null) event.preventDefault()
   }
 
   if (action === 'link') {

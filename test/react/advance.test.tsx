@@ -401,6 +401,53 @@ describe('Hotspot: link action', () => {
       {type: 'element_clicked', elementType: 'hotspot', elementKey: 'h1'},
     ])
   })
+
+  test('a null href still emits element_clicked but prevents navigation', () => {
+    const {events, handler} = collector()
+    const {container} = render(
+      <GuidedTour
+        tour={oneChapterTour([
+          step({_key: 's1', elements: [hotspot({_key: 'h1', action: 'link', href: null})]}),
+        ])}
+        onEvent={handler}
+      />,
+    )
+
+    const link = container.querySelector('.gt-elements a.gt-hotspot')
+    expect(link).not.toBeNull()
+    if (!link) throw new Error('expected a link hotspot')
+
+    // fireEvent.xxx returns the native `dispatchEvent` result: `false` once
+    // `preventDefault()` has been called on a cancelable event (a click
+    // is), `true` otherwise — the most direct way to assert
+    // `defaultPrevented` without reaching into DOM internals.
+    const notPrevented = fireEvent.click(link)
+
+    expect(notPrevented).toBe(false)
+    expect(events.map((event) => event.type)).toEqual([
+      'tour_started',
+      'step_viewed',
+      'element_clicked',
+    ])
+  })
+
+  test('a real href is not prevented — native navigation stays intact', () => {
+    const {container} = render(
+      <GuidedTour
+        tour={oneChapterTour([
+          step({_key: 's1', elements: [hotspot({_key: 'h1', action: 'link', href: '#test'})]}),
+        ])}
+      />,
+    )
+
+    const link = container.querySelector('.gt-elements a.gt-hotspot')
+    expect(link).not.toBeNull()
+    if (!link) throw new Error('expected a link hotspot')
+
+    const notPrevented = fireEvent.click(link)
+
+    expect(notPrevented).toBe(true)
+  })
 })
 
 describe('Hotspot: reveal action', () => {
