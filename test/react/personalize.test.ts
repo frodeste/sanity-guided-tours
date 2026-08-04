@@ -61,6 +61,31 @@ describe('resolveTokens', () => {
     const defs = [token({key: 'name', defaultValue: 'Friend'})]
     expect(resolveTokens(defs, {other: 'value'})).toEqual({name: 'Friend'})
   })
+
+  // `__proto__` passes the token key schema's `^[a-z_]+$` regex. On a plain
+  // `{}`, `resolved['__proto__'] = 'Ada'` doesn't create an own property —
+  // it's silently swallowed by the inherited `__proto__` setter — so this
+  // key must round-trip through a null-prototype record instead. Built
+  // with a computed property (`{['__proto__']: ...}`) so the object
+  // literal itself doesn't trigger the same proto-setting special case.
+  test('resolves a __proto__-keyed token without prototype pollution', () => {
+    const defs = [token({key: '__proto__'})]
+    const provided = {['__proto__']: 'Ada'}
+    const resolved = resolveTokens(defs, provided)
+    expect(resolved).toEqual({['__proto__']: 'Ada'})
+    expect(Object.hasOwn(resolved, '__proto__')).toBe(true)
+  })
+
+  test('falls back to defaultValue for an absent __proto__-keyed token', () => {
+    const defs = [token({key: '__proto__', defaultValue: 'Friend'})]
+    expect(resolveTokens(defs, {})).toEqual({['__proto__']: 'Friend'})
+  })
+
+  test('drops an absent __proto__-keyed token with no default', () => {
+    const defs = [token({key: '__proto__'})]
+    const resolved = resolveTokens(defs, {})
+    expect(Object.hasOwn(resolved, '__proto__')).toBe(false)
+  })
 })
 
 describe('personalizeText', () => {
@@ -78,6 +103,27 @@ describe('personalizeText', () => {
 
   test('leaves text with no tokens untouched', () => {
     expect(personalizeText('Plain text.', {name: 'Ada'})).toBe('Plain text.')
+  })
+
+  // `__proto__` and `constructor` both pass the token key schema's
+  // `^[a-z_]+$` regex, so both must behave as ordinary token keys rather
+  // than resolving through `Object.prototype` when absent from `tokens`.
+  test('substitutes a provided __proto__-keyed token', () => {
+    const tokens = {['__proto__']: 'Ada'}
+    expect(personalizeText('Hi {{__proto__}}!', tokens)).toBe('Hi Ada!')
+  })
+
+  test('replaces an absent __proto__ token with empty string, not the prototype object', () => {
+    expect(personalizeText('Hi {{__proto__}}!', {})).toBe('Hi !')
+  })
+
+  test('substitutes a provided constructor-keyed token', () => {
+    const tokens = {constructor: 'Ada'}
+    expect(personalizeText('Hi {{constructor}}!', tokens)).toBe('Hi Ada!')
+  })
+
+  test('replaces an absent constructor token with empty string, not the inherited constructor', () => {
+    expect(personalizeText('Hi {{constructor}}!', {})).toBe('Hi !')
   })
 })
 
@@ -160,5 +206,25 @@ describe('missingRequired', () => {
 
   test('returns [] for null defs', () => {
     expect(missingRequired(null, {})).toEqual([])
+  })
+
+  // Same __proto__/constructor hazard as above, on the read side: a plain
+  // `{}` `resolved` with no own entry for `constructor` would otherwise
+  // read the inherited `Object.prototype.constructor` function (never
+  // `undefined`) and wrongly report the token as satisfied.
+  test('treats an absent __proto__-keyed required token as missing', () => {
+    const defs = [token({key: '__proto__', required: true})]
+    expect(missingRequired(defs, {})).toEqual(['__proto__'])
+  })
+
+  test('does not list a satisfied __proto__-keyed required token', () => {
+    const defs = [token({key: '__proto__', required: true})]
+    const resolved = {['__proto__']: 'Ada'}
+    expect(missingRequired(defs, resolved)).toEqual([])
+  })
+
+  test('treats an absent constructor-keyed required token as missing', () => {
+    const defs = [token({key: 'constructor', required: true})]
+    expect(missingRequired(defs, {})).toEqual(['constructor'])
   })
 })
