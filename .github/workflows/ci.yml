@@ -19,4 +19,10 @@ jobs:
       - run: bun run typecheck
       - run: bun test
       - run: bun run build
+      - name: build example app
+        # env vars intentionally unset — this is the no-env build guard
+        # (examples/web must build without NEXT_PUBLIC_SANITY_* configured).
+        # Must run after `bun run build` above: the example app resolves
+        # sanity-plugin-guided-tours through dist/, not src/.
+        run: cd examples/web && bun run build
       - run: bunx @sanity/plugin-kit verify-package
