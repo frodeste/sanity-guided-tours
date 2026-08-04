@@ -2,7 +2,7 @@ name: Claude Code Review
 
 on:
   pull_request:
-    types: [opened, synchronize, ready_for_review]
+    types: [opened, synchronize, ready_for_review, reopened]
 
 jobs:
   claude-review:
@@ -16,24 +16,16 @@ jobs:
       id-token: write
       actions: read
     steps:
-      - name: Check for API key
-        id: key
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: |
-          if [ -n "$ANTHROPIC_API_KEY" ]; then echo "present=true" >> "$GITHUB_OUTPUT"; else echo "present=false" >> "$GITHUB_OUTPUT"; echo "::notice::ANTHROPIC_API_KEY not configured — skipping Claude review"; fi
-
       - name: Checkout repository
         uses: actions/checkout@v4
-        if: steps.key.outputs.present == 'true'
         with:
           fetch-depth: 1
 
       - name: Run Claude Code review
+        id: claude-review
         uses: anthropics/claude-code-action@v1
-        if: steps.key.outputs.present == 'true'
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: |
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number }}
