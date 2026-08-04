@@ -1,4 +1,12 @@
-import {useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode} from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from 'react'
 
 import type {GuidedTourDoc} from '../queries/types'
 import {GuidedTourContext} from './context'
@@ -171,22 +179,51 @@ export function GuidedTour({
     }
   }, [currentIndex, flat])
 
-  function goTo(index: number): void {
-    const clamped = clampStep(flat, index)
-    if (isControlled) {
-      onStepChange?.(clamped)
-      return
-    }
-    setInternalStep(clamped)
-  }
+  // Memoized (rather than a plain function like `handlePrev` below) so the
+  // advance:'auto' timer effect right after it — and Step's hotspot-driven
+  // advancement, threaded down as a prop — can depend on `handleNext`'s
+  // identity without that dependency changing on every unrelated
+  // re-render. It only changes when navigation itself would actually
+  // behave differently: `currentIndex`/`flat` change, or `goTo` does
+  // (which happens when `isControlled`/`onStepChange` change).
+  const goTo = useCallback(
+    (index: number): void => {
+      const clamped = clampStep(flat, index)
+      if (isControlled) {
+        onStepChange?.(clamped)
+        return
+      }
+      setInternalStep(clamped)
+    },
+    [flat, isControlled, onStepChange],
+  )
 
-  function handleNext(): void {
+  const handleNext = useCallback((): void => {
     if (currentIndex === flat.length - 1) {
       trackerRef.current?.complete(viewedStepsRef.current.size)
       return
     }
     goTo(nextStep(flat, currentIndex))
-  }
+  }, [currentIndex, flat, goTo])
+
+  // advance:'auto' steps advance themselves after `duration` seconds.
+  // `duration` is nullable — only Studio validation makes it "required",
+  // and an API or seed write can bypass that — so `?? 30` is the
+  // documented fallback (design spec §6, plan Task 5). Keyed on
+  // [currentIndex, flat, handleNext]: `currentIndex` changing means a new
+  // step (manual or timer-driven) to key the timer to, and `flat`/
+  // `handleNext` cover the rarer case where the tour data or navigation
+  // function itself changes under the same index. The cleanup below
+  // covers both a reset (new step) and a real unmount. Deliberately a
+  // plain timer — no `document.visibilityState`-based pause/resume: not
+  // in spec, YAGNI.
+  useEffect(() => {
+    const flatStep = flat[currentIndex]
+    if (!flatStep || flatStep.step.advance !== 'auto') return undefined
+
+    const timer = setTimeout(handleNext, (flatStep.step.duration ?? 30) * 1000)
+    return () => clearTimeout(timer)
+  }, [currentIndex, flat, handleNext])
 
   function handlePrev(): void {
     goTo(prevStep(flat, currentIndex))
@@ -256,7 +293,7 @@ export function GuidedTour({
       </div>
       <div className="gt-stage" tabIndex={-1}>
         <GuidedTourContext.Provider value={contextValue}>
-          <Step step={flatStep.step} />
+          <Step step={flatStep.step} onAdvance={handleNext} />
         </GuidedTourContext.Provider>
       </div>
       <div className="gt-controls">
