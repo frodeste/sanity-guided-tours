@@ -218,6 +218,30 @@ describe('GuidedTour: controlled navigation', () => {
     )
     expect(negativeContainer.querySelector('.gt-counter')?.textContent).toBe('1 / 3')
   })
+
+  test('dropping the step prop preserves the current position instead of resetting', () => {
+    const {container, rerender} = render(
+      <GuidedTour tour={threeStepTour()} step={2} onStepChange={() => {}} />,
+    )
+    expect(container.querySelector('.gt-counter')?.textContent).toBe('3 / 3')
+
+    // The parent stops controlling the tour — no `step`/`onStepChange` at all.
+    rerender(<GuidedTour tour={threeStepTour()} />)
+
+    expect(container.querySelector('.gt-counter')?.textContent).toBe('3 / 3')
+  })
+
+  test('after dropping the step prop, next() advances from the inherited position', () => {
+    const {container, rerender} = render(
+      <GuidedTour tour={threeStepTour()} step={1} onStepChange={() => {}} />,
+    )
+    expect(container.querySelector('.gt-counter')?.textContent).toBe('2 / 3')
+
+    rerender(<GuidedTour tour={threeStepTour()} />)
+    click(container, '.gt-next')
+
+    expect(container.querySelector('.gt-counter')?.textContent).toBe('3 / 3')
+  })
 })
 
 describe('GuidedTour: chapter menu', () => {
@@ -331,9 +355,13 @@ describe('GuidedTour: events', () => {
     click(container, '.gt-next') // last again -> complete, no nav
 
     expect(container.querySelector('.gt-counter')?.textContent).toBe('3 / 3')
-    const completed = events.filter((event) => event.type === 'tour_completed')
-    expect(completed).toHaveLength(1)
-    expect(completed[0]).toMatchObject({type: 'tour_completed', stepsViewed: 3})
+    expect(events).toEqual([
+      {type: 'tour_started', tourId: 'tour-1', sessionId: expect.any(String)},
+      {type: 'step_viewed', stepIndex: 0, stepKey: 'step-1', chapterIndex: 0},
+      {type: 'step_viewed', stepIndex: 1, stepKey: 'step-2', chapterIndex: 0},
+      {type: 'step_viewed', stepIndex: 2, stepKey: 'step-3', chapterIndex: 2},
+      {type: 'tour_completed', stepsViewed: 3, durationMs: expect.any(Number)},
+    ])
 
     // The Next button is still present, enabled, and labeled the same —
     // clicking it again on the completed last step is a harmless no-op.
@@ -342,7 +370,7 @@ describe('GuidedTour: events', () => {
     expect(nextButton.textContent).toBe('Next')
 
     fireEvent.click(nextButton)
-    expect(events.filter((event) => event.type === 'tour_completed')).toHaveLength(1)
+    expect(events).toHaveLength(5)
   })
 
   test('unmounting schedules an abandon that fires once the timer runs', async () => {
@@ -352,13 +380,20 @@ describe('GuidedTour: events', () => {
     click(container, '.gt-next') // now on step index 1
     unmount()
 
-    expect(events.filter((event) => event.type === 'tour_abandoned')).toHaveLength(0)
+    expect(events).toEqual([
+      {type: 'tour_started', tourId: 'tour-1', sessionId: expect.any(String)},
+      {type: 'step_viewed', stepIndex: 0, stepKey: 'step-1', chapterIndex: 0},
+      {type: 'step_viewed', stepIndex: 1, stepKey: 'step-2', chapterIndex: 0},
+    ])
 
     await new Promise((resolve) => setTimeout(resolve, 20))
 
-    const abandoned = events.filter((event) => event.type === 'tour_abandoned')
-    expect(abandoned).toHaveLength(1)
-    expect(abandoned[0]).toMatchObject({type: 'tour_abandoned', lastStepIndex: 1})
+    expect(events).toEqual([
+      {type: 'tour_started', tourId: 'tour-1', sessionId: expect.any(String)},
+      {type: 'step_viewed', stepIndex: 0, stepKey: 'step-1', chapterIndex: 0},
+      {type: 'step_viewed', stepIndex: 1, stepKey: 'step-2', chapterIndex: 0},
+      {type: 'tour_abandoned', lastStepIndex: 1, durationMs: expect.any(Number)},
+    ])
   })
 
   test('an empty handler does not throw', () => {

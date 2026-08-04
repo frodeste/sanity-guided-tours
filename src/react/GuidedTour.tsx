@@ -63,6 +63,23 @@ export function GuidedTour({
   const isControlled = typeof controlledStep === 'number'
 
   const [internalStep, setInternalStep] = useState(0)
+
+  // Keep `internalStep` mirroring the controlled value for as long as the
+  // component is controlled, so that a later transition to uncontrolled
+  // (the `step` prop dropped) picks up from the last controlled position
+  // instead of snapping back to whatever `internalStep` held before
+  // control started (it was never touched while controlled otherwise).
+  // This is React's sanctioned "adjust state during render" pattern — safe
+  // because it's gated on the value actually differing, so it converges in
+  // the same render rather than looping, and it avoids the extra tick (and
+  // stale-frame flash) a `useEffect` sync would introduce.
+  if (isControlled) {
+    const clampedControlled = clampStep(flat, controlledStep)
+    if (internalStep !== clampedControlled) {
+      setInternalStep(clampedControlled)
+    }
+  }
+
   const currentIndex = clampStep(flat, isControlled ? controlledStep : internalStep)
 
   const labels = useMemo<GuidedTourLabels>(
