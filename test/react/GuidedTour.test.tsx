@@ -141,8 +141,14 @@ describe('GuidedTour: rendering', () => {
     const title = container.querySelector('.gt-title')
     expect(title?.textContent).toBe('Hi Ada')
 
+    // The exact CDN query string (`?w=1920&auto=format&q=80`) and `srcset`
+    // are Task 7's responsibility, covered by test/react/image.test.tsx —
+    // this only pins that it's still the same source image, sized from the
+    // same `dimensions`.
     const img = container.querySelector('.gt-screenshot')
-    expect(img?.getAttribute('src')).toBe('https://cdn.sanity.io/images/proj/ds/abc-100x100.png')
+    expect(img?.getAttribute('src')).toStartWith(
+      'https://cdn.sanity.io/images/proj/ds/abc-100x100.png',
+    )
     expect(img?.getAttribute('width')).toBe('100')
     expect(img?.getAttribute('height')).toBe('50')
   })

@@ -26,7 +26,12 @@ export interface GuidedTourProps {
   tokens?: Record<string, string | string[] | undefined>
   labels?: Partial<GuidedTourLabels>
   onEvent?: GuidedTourEventHandler
-  /** Optional image renderer override, e.g. to substitute `next/image`. Wired up in Task 7. */
+  /**
+   * Optional image renderer override, e.g. to substitute `next/image`.
+   * Replaces the default `<Image>` renderer entirely (Task 7) for every
+   * screenshot this renders — the current step's and both preloaded
+   * neighbors' — receiving `GuidedTourImageProps` for each.
+   */
   renderImage?: (props: GuidedTourImageProps) => ReactNode
   /** Controlled position (global step index). */
   step?: number
@@ -62,6 +67,7 @@ export function GuidedTour({
   tokens: providedTokens,
   labels: labelOverrides,
   onEvent,
+  renderImage,
   step: controlledStep,
   onStepChange,
   className,
@@ -301,7 +307,13 @@ export function GuidedTour({
       </div>
       <div className="gt-stage" tabIndex={-1}>
         <GuidedTourContext.Provider value={contextValue}>
-          <Step step={flatStep.step} onAdvance={handleNext} />
+          <Step
+            step={flatStep.step}
+            onAdvance={handleNext}
+            previousStep={flat[currentIndex - 1]?.step ?? null}
+            nextStep={flat[currentIndex + 1]?.step ?? null}
+            renderImage={renderImage}
+          />
         </GuidedTourContext.Provider>
       </div>
       <div className="gt-controls">
