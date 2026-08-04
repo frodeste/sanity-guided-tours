@@ -452,7 +452,12 @@ properties.
 The plugin sits at the repository root, following `@sanity/plugin-kit`
 convention, which keeps the build and release configuration on well-trodden
 paths. `examples/web` is a Bun workspace that depends on the plugin via
-`workspace:*`.
+`file:../..` — not `workspace:*` as originally specified. Amended 2026-08-04
+during M1: Bun (1.3.x) cannot resolve a workspace member's `workspace:*`
+dependency on the workspace root itself, so the app uses `file:../..` plus a
+relink step (`scripts/link-example-app.mjs`) prefixed to its `dev`/`build`/
+`typecheck` scripts to keep the resolved package fresh after root rebuilds.
+No lifecycle hooks are involved, so nothing leaks into the published package.
 
 ### 9.1 One harness, not two
 
