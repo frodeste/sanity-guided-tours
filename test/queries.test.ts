@@ -180,6 +180,28 @@ describe('GuidedTourOutroCta', () => {
   })
 })
 
+// Compile-time check: a mobile override's x/y/width are each independently
+// optional — a partial override (here, repositioning without resizing)
+// must satisfy the type without a `width`.
+const partialMobileOverride = {
+  _key: 'el-2',
+  _type: 'guidedTourHotspot',
+  x: 10,
+  y: 20,
+  mobile: {x: 15, y: null, width: null},
+  label: null,
+  action: 'advance',
+  href: null,
+  pulse: true,
+} satisfies GuidedTourElement
+
+describe('GuidedTourElementMobileOverride', () => {
+  test('a partial override (x set, y/width absent) is valid', () => {
+    expect(partialMobileOverride.mobile?.x).toBe(15)
+    expect(partialMobileOverride.mobile?.width).toBeNull()
+  })
+})
+
 // Compile-time check: GuidedTourElement discriminates on _type so a switch
 // narrows to the variant-specific fields without a cast.
 function describeElement(element: GuidedTourElement): string {
