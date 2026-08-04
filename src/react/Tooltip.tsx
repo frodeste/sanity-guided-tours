@@ -59,9 +59,11 @@ function resolvePlacement(tooltip: GuidedTourTooltip): 'top' | 'bottom' | 'left'
  *
  * Escape closes the open tooltip from either the trigger or the panel
  * (whichever has focus) — deliberately a local `onKeyDown`, not a
- * `.gt-tour`-level listener: Task 8 adds that root handler later and will
- * coordinate with this one then; for now the open state only exists here
- * and in `Step`, so there is nothing for a root handler to reach yet.
+ * `.gt-tour`-level listener: the open state only exists here and in
+ * `Step`, so `GuidedTour.tsx`'s root `onKeyDown` (Task 8) has no reachable
+ * state to act on and, correspondingly, has no `case 'Escape'` at all —
+ * this local handler is the entire implementation, and the root simply
+ * never does anything that could double-handle it.
  *
  * Every trigger interaction that results in the tooltip opening emits
  * `element_clicked {elementType: 'tooltip', elementKey}` — guarded to

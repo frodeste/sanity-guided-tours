@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type KeyboardEvent,
   type ReactNode,
 } from 'react'
 
@@ -51,6 +52,13 @@ export interface GuidedTourProps {
 function joinClassNames(...classNames: (string | false | undefined)[]): string {
   return classNames.filter((name): name is string => Boolean(name)).join(' ')
 }
+
+// Elements with native Space/Enter activation of their own (plan Task 8:
+// "Space next ONLY when the event target isn't a button/link/input" —
+// never hijack activation). A Space keydown on any of these is left alone
+// entirely — no `preventDefault`, no navigation — so the browser's own
+// click-on-activation still fires exactly once.
+const NATIVE_ACTIVATION_TAGS = new Set(['BUTTON', 'A', 'INPUT', 'TEXTAREA', 'SELECT'])
 
 // `--gt-progress-percent` is a CSS custom property, not a member of
 // `CSSProperties` — React's type doesn't model arbitrary custom
@@ -144,6 +152,13 @@ export function GuidedTour({
   if (trackerRef.current === null) {
     trackerRef.current = createTracker(onEvent, tour._id)
   }
+
+  // `.gt-stage` (`tabIndex={-1}`, below) is the keyboard-navigation focus
+  // target (plan Task 8) — a stable DOM node across step changes (`Step`
+  // re-renders inside it, it never remounts), so focusing it synchronously
+  // from the key handler, before React has flushed the resulting
+  // navigation, is safe.
+  const stageRef = useRef<HTMLDivElement>(null)
 
   // trackerRef is a stable ref object — safe to omit from exhaustive-deps
   // the way any useRef() return value is.
@@ -257,6 +272,67 @@ export function GuidedTour({
     goTo(target)
   }
 
+  /**
+   * `onKeyDown` on the `.gt-tour` root — deliberately not a `window`/
+   * `document` listener, so two independent `<GuidedTour>`s on one page
+   * never cross-talk (plan Task 8, tested in
+   * `test/react/keyboard.test.tsx`'s "multiple tours" suite): each
+   * instance only ever sees keys that bubble up through its own subtree.
+   *
+   * ←/→ prev/next, Home/End first/last, Space next (see
+   * `NATIVE_ACTIVATION_TAGS` above for the one exception). Every
+   * navigating key also moves focus to `.gt-stage` afterward — but only
+   * from here, not from `goTo`/`handleNext`/`handlePrev` themselves, so
+   * mouse-driven navigation (Next/Prev/dots/chapter menu/hotspot clicks)
+   * never yanks focus (plan Task 8's explicit "clicking a hotspot
+   * shouldn't yank focus"). The live-region announcement doesn't need any
+   * handling here at all — `announcement` below is recomputed from
+   * `currentIndex` on every render, so it already reflects mouse
+   * navigation too.
+   *
+   * Escape gets no `case` here at all. `Tooltip.tsx` already closes the
+   * open tooltip itself (a local `onKeyDown` on its trigger/panel,
+   * unconditionally reachable via native bubbling before this handler
+   * ever runs) — modal Escape is out of scope until M4, so there is
+   * nothing left for the root to do on Escape either way. That absence is
+   * the coordination: this handler never acts on Escape, so there is
+   * nothing here that could double-close/double-handle whatever
+   * `Tooltip.tsx` already did, regardless of whether that inner handler's
+   * event continues bubbling.
+   */
+  function handleKeyDown(event: KeyboardEvent<HTMLDivElement>): void {
+    function navigate(action: () => void): void {
+      event.preventDefault()
+      action()
+      stageRef.current?.focus()
+    }
+
+    switch (event.key) {
+      case 'ArrowRight':
+        navigate(handleNext)
+        break
+      case 'ArrowLeft':
+        navigate(handlePrev)
+        break
+      case 'Home':
+        navigate(() => goTo(0))
+        break
+      case 'End':
+        navigate(() => goTo(flat.length - 1))
+        break
+      case ' ': {
+        const {target} = event
+        if (target instanceof HTMLElement && NATIVE_ACTIVATION_TAGS.has(target.tagName)) {
+          return
+        }
+        navigate(handleNext)
+        break
+      }
+      default:
+        break
+    }
+  }
+
   if (flat.length === 0) {
     return (
       <div className={joinClassNames('gt-tour', 'gt-empty', className)} style={style} data-gt="">
@@ -288,7 +364,23 @@ export function GuidedTour({
   }
 
   return (
-    <div className={joinClassNames('gt-tour', className)} style={style} data-gt="">
+    // `onKeyDown` here only ever catches keys bubbling up from a focused
+    // descendant (a control button, the tooltip trigger, a hotspot/link) —
+    // this div itself is never a focus target or otherwise interactive (no
+    // `tabIndex`, no click handler), so it deliberately carries no ARIA
+    // role: an interactive role would be a false affordance (the div isn't
+    // operable directly), and a non-interactive role like `group` only
+    // trades this lint rule for two others (`no-noninteractive-element-
+    // interactions`, `prefer-tag-over-role`) without changing anything a
+    // screen reader user could act on. Same "delegated keydown, not an
+    // interactive element" shape as a native `<form onKeyDown>`.
+    // oxlint-disable-next-line jsx-a11y/no-static-element-interactions
+    <div
+      className={joinClassNames('gt-tour', className)}
+      style={style}
+      data-gt=""
+      onKeyDown={handleKeyDown}
+    >
       <div className="gt-header">
         <h2 className="gt-title">{personalizeText(tour.title, resolvedTokens)}</h2>
         {settings.showProgress && (
@@ -323,7 +415,7 @@ export function GuidedTour({
           </nav>
         )}
       </div>
-      <div className="gt-stage" tabIndex={-1}>
+      <div className="gt-stage" tabIndex={-1} ref={stageRef}>
         <GuidedTourContext.Provider value={contextValue}>
           <Step
             step={flatStep.step}
