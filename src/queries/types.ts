@@ -71,7 +71,7 @@ export interface GuidedTourTheme {
   overlay: string
   radius: number
   hotspotSize: number
-  fontFamily: string
+  fontFamily: string | null
   logo: GuidedTourImage | null
 }
 
@@ -170,7 +170,7 @@ export interface GuidedTourStep {
   duration: number | null
   screenshot: GuidedTourImage
   screenshotMobile: GuidedTourImage | null
-  elements: GuidedTourElement[]
+  elements: GuidedTourElement[] | null
 }
 
 /**
@@ -208,7 +208,7 @@ export interface GuidedTourLeadCapture {
   enabled: boolean
   trigger: 'afterStep' | 'atEnd'
   afterStepIndex: number | null
-  fields: GuidedTourLeadCaptureField[]
+  fields: GuidedTourLeadCaptureField[] | null
   consentText: string | null
   submitLabel: string | null
 }
@@ -221,8 +221,8 @@ export interface GuidedTourLeadCapture {
 export interface GuidedTourOutroCta {
   _key: string
   label: string
-  href: string | null
-  style: string | null
+  href: string
+  style: 'primary' | 'secondary'
 }
 
 /**
@@ -232,8 +232,8 @@ export interface GuidedTourOutroCta {
  */
 export interface GuidedTourOutro {
   heading: string | null
-  body: string | null
-  ctas: GuidedTourOutroCta[]
+  body: GuidedTourPortableText | null
+  ctas: GuidedTourOutroCta[] | null
 }
 
 /**

@@ -3,6 +3,7 @@ import {describe, expect, test} from 'bun:test'
 import {
   type GuidedTourDoc,
   type GuidedTourElement,
+  type GuidedTourOutroCta,
   guidedTourBySlugQuery,
   guidedTourSlugsQuery,
 } from '../src/queries'
@@ -78,6 +79,25 @@ const fixture = {
             alt: null,
           },
           screenshotMobile: null,
+          // `elements` is an optional array in the schema (no required/min
+          // rule), so GROQ's `elements[]{...}` projects to `null` — never an
+          // empty array — when the field is absent. A step with no elements
+          // yet (freshly created, before the canvas editor is used) must
+          // still satisfy GuidedTourDoc.
+          elements: null,
+        },
+        {
+          _key: 'step-2',
+          title: 'Second step',
+          advance: 'button',
+          duration: null,
+          screenshot: {
+            url: 'https://cdn.sanity.io/images/x/y/z2.png',
+            dimensions: {width: 1200, height: 800, aspectRatio: 1.5},
+            lqip: null,
+            alt: null,
+          },
+          screenshotMobile: null,
           elements: [
             {
               _key: 'el-1',
@@ -103,6 +123,60 @@ const fixture = {
 describe('GuidedTourDoc fixture', () => {
   test('type-checks against the hand-written fixture', () => {
     expect(fixture.title).toBe('Product tour')
+  })
+
+  test('a step with no elements yet is a valid document', () => {
+    expect(fixture.chapters[0]?.steps[0]?.elements).toBeNull()
+  })
+})
+
+// Compile-time check: leadCapture.fields and outro.ctas are optional arrays
+// (no required/min rule in the schema — see task-5-brief.md), so they must
+// type as `T[] | null`, not `T[]`. A document can have lead capture enabled
+// with no fields configured yet, or an outro with no CTAs.
+const fixtureWithEmptyNestedArrays = {
+  ...fixture,
+  theme: {...fixture.theme, fontFamily: null},
+  leadCapture: {
+    enabled: true,
+    trigger: 'afterStep',
+    afterStepIndex: 2,
+    fields: null,
+    consentText: null,
+    submitLabel: null,
+  },
+  outro: {
+    heading: 'Thanks for watching',
+    body: null,
+    ctas: null,
+  },
+} satisfies GuidedTourDoc
+
+describe('GuidedTourDoc fixture with empty nested arrays', () => {
+  test('leadCapture can be enabled with no fields yet', () => {
+    expect(fixtureWithEmptyNestedArrays.leadCapture?.fields).toBeNull()
+  })
+
+  test('outro can exist with no CTAs yet', () => {
+    expect(fixtureWithEmptyNestedArrays.outro?.ctas).toBeNull()
+  })
+})
+
+// Compile-time check: a CTA's `href` is a required `url` field in the
+// schema (unconditional, unlike the hotspot's link-only `href`) and `style`
+// is a non-null list field with an initial value, so both type without
+// `null`.
+const cta = {
+  _key: 'cta-1',
+  label: 'Get started',
+  href: 'https://example.com',
+  style: 'primary',
+} satisfies GuidedTourOutroCta
+
+describe('GuidedTourOutroCta', () => {
+  test('href and style are required, not nullable', () => {
+    expect(cta.href).toBe('https://example.com')
+    expect(cta.style).toBe('primary')
   })
 })
 
