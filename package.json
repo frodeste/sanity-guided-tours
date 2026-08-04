@@ -1,0 +1,102 @@
+{
+  "name": "sanity-plugin-guided-tours",
+  "version": "0.0.0-development",
+  "description": "Author screenshot-based interactive product demos in Sanity Studio and render them in React/NextJS",
+  "keywords": [
+    "guided-tour",
+    "nextjs",
+    "product-demo",
+    "sanity",
+    "sanity-plugin"
+  ],
+  "license": "MIT",
+  "author": "Frode Stenstrøm",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/frodeste/sanity-guided-tours.git"
+  },
+  "workspaces": [
+    "examples/*"
+  ],
+  "files": [
+    "dist",
+    "assets",
+    "sanity.json",
+    "v2-incompatible.js"
+  ],
+  "type": "module",
+  "sideEffects": [
+    "*.css"
+  ],
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./react": {
+      "source": "./src/react/index.ts",
+      "import": "./dist/react/index.js",
+      "default": "./dist/react/index.js"
+    },
+    "./react/styles.css": "./assets/react/styles.css",
+    "./queries": {
+      "source": "./src/queries/index.ts",
+      "import": "./dist/queries/index.js",
+      "default": "./dist/queries/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "plugin-kit verify-package --silent && pkg-utils build --strict --check --clean",
+    "format": "oxfmt",
+    "link-watch": "plugin-kit link-watch",
+    "lint": "oxlint",
+    "prebuild": "mkdir -p assets/react && cp src/react/styles.css assets/react/styles.css",
+    "prepublishOnly": "npm run build",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "verify": "plugin-kit verify-package",
+    "watch": "pkg-utils watch --strict"
+  },
+  "devDependencies": {
+    "@happy-dom/global-registrator": "^20",
+    "@sanity/pkg-utils": "^11",
+    "@sanity/plugin-kit": "^10",
+    "@sanity/ui": "^3.5",
+    "@testing-library/react": "^16",
+    "@types/bun": "^1.3",
+    "@types/react": "^19",
+    "ajv": "^8.13.0",
+    "oxfmt": "^0.61.0",
+    "oxlint": "^1.76.0",
+    "oxlint-tsgolint": "^7.0.2001",
+    "react": "^19",
+    "react-dom": "^19",
+    "sanity": "^6.8",
+    "styled-components": "^6.1",
+    "typescript": "^5.6"
+  },
+  "peerDependencies": {
+    "@sanity/ui": "^3.0.0",
+    "react": "^18.3 || ^19",
+    "react-dom": "^18.3 || ^19",
+    "sanity": "^6.0.0",
+    "styled-components": "^6.1"
+  },
+  "peerDependenciesMeta": {
+    "sanity": {
+      "optional": true
+    },
+    "@sanity/ui": {
+      "optional": true
+    },
+    "styled-components": {
+      "optional": true
+    }
+  },
+  "engines": {
+    "node": ">=20.19 <22 || >=22.12"
+  }
+}
