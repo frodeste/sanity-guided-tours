@@ -330,6 +330,7 @@ Props:
 | `renderImage` | Optional override, e.g. to substitute `next/image`. |
 | `step` / `onStepChange` | Controlled position, for syncing to the URL. |
 | `className` | Styling hook. |
+| `style` | Merged onto the tour root — the documented hook for `--gt-*` custom-property overrides; composes with the theme document (theme first, consumer style wins). *(Added during M2, 2026-08-04.)* |
 
 Because the app fetches, caching, ISR, draft mode, perspectives and Visual
 Editing keep working exactly as the app already configures them. The plugin
@@ -393,7 +394,11 @@ belongs.
 Screenshot-based viewers are a category that routinely ships inaccessible, so
 these are requirements, not aspirations:
 
-- Hotspots are `<button>` elements with accessible names.
+- Hotspots are `<button>` elements with accessible names — with one carve-out
+  (amended during M2, 2026-08-04): a hotspot whose `action` is `link` renders a
+  real `<a>` with `rel="noopener noreferrer"`, because native anchor semantics
+  (middle-click, context menu, status bar) are more accessible than
+  `<button>` + `window.open`.
 - `alt` on screenshots is schema-required, enforced by validation.
 - Step changes announce through an `aria-live="polite"` region, and focus moves
   to the step container.
