@@ -7,6 +7,8 @@ import type {
   GuidedTourTooltip,
 } from '../queries/types'
 import {Hotspot} from './Hotspot'
+import {TextOverlay} from './TextOverlay'
+import {Tooltip} from './Tooltip'
 
 export interface StepProps {
   step: GuidedTourStep
@@ -52,26 +54,62 @@ export function nearestTooltipKey(
 
 /**
  * Renders one step's screenshot plus the slot its positioned elements
- * (hotspots, tooltips, text overlays) mount into. Hotspots render as of
- * Task 5; Task 6 adds tooltips and text overlays into the same
- * `.gt-elements` slot, Task 7 replaces the plain `<img>` below with the
- * responsive `Image` component. Everything else about this component —
- * the `step` prop, the `figure.gt-step` / `.gt-elements` structure — stays
- * stable across those so later tasks only add to it.
+ * (hotspots, tooltips, text overlays) mount into. Task 7 replaces the
+ * plain `<img>` below with the responsive `Image` component; everything
+ * else about this component — the `step` prop, the `figure.gt-step` /
+ * `.gt-elements` structure — stays stable across that so it only adds to
+ * this.
  *
- * Also owns the single-open-tooltip mechanism (design spec §6, plan
- * Task 5): activating a reveal hotspot (or an advance hotspot acting as
- * one — see `handleHotspotActivate`) opens the tooltip nearest it via
- * `setOpenTooltipKey`. Nothing reads the current key yet — Task 6's
- * `<Tooltip>` is the first consumer, threaded the same way `onAdvance` is
- * threaded here — so only the setter is bound below; the array-skip
- * destructure avoids binding (and then never reading) the getter.
+ * Owns the single-open-tooltip mechanism (design spec §6, plan Tasks 5-6):
+ * `openTooltipKey` holds at most one tooltip `_key`, so opening any
+ * tooltip (a reveal hotspot via `revealNearest`, or a `<Tooltip>` trigger
+ * itself via the `onOpen` it's passed below) necessarily closes whichever
+ * other one held the slot — there is only ever one key to hold.
+ *
+ * Two things reset/seed `openTooltipKey` together on a step change, keyed
+ * on `step._key` via the ref-comparison below rather than on `<Step>`
+ * unmounting: the component isn't given a `key` by `<GuidedTour>` (there's
+ * no reason to force a full remount — nothing else about it needs
+ * resetting), so a step change is a prop update, not an unmount, and needs
+ * an explicit reset:
+ * - Closes any tooltip left open from the previous step (plan Task 6:
+ *   "step change closes tooltips").
+ * - Opens the new step's `trigger: 'auto'` tooltip, if it has one (plan
+ *   Task 6: "auto opens on step mount, dismissible"). The single-open
+ *   invariant still applies if a step somehow has more than one — the
+ *   first one found wins, same "first match" precedent as
+ *   `nearestTooltipKey` above for ties.
+ *
+ * This is done during render (comparing `step._key` against a ref of the
+ * previously-seen key, conditionally calling `setOpenTooltipKey`) rather
+ * than in a `useEffect` — React's own sanctioned "adjust state when a prop
+ * changes" pattern (a `useState`, not a `useRef`, holds the previous
+ * value: a ref's `.current` is a mutable escape hatch outside React's
+ * render/commit model and reading it during render — unlike reading
+ * ordinary state — isn't safe), the same one `GuidedTour.tsx`'s
+ * controlled-step sync uses. It converges within the same render (the
+ * state write makes the condition false for the rest of this render), so
+ * there's no extra tick and no stale-frame flash of the previous step's
+ * open tooltip before an effect would have caught up.
  *
  * @public
  */
 export function Step({step, onAdvance}: StepProps): ReactNode {
   const {screenshot, elements} = step
-  const [, setOpenTooltipKey] = useState<string | null>(null)
+  const [openTooltipKey, setOpenTooltipKey] = useState<string | null>(null)
+
+  const [previousStepKey, setPreviousStepKey] = useState<string | null>(null)
+  if (previousStepKey !== step._key) {
+    setPreviousStepKey(step._key)
+    const autoTooltip = (elements ?? []).find(
+      (element): element is GuidedTourTooltip =>
+        element._type === 'guidedTourTooltip' && element.trigger === 'auto',
+    )
+    const nextOpenTooltipKey = autoTooltip?._key ?? null
+    if (openTooltipKey !== nextOpenTooltipKey) {
+      setOpenTooltipKey(nextOpenTooltipKey)
+    }
+  }
 
   function revealNearest(origin: {x: number; y: number}): void {
     const key = nearestTooltipKey(origin, elements)
@@ -103,15 +141,34 @@ export function Step({step, onAdvance}: StepProps): ReactNode {
         height={screenshot.dimensions.height}
       />
       <div className="gt-elements">
-        {(elements ?? []).map((element) =>
-          element._type === 'guidedTourHotspot' ? (
-            <Hotspot
-              key={element._key}
-              hotspot={element}
-              onActivate={() => handleHotspotActivate(element)}
-            />
-          ) : null,
-        )}
+        {(elements ?? []).map((element) => {
+          switch (element._type) {
+            case 'guidedTourHotspot':
+              return (
+                <Hotspot
+                  key={element._key}
+                  hotspot={element}
+                  onActivate={() => handleHotspotActivate(element)}
+                />
+              )
+            case 'guidedTourTooltip':
+              return (
+                <Tooltip
+                  key={element._key}
+                  tooltip={element}
+                  isOpen={openTooltipKey === element._key}
+                  onOpen={() => setOpenTooltipKey(element._key)}
+                  onClose={() =>
+                    setOpenTooltipKey((current) => (current === element._key ? null : current))
+                  }
+                />
+              )
+            case 'guidedTourTextOverlay':
+              return <TextOverlay key={element._key} overlay={element} />
+            default:
+              return null
+          }
+        })}
       </div>
     </figure>
   )

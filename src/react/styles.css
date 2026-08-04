@@ -258,6 +258,22 @@
   background: transparent;
 }
 
+/* `.gt-step` sets `line-height: 0` to collapse the whitespace gap under
+   its inline `.gt-screenshot`; both rich-text containers need it reset
+   back to something readable, since they inherit it otherwise. */
+.gt-tooltip,
+.gt-overlay {
+  line-height: 1.4;
+}
+
+.gt-pt-block {
+  margin: 0 0 8px;
+}
+
+.gt-pt-block:last-child {
+  margin-bottom: 0;
+}
+
 /* Controls: prev/next, counter, dots */
 
 .gt-controls {
