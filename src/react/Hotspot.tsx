@@ -1,3 +1,5 @@
+'use client'
+
 import type {CSSProperties, MouseEvent, ReactNode} from 'react'
 
 import type {GuidedTourHotspot} from '../queries/types'

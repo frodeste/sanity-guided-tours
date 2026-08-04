@@ -1,3 +1,5 @@
+'use client'
+
 import {
   useCallback,
   useEffect,
@@ -49,6 +51,12 @@ export interface GuidedTourProps {
 function joinClassNames(...classNames: (string | false | undefined)[]): string {
   return classNames.filter((name): name is string => Boolean(name)).join(' ')
 }
+
+// `--gt-progress-percent` is a CSS custom property, not a member of
+// `CSSProperties` — React's type doesn't model arbitrary custom
+// properties, so this narrow extension stands in for a cast (`as` is
+// banned by oxlint). Same pattern as `TextOverlay.tsx`'s `OverlayStyle`.
+type ProgressStyle = CSSProperties & {'--gt-progress-percent'?: string}
 
 /**
  * The guided tour viewer: header (title, progress, chapter menu), the
@@ -269,6 +277,15 @@ export function GuidedTour({
     total: flat.length,
     title: flatStep.step.title ?? flatStep.chapterTitle,
   })
+  // The fill itself (`.gt-progress::after`'s `width`, styles.css) reads
+  // `--gt-progress-percent`, set here rather than defaulted in CSS —
+  // unlike the theme custom properties on `.gt-tour`, this one has no
+  // static default; it's recomputed every navigation. `flat.length` is
+  // non-zero past the empty-tour early return above, so this never
+  // divides by zero.
+  const progressStyle: ProgressStyle = {
+    '--gt-progress-percent': String(((currentIndex + 1) / flat.length) * 100),
+  }
 
   return (
     <div className={joinClassNames('gt-tour', className)} style={style} data-gt="">
@@ -287,6 +304,7 @@ export function GuidedTour({
             aria-valuemax={flat.length}
             aria-valuenow={currentIndex + 1}
             aria-label={labels.progressLabel}
+            style={progressStyle}
           />
         )}
         {settings.showChapterMenu && contributingChapters.length > 0 && (

@@ -299,6 +299,48 @@ describe('GuidedTour: dots', () => {
   })
 })
 
+describe('GuidedTour: progress bar', () => {
+  // `--gt-progress-percent` (styles.css's `.gt-progress::after` reads it
+  // for `width`) was previously never set on the element at all — the CSS
+  // custom property fell through to its `calc(var(--gt-progress-percent,
+  // 0) * 1%)` default of 0%, so the bar rendered empty on every step, not
+  // just the first. Computing the expected value the same way the
+  // component does ((current / total) * 100, not a hardcoded string) —
+  // the point of this test is pinning that the value tracks navigation at
+  // all, not encoding a magic decimal.
+  function percentFor(current: number, total: number): string {
+    return String((current / total) * 100)
+  }
+
+  test('reflects the current step out of the total on initial render', () => {
+    const {container} = render(<GuidedTour tour={threeStepTour()} />)
+    expect(container.querySelector('.gt-progress')?.getAttribute('style')).toContain(
+      `--gt-progress-percent: ${percentFor(1, 3)}`,
+    )
+  })
+
+  test('updates as navigation advances, reaching 100% on the last step', () => {
+    const {container} = render(<GuidedTour tour={threeStepTour()} />)
+
+    click(container, '.gt-next')
+    expect(container.querySelector('.gt-progress')?.getAttribute('style')).toContain(
+      `--gt-progress-percent: ${percentFor(2, 3)}`,
+    )
+
+    click(container, '.gt-next')
+    expect(container.querySelector('.gt-progress')?.getAttribute('style')).toContain(
+      `--gt-progress-percent: ${percentFor(3, 3)}`,
+    )
+  })
+
+  test('is omitted entirely when settings.showProgress is false', () => {
+    const {container} = render(
+      <GuidedTour tour={tour({settings: settings({showProgress: false})})} />,
+    )
+    expect(container.querySelector('.gt-progress')).toBeNull()
+  })
+})
+
 describe('GuidedTour: empty tour', () => {
   test('renders a .gt-empty placeholder and emits nothing', () => {
     const {events, handler} = collector()

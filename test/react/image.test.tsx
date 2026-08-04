@@ -301,6 +301,44 @@ describe('Image: default renderer', () => {
 
     expect(query(container, '.gt-screenshot').getAttribute('style')).toBeNull()
   })
+
+  test('"loaded" resets when the url changes: a later step\'s LQIP still shows before its own load event', () => {
+    // Regression test: `<Step>` never remounts `<Image>` across a step
+    // change (no `key` on either), so without a reset keyed on `url`,
+    // `loaded` stayed `true` from whichever screenshot loaded first and
+    // every later step's LQIP was skipped forever.
+    const {container} = render(
+      <GuidedTour
+        tour={oneChapterTour([
+          step({
+            _key: 's1',
+            screenshot: image({
+              url: 'https://cdn.sanity.io/one.png',
+              lqip: 'data:image/png;base64,one',
+            }),
+          }),
+          step({
+            _key: 's2',
+            screenshot: image({
+              url: 'https://cdn.sanity.io/two.png',
+              lqip: 'data:image/png;base64,two',
+            }),
+          }),
+        ])}
+      />,
+    )
+
+    const firstImg = query(container, '.gt-screenshot')
+    fireEvent.load(firstImg)
+    expect(firstImg.getAttribute('style') ?? '').not.toContain('background-image')
+
+    fireEvent.click(query(container, '.gt-next'))
+
+    const secondImg = query(container, '.gt-screenshot')
+    const style = secondImg.getAttribute('style') ?? ''
+    expect(style).toContain('background-image')
+    expect(style).toContain('data:image/png;base64,two')
+  })
 })
 
 describe('preload wrappers (±1 steps)', () => {

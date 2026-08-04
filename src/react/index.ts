@@ -1,3 +1,5 @@
+'use client'
+
 export {GuidedTour} from './GuidedTour'
 export type {GuidedTourProps} from './GuidedTour'
 export type {GuidedTourEvent, GuidedTourEventHandler} from './events'

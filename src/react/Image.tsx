@@ -1,3 +1,5 @@
+'use client'
+
 import {useState, type CSSProperties, type ReactNode} from 'react'
 
 import type {GuidedTourImageProps} from './types'
@@ -87,6 +89,20 @@ export function buildSrcSet(url: string, nativeWidth: number | null): string {
  * state rather than mutating a ref, so the removal re-renders through
  * React's normal path instead of a direct DOM write racing React's own.
  *
+ * `loaded` resets to `false` whenever `url` changes: `<Step>` never
+ * remounts `<Image>` on a step change (no `key`, same rationale as `Step`
+ * itself not being remounted by `<GuidedTour>` — see its doc comment), so
+ * without this every step after the first would skip its LQIP entirely,
+ * carrying `loaded: true` over from whichever screenshot loaded first.
+ * Done as a render-time state adjustment (comparing `url` against a
+ * `useState`-held previous value, conditionally calling `setLoaded`)
+ * rather than a `useEffect` — React's own sanctioned "adjust state when a
+ * prop changes" pattern, the same one `Step`'s auto-tooltip reset and
+ * `GuidedTour`'s controlled-step sync use — so the reset lands in the
+ * very same render the new `url` shows up in, rather than committing one
+ * extra frame with the *old* `loaded` value (still `true`) before an
+ * effect could catch up and correct it.
+ *
  * @public
  */
 export function Image({
@@ -100,6 +116,12 @@ export function Image({
   priority,
 }: GuidedTourImageProps): ReactNode {
   const [loaded, setLoaded] = useState(false)
+
+  const [previousUrl, setPreviousUrl] = useState(url)
+  if (previousUrl !== url) {
+    setPreviousUrl(url)
+    if (loaded) setLoaded(false)
+  }
 
   const style: CSSProperties | undefined =
     lqip !== null && !loaded

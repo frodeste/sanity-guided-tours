@@ -1,3 +1,5 @@
+'use client'
+
 import {Fragment, type ReactNode} from 'react'
 
 import type {GuidedTourPortableText} from '../queries/types'

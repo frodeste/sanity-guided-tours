@@ -1,3 +1,5 @@
+'use client'
+
 import {useRef, type CSSProperties, type KeyboardEvent, type ReactNode} from 'react'
 
 import type {GuidedTourTooltip} from '../queries/types'
