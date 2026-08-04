@@ -53,7 +53,6 @@
     "format": "oxfmt",
     "link-watch": "plugin-kit link-watch",
     "lint": "oxlint",
-    "postinstall": "node scripts/link-example-app.mjs",
     "prebuild": "mkdir -p assets/react && cp src/react/styles.css assets/react/styles.css",
     "prepublishOnly": "npm run build",
     "test": "bun test",
