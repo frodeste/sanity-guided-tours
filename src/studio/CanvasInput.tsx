@@ -318,10 +318,21 @@ export function CanvasInput(props: CanvasInputProps): ReactNode {
           header="Guided tour editor"
           id={`${props.id}-canvas-editor`}
           onClose={() => setExpanded(false)}
+          padding={4}
           width="auto"
-          style={{width: '92vw', height: '86vh', display: 'flex', flexDirection: 'column'}}
         >
-          {body}
+          {/*
+            No `style` override on <Dialog> itself: per @sanity/ui 3.5.1,
+            `width="auto"` already makes the DialogCard fill the backdrop,
+            and the backdrop (Dialog's own outer restProps-styled Layer)
+            already stretches full-viewport on its own — sizing it again
+            here would land on that outer fixed element and overconstrain
+            it (fixed inset + explicit width/height leaves slivers of the
+            viewport uncovered/undimmed). Fill is instead applied to this
+            inner content container, which the Dialog's own layout doesn't
+            otherwise size for us.
+          */}
+          <Box style={{height: '80vh', minHeight: 0}}>{body}</Box>
         </Dialog>
       ) : (
         <Card border radius={2}>
@@ -329,10 +340,12 @@ export function CanvasInput(props: CanvasInputProps): ReactNode {
         </Card>
       )}
 
-      <details style={{marginTop: '1rem'}}>
-        <summary style={{cursor: 'pointer'}}>Plain editor</summary>
-        <Box marginTop={2}>{props.renderDefault(props)}</Box>
-      </details>
+      {!expanded && (
+        <details style={{marginTop: '1rem'}}>
+          <summary style={{cursor: 'pointer'}}>Plain editor</summary>
+          <Box marginTop={2}>{props.renderDefault(props)}</Box>
+        </details>
+      )}
     </Box>
   )
 }
