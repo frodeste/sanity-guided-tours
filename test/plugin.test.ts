@@ -48,6 +48,7 @@ describe('guidedTours plugin', () => {
     const names = typeList.map((t) => t.name)
     expect(names).toContain('guidedTour')
     expect(names).toContain('guidedTourTheme')
+    expect(names).toContain('guidedTourLeadCapture')
   })
 
   test('theme:false drops guidedTourTheme from the registered schema types', () => {
@@ -56,6 +57,18 @@ describe('guidedTours plugin', () => {
     const typeList = Array.isArray(types) ? types.filter(isTypeLike) : []
     const names = typeList.map((t) => t.name)
     expect(names).not.toContain('guidedTourTheme')
+  })
+
+  test('leadCapture:false drops guidedTourLeadCapture and the tour has no leadCapture field', () => {
+    const plugin = guidedTours({leadCapture: false})
+    const types = plugin.schema?.types
+    const typeList = Array.isArray(types) ? types.filter(isTypeLike) : []
+    const names = typeList.map((t) => t.name)
+    expect(names).not.toContain('guidedTourLeadCapture')
+    const tour = typeList.find((t) => t.name === 'guidedTour')
+    expect(tour).toBeDefined()
+    const tourFieldNames = tour ? fieldList(tour.fields).map((f) => f.name) : []
+    expect(tourFieldNames).not.toContain('leadCapture')
   })
 
   test('extend.tour appends a field to the guidedTour document', () => {
