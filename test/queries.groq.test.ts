@@ -133,6 +133,84 @@ describe('guidedTourBySlugQuery evaluated with groq-js: minimal document', () =>
   })
 })
 
+describe('guidedTourBySlugQuery evaluated with groq-js: theme precedence', () => {
+  // The dataset holds two guidedTourTheme documents: one is the tour's
+  // *explicit* `theme` reference, the other is a *different* theme with
+  // isDefault: true. Every prior test's dataset only ever contained one
+  // theme document, so `coalesce(theme->, *[_type == "guidedTourTheme" &&
+  // isDefault == true][0])` only ever exercised its fallback branch —
+  // an accidental argument-order swap (falling back to the default theme
+  // even when a reference is set, or the reverse) would still pass every
+  // other test in this file. Every field differs across the two themes
+  // and from the field-level coalesce's own hardcoded default, so a swap
+  // at either level is distinguishable.
+  const referencedTheme = {
+    _id: 'theme-referenced',
+    _type: 'guidedTourTheme',
+    name: 'Referenced theme',
+    isDefault: false,
+    accent: '#111111',
+    surface: '#222222',
+    text: '#333333',
+    overlay: '#444444',
+    radius: 2,
+    hotspotSize: 40,
+  }
+
+  const otherDefaultTheme = {
+    _id: 'theme-other-default',
+    _type: 'guidedTourTheme',
+    name: 'Other default theme',
+    isDefault: true,
+    accent: '#999999',
+    surface: '#888888',
+    text: '#777777',
+    overlay: '#666666',
+    radius: 20,
+    hotspotSize: 60,
+  }
+
+  const tourWithExplicitTheme = {
+    _id: 'tour-theme-precedence',
+    _type: 'guidedTour',
+    title: 'Theme precedence tour',
+    slug: {_type: 'slug', current: 'theme-precedence-tour'},
+    theme: {_type: 'reference', _ref: referencedTheme._id},
+    chapters: [
+      {
+        _key: 'chapter-1',
+        _type: 'guidedTourChapter',
+        title: 'Chapter one',
+        steps: [
+          {
+            _key: 'step-1',
+            _type: 'guidedTourStep',
+            screenshot: screenshotField('Screenshot'),
+          },
+        ],
+      },
+    ],
+  }
+
+  const dataset = [tourWithExplicitTheme, referencedTheme, otherDefaultTheme, screenshotAsset]
+
+  test('the explicitly referenced theme wins over the default-theme fallback', async () => {
+    const result = (await runQuery(dataset, 'theme-precedence-tour')) as any
+    expect(result.theme.accent).toBe(referencedTheme.accent)
+    expect(result.theme.surface).toBe(referencedTheme.surface)
+    expect(result.theme.text).toBe(referencedTheme.text)
+    expect(result.theme.overlay).toBe(referencedTheme.overlay)
+    expect(result.theme.radius).toBe(referencedTheme.radius)
+    expect(result.theme.hotspotSize).toBe(referencedTheme.hotspotSize)
+  })
+
+  test('the result is neither the hardcoded coalesce default nor the other default theme', async () => {
+    const result = (await runQuery(dataset, 'theme-precedence-tour')) as any
+    expect(result.theme.accent).not.toBe('#2276fc')
+    expect(result.theme.accent).not.toBe(otherDefaultTheme.accent)
+  })
+})
+
 describe('guidedTourBySlugQuery evaluated with groq-js: populated document', () => {
   // A second document that populates elements, tokens, leadCapture, outro
   // and settings, but omits every field that has a schema initialValue

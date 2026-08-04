@@ -9,16 +9,24 @@
 // `X | null` whenever the query can actually return `null` for it, since
 // GROQ returns `null` (never `undefined`) for a missing value.
 //
-// A schema field's `validation.required()` guarantees non-null and needs no
-// help from the query. A schema field's `initialValue` alone does *not* —
-// `initialValue` only fills in the value when a document is created through
-// the Studio UI, so a document from the seed NDJSON import, a migration
-// script, or the API can still lack it, and GROQ will return `null` for
-// that path. Every such field is instead defaulted with `coalesce()` in
-// ./projections, using the schema's own `initialValue` as the default, so
-// the non-null type here is a guarantee the query actually enforces rather
-// than an assumption about how the document was authored. See
-// test/queries.groq.test.ts, which evaluates the real projection with
+// Neither a schema field's `validation.required()` nor its `initialValue`
+// is enforced outside the Studio UI: a document from the seed NDJSON
+// import, a migration script, or the Content API can violate `required()`
+// or skip an `initialValue` just the same, and GROQ will return `null` for
+// that path either way. The two are handled differently here because only
+// one of them gives the query something to fall back to:
+//
+// - A field with an `initialValue` (regardless of whether it is also
+//   `required()`) is defaulted with `coalesce()` in ./projections, using
+//   the schema's own `initialValue` as the default. The non-null type here
+//   is then a guarantee the query actually enforces, not an assumption
+//   about how the document was authored.
+// - A field that is `required()` but has no `initialValue` has no sensible
+//   value to coalesce to (e.g. a tour's `title`), so it stays typed
+//   non-null on the strength of `required()` alone — the best signal
+//   available, though not one the query can enforce.
+//
+// See test/queries.groq.test.ts, which evaluates the real projection with
 // groq-js against documents missing these fields.
 
 /**

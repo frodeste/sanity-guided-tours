@@ -1,11 +1,14 @@
 import {describe, expect, test} from 'bun:test'
 
 import {
+  elementProjection,
   type GuidedTourDoc,
   type GuidedTourElement,
   type GuidedTourOutroCta,
   guidedTourBySlugQuery,
   guidedTourSlugsQuery,
+  imageProjection,
+  tourProjection,
 } from '../src/queries'
 
 describe('guidedTourBySlugQuery', () => {
@@ -37,6 +40,32 @@ describe('guidedTourSlugsQuery', () => {
 
   test('projects the slug string', () => {
     expect(guidedTourSlugsQuery).toContain('slug.current')
+  })
+})
+
+// Design spec §5.1 lists "GROQ query and projection fragments" as part of
+// this entry's public contents — imageProjection, elementProjection and
+// tourProjection must be importable from 'sanity-plugin-guided-tours/queries'
+// (not just usable internally to build the two composed queries), so a
+// consumer using the `extend` config hook can compose their own query
+// against the same fields. These substring checks tie the exported
+// fragments back to the exported query that's built from them, so a future
+// edit that stops interpolating one of them into the other — or re-exports
+// a stale copy — fails here.
+describe('projection fragments', () => {
+  test('imageProjection, elementProjection and tourProjection are exported', () => {
+    expect(typeof imageProjection).toBe('string')
+    expect(typeof elementProjection).toBe('string')
+    expect(typeof tourProjection).toBe('string')
+  })
+
+  test('tourProjection is the exact fragment interpolated into guidedTourBySlugQuery', () => {
+    expect(guidedTourBySlugQuery).toContain(tourProjection)
+  })
+
+  test('tourProjection composes imageProjection and elementProjection', () => {
+    expect(tourProjection).toContain(imageProjection)
+    expect(tourProjection).toContain(elementProjection)
   })
 })
 
