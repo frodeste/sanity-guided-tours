@@ -1,7 +1,9 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "noEmit": false,
+    "target": "esnext",
+    "jsx": "preserve",
+    "noEmit": true,
     "declaration": true,
     "emitDeclarationOnly": true,
     "outDir": "./dist",

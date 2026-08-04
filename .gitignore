@@ -17,6 +17,7 @@
 
 # plugin build output
 dist/
+assets/
 
 # misc
 .DS_Store
