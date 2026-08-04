@@ -1,17 +1,39 @@
 import {notFound} from 'next/navigation'
 import {guidedTourBySlugQuery, guidedTourSlugsQuery, type GuidedTourDoc} from 'sanity-plugin-guided-tours/queries'
+import 'sanity-plugin-guided-tours/react/styles.css'
 
 import {getSanityClient, SanityConfigError} from '@/lib/sanity'
 
-// M1: there is no viewer yet (that's a later milestone) — this page proves
-// the query + types resolve end-to-end by fetching one tour and dumping the
-// resolved JSON. Replace the <pre> with the real `sanity-plugin-guided-tours/react`
-// viewer once it exists.
+import TourClient from './TourClient'
+
+// M2: renders the real `sanity-plugin-guided-tours/react` viewer. This
+// server component does the fetching (unchanged from M1) and passes the
+// tour plus resolved `searchParams` down to the client component, which
+// owns the `onEvent` handler — a function prop can't cross the server/
+// client boundary, so `<GuidedTour>` itself can only ever be rendered from
+// a client component here.
 
 export const revalidate = 60
 
-export default async function TourPage({params}: {params: Promise<{slug: string}>}) {
+export default async function TourPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{slug: string}>
+  searchParams: Promise<Record<string, string | string[] | undefined>>
+}) {
   const {slug} = await params
+  const resolvedSearchParams = await searchParams
+
+  // Personalization tokens pass through as-is, including `string[]` values
+  // (`resolveTokens` takes the first array element — this keeps that branch
+  // exercised by a real consumer) — only `undefined` entries are dropped.
+  const tokens: Record<string, string | string[]> = {}
+  for (const [key, value] of Object.entries(resolvedSearchParams)) {
+    if (value !== undefined) {
+      tokens[key] = value
+    }
+  }
 
   let tour: GuidedTourDoc | null
   try {
@@ -28,27 +50,7 @@ export default async function TourPage({params}: {params: Promise<{slug: string}
     notFound()
   }
 
-  return (
-    <main style={{padding: '2rem', fontFamily: 'system-ui, sans-serif'}}>
-      <p
-        style={{
-          background: '#fef3c7',
-          border: '1px solid #f59e0b',
-          borderRadius: 6,
-          padding: '0.75rem 1rem',
-          marginBottom: '1.5rem',
-        }}
-      >
-        <strong>M1 placeholder viewer.</strong> This dumps the raw{' '}
-        <code>guidedTourBySlugQuery</code> result as JSON — the real tour
-        viewer ships in a later milestone.
-      </p>
-      <h1>{tour.title}</h1>
-      <pre style={{overflowX: 'auto', background: '#f8fafc', padding: '1rem', borderRadius: 6}}>
-        {JSON.stringify(tour, null, 2)}
-      </pre>
-    </main>
-  )
+  return <TourClient tour={tour} tokens={tokens} />
 }
 
 function ConfigErrorBanner({slug, message}: {slug: string; message: string}) {
