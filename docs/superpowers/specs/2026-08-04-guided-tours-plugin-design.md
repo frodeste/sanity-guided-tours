@@ -541,3 +541,35 @@ independently shippable:
 5. **Release** — README, seed content, Vercel deployment, semantic-release.
 
 Stopping after any of stages 2 through 4 leaves something usable.
+
+## 13. First consumer: Prosesspilotene
+
+The Prosesspilotene applications will replace their locally developed
+guided-tours implementation with this plugin once development is complete. That
+makes pp-internt a real first consumer rather than a hypothetical one, and two
+parts of this design stop being conveniences and become requirements:
+
+- **The `extend` hook (§7.4)** must be able to reattach pp-internt's
+  `linkedContent` — references to `product`, `productFamily`, `service` and
+  `solution` — to the tour document, without the plugin having any notion of
+  what those types are.
+- **UI language.** The `labels` prop (§8.1) covers the viewer's Norwegian
+  strings. The Studio side ships English only in v1, so the plugin's own
+  editing controls will appear in English inside a Studio that is otherwise
+  Norwegian. Adding an `nb-NO` bundle through Sanity's plugin i18n API is
+  inexpensive; whether to do it in v1 is an open call for the plan, not a
+  blocker.
+
+The pp-internt changes themselves — deleting
+`packages/shared-sanity/src/schemas/documents/guidedTours/*` and the
+`veiledninger` route code, then wiring in the plugin — are out of scope for this
+repository and land as a separate change in that one.
+
+**One thing must be checked before those schemas are deleted:** whether the
+production dataset actually holds `guidedTour`, `guidedToursChapter` or
+`guidedToursStep` documents. The new model embeds chapters and steps that were
+previously separate documents, so existing content needs a genuine transform —
+a migration script that inlines referenced chapters and steps into the tour, not
+a schema swap. If the dataset is empty of those types, adoption is a
+straightforward replacement. This check is cheap and should happen early, since
+its answer decides whether a migration is in scope at all.
