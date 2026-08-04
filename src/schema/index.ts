@@ -1,5 +1,6 @@
-import type {FieldDefinition, SchemaTypeDefinition} from 'sanity'
+import type {SchemaTypeDefinition} from 'sanity'
 
+import type {ResolvedGuidedToursConfig} from '../config'
 import chapter from './chapter'
 import hotspot from './elements/hotspot'
 import textOverlay from './elements/textOverlay'
@@ -13,18 +14,7 @@ import step from './step'
 import theme from './theme'
 import token from './token'
 
-/**
- * The resolved (defaults-applied) shape of the plugin's public config, as
- * consumed by `schemaTypes()`. Defined locally because Task 6's `src/config.ts`
- * — which will own `GuidedToursConfig` and `resolveConfig()` — doesn't exist
- * yet; that module's `Required<GuidedToursConfig>` is expected to satisfy this
- * shape once it lands.
- */
-export interface ResolvedGuidedToursConfig {
-  theme: boolean
-  leadCapture: boolean
-  extend: {tour: FieldDefinition[]}
-}
+export type {ResolvedGuidedToursConfig}
 
 /** Assembles the full set of schema types for the given resolved config. */
 export function schemaTypes(config: ResolvedGuidedToursConfig): SchemaTypeDefinition[] {

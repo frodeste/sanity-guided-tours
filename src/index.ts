@@ -1,3 +1,2 @@
-// populated in schema/config tasks
-// oxlint-disable-next-line unicorn/require-module-specifiers
-export {}
+export type {GuidedToursConfig} from './config'
+export {guidedTours} from './plugin'
