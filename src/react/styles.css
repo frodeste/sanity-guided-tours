@@ -1,1 +1,342 @@
-/* populated in M2 */
+/*
+ * Guided Tours viewer styles. Published from `assets/react/styles.css` by
+ * the `prebuild` script (see package.json) — import it once as
+ * `sanity-plugin-guided-tours/react/styles.css`.
+ *
+ * Rules for this file (design spec §8.1, plan Global Constraints):
+ * - Every color/size flows through a `--gt-*` custom property, defaulted
+ *   on `.gt-tour` to the theme schema's own `initialValue`s, so a
+ *   consumer overriding one via the `style` prop or their own stylesheet
+ *   needs to set only that property.
+ * - Class selectors only (`gt-` prefix) — no bare element selectors, so
+ *   this file can never leak style onto markup a consumer nests inside
+ *   `<GuidedTour>` that happens to share a tag name.
+ * - No `!important` — the reduced-motion overrides below rely on cascade
+ *   order (they're declared after the rules they override, at equal
+ *   specificity) rather than importance to win.
+ */
+
+.gt-tour {
+  --gt-accent: #2276fc;
+  --gt-surface: #ffffff;
+  --gt-text: #1a1a1a;
+  --gt-overlay: #0f172a;
+  --gt-radius: 8px;
+  --gt-hotspot-size: 24px;
+  --gt-font-family: inherit;
+
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  color: var(--gt-text);
+  font-family: var(--gt-font-family);
+}
+
+.gt-empty {
+  padding: 32px;
+  text-align: center;
+  color: var(--gt-text);
+  background: var(--gt-surface);
+  border-radius: var(--gt-radius);
+}
+
+/* Header: title, progress bar, chapter menu */
+
+.gt-header {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.gt-title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.gt-progress {
+  height: 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--gt-text) 12%, transparent);
+  overflow: hidden;
+}
+
+.gt-progress::after {
+  content: '';
+  display: block;
+  height: 100%;
+  width: calc(var(--gt-progress-percent, 0) * 1%);
+  background: var(--gt-accent);
+  border-radius: inherit;
+}
+
+.gt-chapters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.gt-chapter {
+  padding: 4px 12px;
+  border: 1px solid color-mix(in srgb, var(--gt-text) 20%, transparent);
+  border-radius: var(--gt-radius);
+  background: transparent;
+  color: var(--gt-text);
+  font: inherit;
+  cursor: pointer;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease;
+}
+
+.gt-chapter[aria-current='true'] {
+  border-color: var(--gt-accent);
+  color: var(--gt-accent);
+}
+
+/* Stage: the screenshot and its positioned elements */
+
+.gt-stage {
+  position: relative;
+  border-radius: var(--gt-radius);
+  overflow: hidden;
+}
+
+.gt-stage:focus {
+  outline: 2px solid var(--gt-accent);
+  outline-offset: 2px;
+}
+
+.gt-step {
+  position: relative;
+  margin: 0;
+  line-height: 0;
+}
+
+.gt-screenshot {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* A ±1 preloaded screenshot (Task 7): kept in the layout (Chromium won't
+   fetch an `img` set to `display: none`) but visually and interactively
+   absent. */
+.gt-preload {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.gt-elements {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.gt-elements > * {
+  pointer-events: auto;
+}
+
+/* Hotspot */
+
+.gt-hotspot {
+  position: absolute;
+  width: var(--gt-hotspot-size);
+  height: var(--gt-hotspot-size);
+  transform: translate(-50%, -50%);
+  border: none;
+  border-radius: 50%;
+  background: var(--gt-accent);
+  cursor: pointer;
+  padding: 0;
+  transition: transform 150ms ease;
+}
+
+.gt-hotspot:hover,
+.gt-hotspot:focus-visible {
+  transform: translate(-50%, -50%) scale(1.1);
+}
+
+@keyframes gt-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--gt-accent) 55%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 8px color-mix(in srgb, var(--gt-accent) 0%, transparent);
+  }
+}
+
+.gt-hotspot--pulse {
+  animation: gt-pulse 2s ease-in-out infinite;
+}
+
+/* Tooltip */
+
+.gt-tooltip-anchor {
+  position: absolute;
+  transform: translate(-50%, -50%);
+}
+
+.gt-tooltip-trigger {
+  border: none;
+  border-radius: 50%;
+  width: var(--gt-hotspot-size);
+  height: var(--gt-hotspot-size);
+  background: var(--gt-surface);
+  color: var(--gt-text);
+  cursor: pointer;
+  padding: 0;
+}
+
+.gt-tooltip {
+  position: absolute;
+  z-index: 1;
+  max-width: 90%;
+  padding: 12px;
+  background: var(--gt-surface);
+  color: var(--gt-text);
+  border-radius: var(--gt-radius);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--gt-overlay) 25%, transparent);
+  transition: opacity 150ms ease;
+}
+
+.gt-tooltip--top {
+  bottom: 100%;
+  left: 50%;
+  transform: translate(-50%, -8px);
+}
+
+.gt-tooltip--bottom {
+  top: 100%;
+  left: 50%;
+  transform: translate(-50%, 8px);
+}
+
+.gt-tooltip--left {
+  right: 100%;
+  top: 50%;
+  transform: translate(-8px, -50%);
+}
+
+.gt-tooltip--right {
+  left: 100%;
+  top: 50%;
+  transform: translate(8px, -50%);
+}
+
+/* Text overlay */
+
+.gt-overlay {
+  position: absolute;
+  padding: 12px;
+  border-radius: var(--gt-radius);
+  color: var(--gt-text);
+}
+
+.gt-overlay--surface {
+  background: color-mix(in srgb, var(--gt-surface) var(--gt-overlay-opacity, 90%), transparent);
+}
+
+.gt-overlay--contrast {
+  background: color-mix(in srgb, var(--gt-text) var(--gt-overlay-opacity, 90%), transparent);
+  color: var(--gt-surface);
+}
+
+.gt-overlay--accent {
+  background: color-mix(in srgb, var(--gt-accent) var(--gt-overlay-opacity, 90%), transparent);
+  color: var(--gt-surface);
+}
+
+.gt-overlay--none {
+  background: transparent;
+}
+
+/* Controls: prev/next, counter, dots */
+
+.gt-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.gt-prev,
+.gt-next {
+  padding: 8px 16px;
+  border: none;
+  border-radius: var(--gt-radius);
+  background: var(--gt-accent);
+  color: var(--gt-surface);
+  font: inherit;
+  cursor: pointer;
+  transition: opacity 150ms ease;
+}
+
+.gt-prev:disabled,
+.gt-next:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.gt-counter {
+  font-variant-numeric: tabular-nums;
+}
+
+.gt-dots {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.gt-dot {
+  width: 8px;
+  height: 8px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--gt-text) 25%, transparent);
+  cursor: pointer;
+  transition: background-color 150ms ease;
+}
+
+.gt-dot[aria-current='true'] {
+  background: var(--gt-accent);
+}
+
+/* Utilities */
+
+.gt-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gt-hotspot--pulse {
+    animation: none;
+  }
+
+  .gt-hotspot,
+  .gt-chapter,
+  .gt-tooltip,
+  .gt-prev,
+  .gt-next,
+  .gt-dot {
+    transition: none;
+  }
+}
