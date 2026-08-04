@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Project board
+    url: https://github.com/users/frodeste/projects/1
+    about: Roadmap, milestones and task status for the plugin.
+  - name: Security vulnerability
+    url: https://github.com/frodeste/sanity-guided-tours/security/advisories/new
+    about: Report security issues privately — never in a public issue.

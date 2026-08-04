@@ -1,0 +1,24 @@
+name: Task
+description: A concrete unit of development work, usually under a feature
+title: "task: "
+labels: [task]
+body:
+  - type: input
+    id: parent
+    attributes:
+      label: Parent feature
+      placeholder: "#10"
+    validations:
+      required: true
+  - type: textarea
+    id: work
+    attributes:
+      label: What needs doing
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      placeholder: |
+        - [ ] …
