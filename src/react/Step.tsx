@@ -1,6 +1,6 @@
 'use client'
 
-import {useState, type ReactNode} from 'react'
+import {useEffect, useState, type ReactNode} from 'react'
 
 import type {
   GuidedTourElement,
@@ -9,6 +9,7 @@ import type {
   GuidedTourStep,
   GuidedTourTooltip,
 } from '../queries/types'
+import {useGuidedTourContext} from './context'
 import {useIsMobile} from './helpers'
 import {Hotspot} from './Hotspot'
 import {Image} from './Image'
@@ -173,6 +174,7 @@ export function Step({
   nextStep = null,
   renderImage,
 }: StepProps): ReactNode {
+  const {closeOpenTooltipRef} = useGuidedTourContext()
   const isMobile = useIsMobile()
   const screenshot = effectiveScreenshot(step, isMobile)
   // Mobile overrides applied once, up front, so every downstream reader
@@ -196,6 +198,20 @@ export function Step({
       setOpenTooltipKey(nextOpenTooltipKey)
     }
   }
+
+  // Keeps `GuidedTourContextValue.closeOpenTooltipRef` (context.ts) pointed
+  // at a closer for whatever tooltip is currently open, or `null` when
+  // none is — the channel `GuidedTour.tsx`'s root Escape handler (Task 8)
+  // uses to close it even when focus is outside the tooltip's own
+  // trigger/panel subtree (e.g. on `.gt-stage` right after keyboard
+  // navigation). A ref write in an effect, not during render — same rule
+  // `trackerRef`/this ref's own doc comment call out for reads.
+  useEffect(() => {
+    closeOpenTooltipRef.current = openTooltipKey !== null ? () => setOpenTooltipKey(null) : null
+    return () => {
+      closeOpenTooltipRef.current = null
+    }
+  }, [openTooltipKey, closeOpenTooltipRef])
 
   function revealNearest(origin: {x: number; y: number}): void {
     const key = nearestTooltipKey(origin, elements)

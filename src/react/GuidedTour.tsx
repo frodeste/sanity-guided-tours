@@ -160,10 +160,19 @@ export function GuidedTour({
   // navigation, is safe.
   const stageRef = useRef<HTMLDivElement>(null)
 
-  // trackerRef is a stable ref object — safe to omit from exhaustive-deps
-  // the way any useRef() return value is.
+  // `Step` keeps this pointed at a closer for whatever tooltip it
+  // currently has open, or `null` when none is — see
+  // `GuidedTourContextValue.closeOpenTooltipRef`'s doc comment (context.ts)
+  // for why the root's Escape handling needs this instead of reaching
+  // `Tooltip.tsx`'s own local handler directly (focus can be on
+  // `.gt-stage`, outside that handler's subtree, right after keyboard
+  // navigation put it there).
+  const closeOpenTooltipRef = useRef<(() => void) | null>(null)
+
+  // trackerRef/closeOpenTooltipRef are stable ref objects — safe to omit
+  // from exhaustive-deps the way any useRef() return value is.
   const contextValue = useMemo(
-    () => ({tokens: resolvedTokens, labels, trackerRef}),
+    () => ({tokens: resolvedTokens, labels, trackerRef, closeOpenTooltipRef}),
     [resolvedTokens, labels],
   )
 
@@ -290,15 +299,20 @@ export function GuidedTour({
    * `currentIndex` on every render, so it already reflects mouse
    * navigation too.
    *
-   * Escape gets no `case` here at all. `Tooltip.tsx` already closes the
-   * open tooltip itself (a local `onKeyDown` on its trigger/panel,
-   * unconditionally reachable via native bubbling before this handler
-   * ever runs) — modal Escape is out of scope until M4, so there is
-   * nothing left for the root to do on Escape either way. That absence is
-   * the coordination: this handler never acts on Escape, so there is
-   * nothing here that could double-close/double-handle whatever
-   * `Tooltip.tsx` already did, regardless of whether that inner handler's
-   * event continues bubbling.
+   * Escape closes whatever tooltip `Step` currently has open, via
+   * `closeOpenTooltipRef` (see its doc comment on
+   * `GuidedTourContextValue`), else no-op — modal Escape is out of scope
+   * until M4. This is deliberately *not* left to `Tooltip.tsx`'s own local
+   * `onKeyDown` alone: that handler only ever fires when the event
+   * originates inside the tooltip's own trigger/panel subtree, but
+   * keyboard navigation (just above) moves focus to `.gt-stage` — a
+   * sibling, not an ancestor of the tooltip — so an Escape pressed right
+   * after arrowing onto a step with an auto-open tooltip would otherwise
+   * never reach it. When Escape *does* originate inside the tooltip,
+   * `Tooltip.tsx`'s handler runs first (bubbling) and this one runs
+   * second; both resolve to the same `setOpenTooltipKey(null)`, so the
+   * second call is a same-value, idempotent no-op — never a double-close
+   * or a reopen.
    */
   function handleKeyDown(event: KeyboardEvent<HTMLDivElement>): void {
     function navigate(action: () => void): void {
@@ -328,6 +342,9 @@ export function GuidedTour({
         navigate(handleNext)
         break
       }
+      case 'Escape':
+        closeOpenTooltipRef.current?.()
+        break
       default:
         break
     }

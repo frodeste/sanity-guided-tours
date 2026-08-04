@@ -22,6 +22,27 @@ export interface GuidedTourContextValue {
   tokens: Record<string, string>
   labels: GuidedTourLabels
   trackerRef: RefObject<GuidedTourTracker | null>
+  /**
+   * The minimal channel `GuidedTour.tsx`'s root `onKeyDown` (Task 8) uses
+   * to close whatever tooltip `Step` currently has open, regardless of
+   * where focus is — in particular when it's on `.gt-stage` itself (e.g.
+   * right after keyboard navigation), not inside the tooltip's own
+   * trigger/panel subtree, which is the only place `Tooltip.tsx`'s local
+   * Escape handler can ever fire. `Step` keeps this synced to `() =>
+   * closes the open tooltip` whenever one is open, and back to `null`
+   * when none is — so the root's Escape case is just `closeOpenTooltipRef
+   * .current?.()`, a no-op when nothing is open. Reading or writing
+   * `.current` is only done in effects/event handlers, never during
+   * render, same rule as `trackerRef` above.
+   *
+   * Calling it when `Tooltip.tsx`'s own handler has *also* just closed the
+   * same tooltip (its Escape handler doesn't `stopPropagation`, so both
+   * fire when Escape originates inside the tooltip) is intentionally
+   * harmless: it always resets to `null`, so a second call in the same
+   * event is a same-value, idempotent no-op rather than a double-close or
+   * a reopen.
+   */
+  closeOpenTooltipRef: RefObject<(() => void) | null>
 }
 
 export const GuidedTourContext = createContext<GuidedTourContextValue | null>(null)

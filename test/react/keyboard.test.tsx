@@ -113,6 +113,13 @@ function query(container: ParentNode, selector: string): Element {
   return element
 }
 
+/** Typed as `HTMLDivElement` (not plain `Element`) so `.focus()` is callable. */
+function queryStage(container: ParentNode): HTMLDivElement {
+  const element = container.querySelector<HTMLDivElement>('.gt-stage')
+  if (!element) throw new Error('expected to find .gt-stage')
+  return element
+}
+
 function counterText(container: ParentNode): string | null | undefined {
   return container.querySelector('.gt-counter')?.textContent
 }
@@ -240,6 +247,35 @@ describe('keyboard: Escape', () => {
     const {container} = render(<GuidedTour tour={threeStepTour()} />)
     expect(() => fireEvent.keyDown(query(container, '.gt-tour'), {key: 'Escape'})).not.toThrow()
     expect(counterText(container)).toBe('1 / 3')
+  })
+
+  // CI review gap (PR 93): an `auto`-trigger tooltip is open from the
+  // moment its step mounts, with no click involved, so focus can easily be
+  // on `.gt-stage` (exactly where keyboard navigation lands it) rather
+  // than inside the tooltip's own trigger/panel subtree that
+  // `Tooltip.tsx`'s local Escape handler is scoped to. The root handler
+  // must still close it.
+  test('closes an auto-open tooltip even when focus is on .gt-stage, not the tooltip', () => {
+    const {container} = render(
+      <GuidedTour
+        tour={tour({
+          chapters: [
+            chapter([step({_key: 's1', elements: [tooltip({_key: 't1', trigger: 'auto'})]})]),
+          ],
+        })}
+      />,
+    )
+
+    const trigger = query(container, '.gt-tooltip-trigger')
+    expect(trigger.getAttribute('aria-expanded')).toBe('true')
+
+    const stage = queryStage(container)
+    stage.focus()
+    expect(document.activeElement).toBe(stage)
+
+    fireEvent.keyDown(stage, {key: 'Escape'})
+
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
   })
 })
 
