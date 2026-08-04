@@ -16,5 +16,8 @@ export default defineConfig({
     'README.md',
     'SECURITY.md',
     'LICENSE',
+    // examples/web is a separate Next.js app with its own conventions;
+    // leave it to Next's own formatting rather than this package's.
+    'examples/**',
   ],
 })
