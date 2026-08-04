@@ -1,4 +1,4 @@
-import type {CSSProperties, KeyboardEvent, ReactNode} from 'react'
+import {useRef, type CSSProperties, type KeyboardEvent, type ReactNode} from 'react'
 
 import type {GuidedTourTooltip} from '../queries/types'
 import {useGuidedTourContext} from './context'
@@ -42,7 +42,18 @@ function resolvePlacement(tooltip: GuidedTourTooltip): 'top' | 'bottom' | 'left'
  *   doesn't know or care which trigger mode got it opened.
  * - `hover` opens on `pointerenter`/`focus` and closes on
  *   `pointerleave`/`blur`, so it stays keyboard-operable via focus alone
- *   (design spec §8.6) without requiring an extra click.
+ *   (design spec §8.6) without requiring an extra click. Both handler
+ *   pairs are mirrored onto the *panel* too, not just the trigger — WCAG
+ *   1.4.13 (hoverable/persistent) requires that moving the pointer from
+ *   the trigger onto the panel, or tabbing from the trigger into a link
+ *   inside the panel's content, keeps it open rather than closing it out
+ *   from under the user. The close handlers check `event.relatedTarget`
+ *   against `anchorRef` (the common `.gt-tooltip-anchor` ancestor of both
+ *   trigger and panel): a leave/blur whose `relatedTarget` is still
+ *   inside the anchor is a hand-off between the two, not a real exit, and
+ *   is ignored. Chosen over a scheduled-close-cancelled-by-the-counterpart
+ *   timer (the other standard pattern for this) because it needs no
+ *   cleanup and can't race a fast pointer/tab movement.
  *
  * Escape closes the open tooltip from either the trigger or the panel
  * (whichever has focus) — deliberately a local `onKeyDown`, not a
@@ -63,6 +74,7 @@ export function Tooltip({tooltip, isOpen, onOpen, onClose}: TooltipProps): React
   const {_key, x, y, width, trigger, content} = tooltip
   const panelId = `gt-tooltip-${_key}`
   const placement = resolvePlacement(tooltip)
+  const anchorRef = useRef<HTMLSpanElement>(null)
 
   function emitClicked(): void {
     trackerRef.current?.elementClicked({elementType: 'tooltip', elementKey: _key})
@@ -84,26 +96,42 @@ export function Tooltip({tooltip, isOpen, onOpen, onClose}: TooltipProps): React
   function handleKeyDown(event: KeyboardEvent): void {
     // "Escape closes when open — before Escape does anything else" (plan
     // Task 6): checked first, nothing else in this handler runs after.
+    // Reachable both from the trigger and — via native keydown bubbling,
+    // since the panel is never conditionally unmounted while open — from
+    // a link focused inside the panel's own content.
     if (event.key === 'Escape' && isOpen) {
       onClose()
     }
   }
 
+  // Only relevant in `trigger: 'hover'` mode: a leave/blur whose
+  // `relatedTarget` is still inside `.gt-tooltip-anchor` is the pointer or
+  // focus handing off between the trigger and the panel (or vice versa),
+  // not a real exit — see the WCAG 1.4.13 note on the doc comment above.
+  function handleHoverLeave(event: {relatedTarget: EventTarget | null}): void {
+    const {relatedTarget} = event
+    if (relatedTarget instanceof Node && (anchorRef.current?.contains(relatedTarget) ?? false)) {
+      return
+    }
+    onClose()
+  }
+
   const anchorStyle: CSSProperties = {left: `${x}%`, top: `${y}%`}
   const panelStyle: CSSProperties = {width: `${width}px`, maxWidth: '90%'}
 
-  const triggerEvents =
-    trigger === 'hover'
-      ? {
-          onPointerEnter: open,
-          onFocus: open,
-          onPointerLeave: onClose,
-          onBlur: onClose,
-        }
-      : {onClick: handleTriggerClick}
+  const hoverEvents = {
+    onPointerEnter: open,
+    onFocus: open,
+    onPointerLeave: handleHoverLeave,
+    onBlur: handleHoverLeave,
+  }
+  const triggerEvents = trigger === 'hover' ? hoverEvents : {onClick: handleTriggerClick}
+  // The panel only needs these in hover mode — click/auto's panel has no
+  // pointer/focus behavior of its own, only the trigger's onClick toggle.
+  const panelHoverEvents = trigger === 'hover' ? hoverEvents : {}
 
   return (
-    <span className="gt-tooltip-anchor" style={anchorStyle}>
+    <span className="gt-tooltip-anchor" style={anchorStyle} ref={anchorRef}>
       <button
         type="button"
         className="gt-tooltip-trigger"
@@ -116,10 +144,9 @@ export function Tooltip({tooltip, isOpen, onOpen, onClose}: TooltipProps): React
       {/* `role="group"` is the DOM contract's own choice (design spec, plan
           Task 6) — no semantic HTML tag fits a tooltip panel better, so
           `prefer-tag-over-role` is a false positive here, same rationale as
-          `GuidedTour.tsx`'s `role="progressbar"`. `onKeyDown` on a
-          non-interactive group is likewise deliberate: it's how Escape
-          reaches this component when focus has moved to a link inside the
-          panel's own content, not just the trigger. */}
+          `GuidedTour.tsx`'s `role="progressbar"`. The pointer/focus/keydown
+          handlers on this non-interactive group are likewise deliberate —
+          see the doc comment above. */}
       {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
       <div
         id={panelId}
@@ -129,6 +156,7 @@ export function Tooltip({tooltip, isOpen, onOpen, onClose}: TooltipProps): React
         style={panelStyle}
         hidden={!isOpen}
         onKeyDown={handleKeyDown}
+        {...panelHoverEvents}
       >
         <PortableText value={content} />
       </div>

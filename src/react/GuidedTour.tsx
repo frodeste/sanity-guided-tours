@@ -217,6 +217,14 @@ export function GuidedTour({
   // covers both a reset (new step) and a real unmount. Deliberately a
   // plain timer — no `document.visibilityState`-based pause/resume: not
   // in spec, YAGNI.
+  //
+  // A step can independently have `advance: 'auto'` *and* an
+  // `trigger: 'auto'` tooltip (Task 6) — considered here and deliberately
+  // left uncoordinated: this timer only ever calls `handleNext`, and the
+  // tooltip's own auto-open lives entirely in `Step`'s `openTooltipKey`
+  // state. Neither reads the other, so the step can advance out from
+  // under an open auto tooltip (or the tooltip can be dismissed and
+  // reopened) without this effect needing to know the tooltip exists.
   useEffect(() => {
     const flatStep = flat[currentIndex]
     if (!flatStep || flatStep.step.advance !== 'auto') return undefined

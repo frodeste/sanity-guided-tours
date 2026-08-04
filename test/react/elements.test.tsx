@@ -258,6 +258,102 @@ describe('Tooltip: hover trigger', () => {
   })
 })
 
+// WCAG 1.4.13 (hoverable/persistent): a hover tooltip must not close while
+// the pointer or focus is moving from the trigger onto the panel (or a
+// link inside it) — only a genuine exit from both should close it.
+describe('Tooltip: hover trigger persists over the panel (WCAG 1.4.13)', () => {
+  function linkContent(): GuidedTourPortableText {
+    return [
+      {
+        _type: 'block',
+        _key: 'block-1',
+        style: 'normal',
+        markDefs: [{_key: 'link-1', _type: 'link', href: 'https://example.com'}],
+        children: [{_type: 'span', _key: 'span-1', text: 'a link', marks: ['link-1']}],
+      },
+    ]
+  }
+
+  test('pointer moving from trigger to panel keeps it open; leaving both closes it', () => {
+    const {container} = render(
+      <GuidedTour
+        tour={oneChapterTour([
+          step({_key: 's1', elements: [tooltip({_key: 't1', trigger: 'hover'})]}),
+        ])}
+      />,
+    )
+
+    const trigger = query(container, '.gt-tooltip-trigger')
+    const panel = query(container, '.gt-tooltip')
+
+    fireEvent.pointerEnter(trigger)
+    expect(trigger.getAttribute('aria-expanded')).toBe('true')
+
+    // Pointer hands off from the trigger to the panel — relatedTarget is
+    // inside the shared anchor, so this must not close it.
+    fireEvent.pointerLeave(trigger, {relatedTarget: panel})
+    expect(trigger.getAttribute('aria-expanded')).toBe('true')
+
+    fireEvent.pointerEnter(panel)
+    expect(trigger.getAttribute('aria-expanded')).toBe('true')
+
+    // Now a real exit — relatedTarget outside the anchor — closes it.
+    fireEvent.pointerLeave(panel, {relatedTarget: document.body})
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  test('tabbing from trigger into a panel link keeps it open, and Escape from the link closes it', () => {
+    const {container} = render(
+      <GuidedTour
+        tour={oneChapterTour([
+          step({
+            _key: 's1',
+            elements: [tooltip({_key: 't1', trigger: 'hover', content: linkContent()})],
+          }),
+        ])}
+      />,
+    )
+
+    const trigger = query(container, '.gt-tooltip-trigger')
+
+    fireEvent.focus(trigger)
+    expect(trigger.getAttribute('aria-expanded')).toBe('true')
+
+    const link = query(container, '.gt-tooltip a')
+
+    // Tab moves focus from the trigger to the link inside the panel —
+    // relatedTarget is inside the shared anchor, so this must not close it.
+    fireEvent.blur(trigger, {relatedTarget: link})
+    expect(trigger.getAttribute('aria-expanded')).toBe('true')
+
+    fireEvent.focus(link)
+    expect(trigger.getAttribute('aria-expanded')).toBe('true')
+
+    // Escape reaches the panel's keydown handler via native bubbling from
+    // the focused link — the path the doc comment on Tooltip.tsx names.
+    fireEvent.keyDown(link, {key: 'Escape'})
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  test('click mode is unaffected: the panel has no pointer/focus handlers of its own', () => {
+    const {container} = render(
+      <GuidedTour tour={oneChapterTour([step({_key: 's1', elements: [tooltip({_key: 't1'})]})])} />,
+    )
+
+    const trigger = query(container, '.gt-tooltip-trigger')
+    const panel = query(container, '.gt-tooltip')
+
+    fireEvent.click(trigger)
+    expect(trigger.getAttribute('aria-expanded')).toBe('true')
+
+    // Pointer/focus events on the panel itself are click mode's own
+    // behavior to ignore — only the trigger's click toggles it.
+    fireEvent.pointerLeave(panel, {relatedTarget: document.body})
+    fireEvent.blur(panel, {relatedTarget: document.body})
+    expect(trigger.getAttribute('aria-expanded')).toBe('true')
+  })
+})
+
 describe('Tooltip: auto trigger', () => {
   test('is open on step mount without any interaction', () => {
     const {container} = render(
