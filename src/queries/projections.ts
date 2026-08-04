@@ -21,7 +21,15 @@ export const imageProjection = /* groq */ `{
 // test/queries.groq.test.ts, which evaluates this projection with groq-js
 // against documents missing these fields to prove the defaults hold.
 export const elementProjection = /* groq */ `{
-  _key, _type, x, y, mobile,
+  _key, _type, x, y,
+  // A bare "mobile" (no {} projection) would return the stored object
+  // as-is: for a partial override such as {x: 15}, that means "y" and
+  // "width" are simply absent (undefined), not null — violating this
+  // file's "null, never undefined" invariant and the GuidedTourElement
+  // MobileOverride members' "number | null" type. Projecting each member
+  // explicitly forces GROQ to emit an explicit null for the ones the
+  // author didn't set.
+  "mobile": mobile{x, y, width},
   _type == "guidedTourHotspot" => {label, action, href, "pulse": coalesce(pulse, true)},
   _type == "guidedTourTooltip" => {
     "width": coalesce(width, 300),

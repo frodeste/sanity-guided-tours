@@ -176,6 +176,19 @@ describe('guidedTourBySlugQuery evaluated with groq-js: populated document', () 
                 y: 60,
                 content: minimalPortableText,
               },
+              {
+                _key: 'el-partial-mobile',
+                _type: 'guidedTourHotspot',
+                x: 70,
+                y: 80,
+                action: 'advance',
+                // A partial override: only x set, y/width left unset. A
+                // bare `mobile` projection would leave y/width undefined
+                // (property absent) rather than null; the fix under test
+                // is projecting `mobile{x, y, width}` so each member comes
+                // back as an explicit null instead.
+                mobile: {x: 15},
+              },
             ],
           },
         ],
@@ -216,6 +229,13 @@ describe('guidedTourBySlugQuery evaluated with groq-js: populated document', () 
     expect(overlay.width).toBe(30)
     expect(overlay.background).toBe('surface')
     expect(overlay.opacity).toBe(90)
+  })
+
+  test('a partial mobile override projects its unset members as explicit null, not undefined', async () => {
+    const result = (await runQuery(dataset, 'populated-tour')) as any
+    const element = result.chapters[0].steps[0].elements[3]
+    expect(element.mobile).toEqual({x: 15, y: null, width: null})
+    expect(Object.keys(element.mobile).sort()).toEqual(['width', 'x', 'y'])
   })
 
   test('token with no defaultValue/required coalesces required to false', async () => {
