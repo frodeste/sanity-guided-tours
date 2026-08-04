@@ -1,0 +1,28 @@
+{
+  "name": "guided-tours-example-web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node ../../scripts/link-example-app.mjs && next dev",
+    "build": "node ../../scripts/link-example-app.mjs && next build",
+    "start": "next start",
+    "typecheck": "node ../../scripts/link-example-app.mjs && tsc --noEmit"
+  },
+  "dependencies": {
+    "next": "^16",
+    "next-sanity": "^11",
+    "react": "^19",
+    "react-dom": "^19",
+    "sanity": "^6.8",
+    "sanity-plugin-guided-tours": "file:../..",
+    "styled-components": "^6.1",
+    "@sanity/ui": "^3.5"
+  },
+  "devDependencies": {
+    "@types/node": "^24",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "typescript": "^5.6"
+  }
+}
