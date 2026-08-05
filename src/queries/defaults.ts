@@ -25,13 +25,39 @@ export const GOOGLE_FONT_NAME_PATTERN = /^[A-Za-z0-9 ]+$/
 
 /** `guidedTourTheme`'s color/size fields (src/schema/theme.ts). `fontFamily`/`logo` have no `initialValue`, so they aren't here. */
 export const THEME_DEFAULTS = {
-  accent: '#2276fc',
+  accent: '#7c3aed',
   surface: '#ffffff',
-  text: '#1a1a1a',
-  overlay: '#0f172a',
-  radius: 8,
+  text: '#0f172a',
+  overlay: '#1e1b4b',
+  radius: 12,
   hotspotSize: 24,
 } as const
+
+/**
+ * Dark-mode fallbacks for `guidedTourTheme.dark`'s independently optional
+ * `accent`/`surface`/`text`/`overlay` overrides. Deliberately NOT coalesced
+ * in `./projections` — the query returns `dark`'s members as explicit
+ * `null` when an author leaves them empty, and the viewer resolves each
+ * one against this object individually (`dark.accent ?? THEME_DARK_DEFAULTS.accent`)
+ * only when a dark color scheme is actually active (src/react/theme.ts,
+ * Task 3). A query-side coalesce would erase the "author left it empty"
+ * signal the viewer needs to tell that apart from "author set it to this
+ * exact value".
+ */
+export const THEME_DARK_DEFAULTS = {
+  accent: '#a78bfa',
+  surface: '#0f172a',
+  text: '#f1f5f9',
+  overlay: '#020617',
+} as const
+
+/**
+ * The default `--gt-font-family` stack used when a theme sets neither
+ * `fontFamily` nor `googleFont`. Consumed by `styles.css`'s parity test and
+ * by `themeToStyle`'s default (src/react/theme.ts, Task 3) — defined here so
+ * both stay pinned to the same literal.
+ */
+export const FONT_STACK = "'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif"
 
 /** `guidedTourToken.required` (src/schema/token.ts). */
 export const TOKEN_DEFAULTS = {required: false} as const

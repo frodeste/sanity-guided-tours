@@ -3,6 +3,7 @@ import {describe, expect, test} from 'bun:test'
 import {evaluate, parse} from 'groq-js'
 
 import {guidedTourBySlugQuery, guidedTourEmbedProjection} from '../src/queries'
+import {THEME_DEFAULTS} from '../src/queries/defaults'
 
 // This file is the repeatable version of the manual groq-js verification
 // the PR review did by hand. It runs the real `guidedTourBySlugQuery`
@@ -93,19 +94,36 @@ describe('guidedTourBySlugQuery evaluated with groq-js: minimal document', () =>
     expect(result.chapters[0].steps[0].elements).toBeNull()
   })
 
-  test('theme colors and sizes coalesce to the schema initialValues', async () => {
+  test('theme colors and sizes coalesce to the schema initialValues (modernized defaults)', async () => {
     const result = (await runQuery(dataset, 'minimal-tour')) as any
-    expect(result.theme.accent).toBe('#2276fc')
-    expect(result.theme.surface).toBe('#ffffff')
-    expect(result.theme.text).toBe('#1a1a1a')
-    expect(result.theme.overlay).toBe('#0f172a')
-    expect(result.theme.radius).toBe(8)
-    expect(result.theme.hotspotSize).toBe(24)
+    expect(result.theme.accent).toBe(THEME_DEFAULTS.accent)
+    expect(result.theme.surface).toBe(THEME_DEFAULTS.surface)
+    expect(result.theme.text).toBe(THEME_DEFAULTS.text)
+    expect(result.theme.overlay).toBe(THEME_DEFAULTS.overlay)
+    expect(result.theme.radius).toBe(THEME_DEFAULTS.radius)
+    expect(result.theme.hotspotSize).toBe(THEME_DEFAULTS.hotspotSize)
   })
 
   test('theme.fontFamily stays null — it has no schema initialValue to coalesce', async () => {
     const result = (await runQuery(dataset, 'minimal-tour')) as any
     expect(result.theme.fontFamily).toBeNull()
+  })
+
+  // dark/googleFont/brand are all deliberately NOT coalesced (see
+  // THEME_DARK_DEFAULTS' doc comment in src/queries/defaults.ts) — a theme
+  // with none of them set must reach the viewer as explicit nulls, not
+  // silently-applied defaults, so the viewer's own per-field fallback logic
+  // (Task 3) can tell "author left this empty" apart from "author chose
+  // this exact value".
+  test('theme.dark is null when the theme has no "dark" object at all', async () => {
+    const result = (await runQuery(dataset, 'minimal-tour')) as any
+    expect(result.theme.dark).toBeNull()
+  })
+
+  test('theme.googleFont and theme.brand stay null — neither has a schema initialValue', async () => {
+    const result = (await runQuery(dataset, 'minimal-tour')) as any
+    expect(result.theme.googleFont).toBeNull()
+    expect(result.theme.brand).toBeNull()
   })
 
   test('screenshot resolves through the asset reference', async () => {
@@ -206,8 +224,72 @@ describe('guidedTourBySlugQuery evaluated with groq-js: theme precedence', () =>
 
   test('the result is neither the hardcoded coalesce default nor the other default theme', async () => {
     const result = (await runQuery(dataset, 'theme-precedence-tour')) as any
-    expect(result.theme.accent).not.toBe('#2276fc')
+    expect(result.theme.accent).not.toBe(THEME_DEFAULTS.accent)
     expect(result.theme.accent).not.toBe(otherDefaultTheme.accent)
+  })
+})
+
+describe('guidedTourBySlugQuery evaluated with groq-js: dark/googleFont/brand', () => {
+  // A theme with `dark` present but only PARTIALLY filled in (accent set,
+  // the rest left empty), plus googleFont and brand set. Proves dark's
+  // members project individually as explicit nulls when unset — never
+  // coalesced to THEME_DARK_DEFAULTS, and never simply absent — and that
+  // googleFont/brand pass through untouched when an author does set them.
+  const brandedTheme = {
+    _id: 'theme-branded',
+    _type: 'guidedTourTheme',
+    name: 'Branded theme',
+    isDefault: false,
+    brand: 'Acme',
+    googleFont: 'Inter',
+    dark: {accent: '#a78bfa'},
+  }
+
+  const tourWithBrandedTheme = {
+    _id: 'tour-branded',
+    _type: 'guidedTour',
+    title: 'Branded tour',
+    slug: {_type: 'slug', current: 'branded-tour'},
+    theme: {_type: 'reference', _ref: brandedTheme._id},
+    chapters: [
+      {
+        _key: 'chapter-1',
+        _type: 'guidedTourChapter',
+        title: 'Chapter one',
+        steps: [
+          {
+            _key: 'step-1',
+            _type: 'guidedTourStep',
+            screenshot: screenshotField('Screenshot'),
+          },
+        ],
+      },
+    ],
+  }
+
+  const dataset = [tourWithBrandedTheme, brandedTheme, screenshotAsset]
+
+  test('a partially filled dark object projects the set member as-is and the rest as explicit null', async () => {
+    const result = (await runQuery(dataset, 'branded-tour')) as any
+    expect(result.theme.dark).toEqual({
+      accent: '#a78bfa',
+      surface: null,
+      text: null,
+      overlay: null,
+    })
+  })
+
+  test('dark is never coalesced against THEME_DARK_DEFAULTS at the query level', async () => {
+    const result = (await runQuery(dataset, 'branded-tour')) as any
+    expect(result.theme.dark.surface).toBeNull()
+    expect(result.theme.dark.text).toBeNull()
+    expect(result.theme.dark.overlay).toBeNull()
+  })
+
+  test('googleFont and brand pass through untouched, without a coalesce', async () => {
+    const result = (await runQuery(dataset, 'branded-tour')) as any
+    expect(result.theme.googleFont).toBe('Inter')
+    expect(result.theme.brand).toBe('Acme')
   })
 })
 

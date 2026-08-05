@@ -380,11 +380,11 @@ through entirely to the stylesheet's own defaults in `styles.css`.
 
 | Theme field | Type | Default | Custom property |
 |---|---|---|---|
-| `accent` | hex color | `#2276fc` | `--gt-accent` |
+| `accent` | hex color | `#7c3aed` | `--gt-accent` |
 | `surface` | hex color | `#ffffff` | `--gt-surface` |
-| `text` | hex color | `#1a1a1a` | `--gt-text` |
-| `overlay` | hex color | `#0f172a` | `--gt-overlay` |
-| `radius` | number (px) | `8` | `--gt-radius` (rendered as `${radius}px`) |
+| `text` | hex color | `#0f172a` | `--gt-text` |
+| `overlay` | hex color | `#1e1b4b` | `--gt-overlay` |
+| `radius` | number (px) | `12` | `--gt-radius` (rendered as `${radius}px`) |
 | `hotspotSize` | number (px) | `24` | `--gt-hotspot-size` (rendered as `${hotspotSize}px`) |
 | `fontFamily` | string, optional | — (falls back to `inherit`) | `--gt-font-family`, only set when non-empty |
 | `logo` | image, optional | — | Not a custom property — rendered as `<img class="gt-logo">` in the header |

@@ -17,11 +17,11 @@
  */
 
 .gt-tour {
-  --gt-accent: #2276fc;
+  --gt-accent: #7c3aed;
   --gt-surface: #ffffff;
-  --gt-text: #1a1a1a;
-  --gt-overlay: #0f172a;
-  --gt-radius: 8px;
+  --gt-text: #0f172a;
+  --gt-overlay: #1e1b4b;
+  --gt-radius: 12px;
   --gt-hotspot-size: 24px;
   --gt-font-family: inherit;
 
@@ -501,9 +501,9 @@
   justify-content: center;
   padding: 24px;
   /* Plain-color fallback for browsers without `color-mix()` — matches
-     `--gt-overlay`'s own default (#0f172a) at 80% opacity, so a consumer
+     `--gt-overlay`'s own default (#1e1b4b) at 80% opacity, so a consumer
      who never overrides the theme sees the identical color either way. */
-  background: rgba(15, 23, 42, 0.8);
+  background: rgba(30, 27, 75, 0.8);
   background: color-mix(in srgb, var(--gt-overlay) 80%, transparent);
 }
 

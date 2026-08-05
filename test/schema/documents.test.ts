@@ -1,6 +1,6 @@
 import {describe, expect, test} from 'bun:test'
 
-import {GOOGLE_FONT_NAME_PATTERN} from '../../src/queries/defaults'
+import {GOOGLE_FONT_NAME_PATTERN, THEME_DEFAULTS} from '../../src/queries/defaults'
 import chapter from '../../src/schema/chapter'
 import {CSS_COLOR_VALUE_PATTERN} from '../../src/schema/cssValue'
 import embed from '../../src/schema/embed'
@@ -324,10 +324,10 @@ describe('guidedTourTheme', () => {
 
   test('colors accept hex or CSS variables, with the expected initial values', () => {
     const expected: Record<string, string> = {
-      accent: '#2276fc',
-      surface: '#ffffff',
-      text: '#1a1a1a',
-      overlay: '#0f172a',
+      accent: THEME_DEFAULTS.accent,
+      surface: THEME_DEFAULTS.surface,
+      text: THEME_DEFAULTS.text,
+      overlay: THEME_DEFAULTS.overlay,
     }
     for (const [name, initial] of Object.entries(expected)) {
       const field = fieldByName(fields(theme), name)
@@ -357,19 +357,19 @@ describe('guidedTourTheme', () => {
     }
   })
 
-  test('radius is a number, initially 8, between 0 and 32', () => {
+  test('radius is a number, initially THEME_DEFAULTS.radius, between 0 and 32', () => {
     const radius = fieldByName(fields(theme), 'radius')
     expect(radius.type).toBe('number')
-    expect(radius.initialValue).toBe(8)
+    expect(radius.initialValue).toBe(THEME_DEFAULTS.radius)
     const spy = runValidation(radius.validation)
     expect(findCall(spy, 'min')?.args).toEqual([0])
     expect(findCall(spy, 'max')?.args).toEqual([32])
   })
 
-  test('hotspotSize is a number, initially 24, between 12 and 64', () => {
+  test('hotspotSize is a number, initially THEME_DEFAULTS.hotspotSize, between 12 and 64', () => {
     const hotspotSize = fieldByName(fields(theme), 'hotspotSize')
     expect(hotspotSize.type).toBe('number')
-    expect(hotspotSize.initialValue).toBe(24)
+    expect(hotspotSize.initialValue).toBe(THEME_DEFAULTS.hotspotSize)
     const spy = runValidation(hotspotSize.validation)
     expect(findCall(spy, 'min')?.args).toEqual([12])
     expect(findCall(spy, 'max')?.args).toEqual([64])

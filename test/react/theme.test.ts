@@ -22,9 +22,12 @@ function theme(overrides: Partial<GuidedTourTheme> = {}): GuidedTourTheme {
     surface: '#111111',
     text: '#eeeeee',
     overlay: '#000000',
+    dark: null,
     radius: 12,
     hotspotSize: 30,
     fontFamily: null,
+    googleFont: null,
+    brand: null,
     logo: null,
     ...overrides,
   }

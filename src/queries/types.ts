@@ -78,6 +78,22 @@ export interface GuidedTourImage {
 }
 
 /**
+ * Independently optional dark-mode overrides for a theme's `accent`,
+ * `surface`, `text` and `overlay`. Each member is `null` (rather than
+ * defaulted) when the author left it empty — GROQ does not coalesce these,
+ * so the viewer can fall back to `THEME_DARK_DEFAULTS` per field, only when
+ * a dark color scheme is actually active (design brief, M7 plan).
+ *
+ * @public
+ */
+export interface GuidedTourThemeDark {
+  accent: string | null
+  surface: string | null
+  text: string | null
+  overlay: string | null
+}
+
+/**
  * A resolved `guidedTourTheme`, compiled by the viewer into `--gt-*` CSS
  * custom properties.
  *
@@ -88,9 +104,12 @@ export interface GuidedTourTheme {
   surface: string
   text: string
   overlay: string
+  dark: GuidedTourThemeDark | null
   radius: number
   hotspotSize: number
   fontFamily: string | null
+  googleFont: string | null
+  brand: string | null
   logo: GuidedTourImage | null
 }
 
