@@ -21,6 +21,15 @@ type OverlayStyle = CSSProperties & {'--gt-overlay-opacity'?: string}
  * (unlike `Hotspot`/`Tooltip`'s centered point marker, `.gt-overlay` has
  * no `translate(-50%, -50%)`), sized by `width` percent.
  *
+ * Audited against the tooltip-panel-width bug (`Tooltip.tsx`): `.gt-overlay`
+ * renders directly into `.gt-elements` (no point-sized wrapper the way
+ * `.gt-tooltip-anchor` wraps `.gt-tooltip`), and `.gt-elements` is itself
+ * `position: absolute; inset: 0` — an explicit box the full size of
+ * `.gt-step`. That makes `.gt-elements`, not some incidental point-sized
+ * element, this `width: N%`'s CSS containing block, so it resolves
+ * against the stage as intended. Nothing to fix here; kept as the
+ * negative-result half of that investigation.
+ *
  * `background` selects a `gt-overlay--<background>` modifier class; each
  * one's `background` in `styles.css` is a `color-mix(in srgb, var(--gt-*)
  * var(--gt-overlay-opacity, 90%), transparent)`, so `opacity` (a 0-100

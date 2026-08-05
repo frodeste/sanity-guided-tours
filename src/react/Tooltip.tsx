@@ -28,6 +28,39 @@ function resolvePlacement(tooltip: GuidedTourTooltip): 'top' | 'bottom' | 'left'
 }
 
 /**
+ * A `top`/`bottom`-placed panel is horizontally centered on its anchor
+ * (`styles.css`'s `.gt-tooltip--top`/`--bottom`: `left: 50%; transform:
+ * translate(-50%, …)`). Near the left or right edge of the screenshot,
+ * that centering pushes half the panel past the stage boundary. Returns
+ * the modifier class that swaps centering for edge-anchored positioning —
+ * `null` in the middle 70% of the width, where centering never overflows.
+ * The `<= 15` / `>= 85` boundary is the plan's own choice, not derived
+ * from panel width: it doesn't need to be exact, only to catch the points
+ * closest to either edge, where centering is guaranteed to overflow
+ * regardless of how wide the panel is.
+ *
+ * Takes the already-*resolved* `placement` (not the tooltip's raw
+ * `placement` field) and gates on it: only `top`/`bottom` get an edge
+ * class (`auto` always resolves to one of those — see `resolvePlacement`
+ * — so it's covered too). Explicit `left`/`right` placements already
+ * anchor to one side of the trigger without horizontal centering
+ * (`.gt-tooltip--left`/`--right`: `right: 100%`/`left: 100%`, no
+ * `translateX`), so there is no `.gt-tooltip--edge-left.gt-tooltip--left`
+ * (etc.) CSS rule for them to match — an edge class there would be inert,
+ * present in the DOM but doing nothing. Gating here keeps the class list
+ * an accurate reflection of what's actually affecting layout.
+ */
+function resolveEdgeClass(
+  placement: 'top' | 'bottom' | 'left' | 'right',
+  x: number,
+): 'gt-tooltip--edge-left' | 'gt-tooltip--edge-right' | null {
+  if (placement !== 'top' && placement !== 'bottom') return null
+  if (x <= 15) return 'gt-tooltip--edge-left'
+  if (x >= 85) return 'gt-tooltip--edge-right'
+  return null
+}
+
+/**
  * A positioned disclosure: a round `.gt-tooltip-trigger` button that
  * reveals a `.gt-tooltip` panel next to it (design spec, plan Task 6). The
  * panel is always in the DOM — toggled with the native `hidden` attribute
@@ -83,6 +116,7 @@ export function Tooltip({tooltip, isOpen, onOpen, onClose}: TooltipProps): React
   const {_key, x, y, width, trigger, content} = tooltip
   const panelId = `gt-tooltip-${_key}`
   const placement = resolvePlacement(tooltip)
+  const edgeClass = resolveEdgeClass(placement, x)
   const anchorRef = useRef<HTMLSpanElement>(null)
 
   function emitClicked(): void {
@@ -126,7 +160,35 @@ export function Tooltip({tooltip, isOpen, onOpen, onClose}: TooltipProps): React
   }
 
   const anchorStyle: CSSProperties = {left: `${x}%`, top: `${y}%`}
-  const panelStyle: CSSProperties = {width: `${width}px`, maxWidth: '90%'}
+  // `maxWidth` used to be `90%`, which — like `.gt-tooltip`'s own
+  // stylesheet `max-width: 90%` (now removed) — resolved against
+  // `.gt-tooltip-anchor`, the panel's actual CSS containing block (it's
+  // the nearest `position`-ed ancestor, `styles.css`). The anchor is
+  // point-sized (it only wraps the trigger button, ~`--gt-hotspot-size`
+  // wide), so 90% of it crushed the requested `width` down to min-content
+  // — one word per line.
+  //
+  // `min(width px, container-relative margin)` replaces it. `100cqw` is a
+  // container query unit, resolved against `.gt-stage`'s own inline size
+  // (`styles.css` sets `container-type: inline-size` on it) rather than
+  // the viewport — deliberately not `100vw`, which was tried first and
+  // rejected: `GuidedTourModal.tsx` renders `<GuidedTour>` inside
+  // `.gt-modal`, capped at `max-width: min(90vw, 640px)`, so on a wide
+  // viewport `100vw` still hugely overstates how much room a tooltip
+  // actually has in modal mount mode — a wide tooltip mid-stage could
+  // still overflow the modal panel. `.gt-stage`'s own rendered width
+  // already reflects whatever container it's actually in (full page,
+  // narrow column, or a ~640px modal), so bounding against it is correct
+  // in every mount mode without needing to know which one it is. Container
+  // query units have broad browser support (Chrome 105+, Safari 16+,
+  // Firefox 110+ — all comfortably below this plugin's support floor); an
+  // `@supports` fallback for older browsers isn't applicable here since
+  // this is an inline `style` value, not a stylesheet rule, and isn't
+  // worth the complexity for browsers this far past EOL.
+  const panelStyle: CSSProperties = {
+    width: `${width}px`,
+    maxWidth: `min(${width}px, calc(100cqw - 2rem))`,
+  }
 
   const hoverEvents = {
     onPointerEnter: open,
@@ -159,7 +221,11 @@ export function Tooltip({tooltip, isOpen, onOpen, onClose}: TooltipProps): React
       {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
       <div
         id={panelId}
-        className={`gt-tooltip gt-tooltip--${placement}`}
+        className={
+          edgeClass
+            ? `gt-tooltip gt-tooltip--${placement} ${edgeClass}`
+            : `gt-tooltip gt-tooltip--${placement}`
+        }
         // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role
         role="group"
         style={panelStyle}
