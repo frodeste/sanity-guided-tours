@@ -106,6 +106,18 @@
   position: relative;
   border-radius: var(--gt-radius);
   overflow: hidden;
+  /* Query container for `Tooltip.tsx`'s panel `max-width` (`100cqw`) — see
+     that file for why the bound needs to be container-relative rather
+     than viewport-relative (`GuidedTourModal.tsx`'s `.gt-modal` caps at
+     `min(90vw, 640px)`, well under the viewport, so a `vw`-based bound
+     doesn't protect a wide tooltip mounted inside it). Safe alongside the
+     absolute-positioning chain below: `container-type: inline-size`
+     implies `contain: layout`, which would make this element a
+     containing block for absolutely-positioned descendants too — but
+     `.gt-step` (the nearer ancestor, right below) already has `position:
+     relative` and claims that role first, so nothing here changes which
+     element `.gt-elements` positions against. */
+  container-type: inline-size;
 }
 
 .gt-stage:focus {

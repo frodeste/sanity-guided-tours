@@ -153,13 +153,28 @@ export function Tooltip({tooltip, isOpen, onOpen, onClose}: TooltipProps): React
   // the nearest `position`-ed ancestor, `styles.css`). The anchor is
   // point-sized (it only wraps the trigger button, ~`--gt-hotspot-size`
   // wide), so 90% of it crushed the requested `width` down to min-content
-  // — one word per line. `min(width px, viewport minus margin)` is
-  // viewport-relative instead: it never shrinks the panel below its
-  // requested width unless the viewport itself is too narrow to hold it,
-  // and never depends on the anchor's incidental size at all.
+  // — one word per line.
+  //
+  // `min(width px, container-relative margin)` replaces it. `100cqw` is a
+  // container query unit, resolved against `.gt-stage`'s own inline size
+  // (`styles.css` sets `container-type: inline-size` on it) rather than
+  // the viewport — deliberately not `100vw`, which was tried first and
+  // rejected: `GuidedTourModal.tsx` renders `<GuidedTour>` inside
+  // `.gt-modal`, capped at `max-width: min(90vw, 640px)`, so on a wide
+  // viewport `100vw` still hugely overstates how much room a tooltip
+  // actually has in modal mount mode — a wide tooltip mid-stage could
+  // still overflow the modal panel. `.gt-stage`'s own rendered width
+  // already reflects whatever container it's actually in (full page,
+  // narrow column, or a ~640px modal), so bounding against it is correct
+  // in every mount mode without needing to know which one it is. Container
+  // query units have broad browser support (Chrome 105+, Safari 16+,
+  // Firefox 110+ — all comfortably below this plugin's support floor); an
+  // `@supports` fallback for older browsers isn't applicable here since
+  // this is an inline `style` value, not a stylesheet rule, and isn't
+  // worth the complexity for browsers this far past EOL.
   const panelStyle: CSSProperties = {
     width: `${width}px`,
-    maxWidth: `min(${width}px, calc(100vw - 2rem))`,
+    maxWidth: `min(${width}px, calc(100cqw - 2rem))`,
   }
 
   const hoverEvents = {
