@@ -240,6 +240,137 @@ function ProductDemoButton({tour}: {tour: GuidedTourDoc}) {
 }
 ```
 
+### `GuidedTourEmbedProps`
+
+`GuidedTourEmbed` (`src/react/GuidedTourEmbed.tsx`) renders a
+`guidedTourEmbed` object — see
+[Embedding tours in Portable Text](#embedding-tours-in-portable-text) below.
+It accepts every `GuidedTourProps` member above except `tour`, plus:
+
+| Prop | Type | Purpose |
+|---|---|---|
+| `value` | `GuidedTourEmbedValue` | Required. The dereferenced embed — `guidedTourEmbedProjection`'s result shape. |
+
+`value.displayMode` picks the rendering: `'inline'` wraps `<GuidedTour>` in a
+`.gt-embed` div; `'modal'` renders a `.gt-embed-start` button (label:
+`value.buttonLabel`, personalized via `{{token}}` substitution like a tour
+title, or `labels.startTour` — default `"Start the tour"` — when empty) that
+opens a `<GuidedTourModal>`, with its own local open/close state. A `null`
+`value.tour` (a broken, unpublished, or draft-only reference — the
+projection dereferences it to `null` rather than failing the query) renders
+a small neutral `.gt-embed-missing` placeholder with visually-hidden "Tour
+unavailable" text, and logs a `console.warn` in development — it never
+throws.
+
+## Embedding tours in Portable Text
+
+Beyond a dedicated `/tours/[slug]` route, a `guidedTourEmbed` object lets an
+editor place a tour on any existing page — inside a Portable Text field, or
+as one entry in a page-builder section array. It's registered unconditionally
+by `guidedTours()`, but stays inert until you wire it into one of your own
+arrays.
+
+**1. Add it to your schema**, using the exported type name rather than the
+string literal:
+
+```ts
+import {defineArrayMember, defineField} from 'sanity'
+import {guidedTourEmbedTypeName} from 'sanity-plugin-guided-tours'
+
+// Inside a Portable Text field's `of:` array
+defineField({
+  name: 'body',
+  type: 'array',
+  of: [
+    {type: 'block'},
+    defineArrayMember({type: guidedTourEmbedTypeName}),
+    // ...your other block types
+  ],
+})
+
+// Or as one entry in a page-builder section array — same object, no PT
+// wrapper required
+defineField({
+  name: 'sections',
+  type: 'array',
+  of: [
+    defineArrayMember({type: guidedTourEmbedTypeName}),
+    // ...your other section types (hero, cta, richText, ...)
+  ],
+})
+```
+
+**2. Add the projection to your page query**, dereferencing every embed with
+`guidedTourEmbedProjection`:
+
+```ts
+import {guidedTourEmbedProjection} from 'sanity-plugin-guided-tours/queries'
+
+const pageQuery = /* groq */ `*[_type == "page" && slug.current == $slug][0]{
+  title,
+  body[]{
+    ...,
+    _type == "guidedTourEmbed" => ${guidedTourEmbedProjection}
+  }
+}`
+```
+
+The section-array variant is the same fragment against a top-level array
+instead of a Portable Text field — `sections[]{..., _type == "guidedTourEmbed" => ${guidedTourEmbedProjection}}`.
+
+**3. Render it** — a Portable Text embed maps through `@portabletext/react`'s
+`components.types`; a page-builder section maps through whatever `switch`/
+lookup your app already uses to render its section array. Both cases end at
+the same `<GuidedTourEmbed value={...} />`:
+
+```tsx
+// Portable Text
+'use client'
+
+import {PortableText} from '@portabletext/react'
+import {GuidedTourEmbed} from 'sanity-plugin-guided-tours/react'
+import type {GuidedTourEmbedValue} from 'sanity-plugin-guided-tours/queries'
+
+function Body({value}: {value: unknown}) {
+  return (
+    <PortableText
+      value={value}
+      components={{
+        types: {
+          guidedTourEmbed: ({value}: {value: GuidedTourEmbedValue}) => (
+            <GuidedTourEmbed value={value} />
+          ),
+        },
+      }}
+    />
+  )
+}
+```
+
+```tsx
+// Page-builder section array — `Section` is whatever discriminated union
+// your own app already defines for `sections[]`, with a `guidedTourEmbed`
+// member typed as `GuidedTourEmbedValue`
+'use client'
+
+import {GuidedTourEmbed} from 'sanity-plugin-guided-tours/react'
+
+function Sections({sections}: {sections: Section[]}) {
+  return sections.map((section) => {
+    switch (section._type) {
+      case 'guidedTourEmbed':
+        return <GuidedTourEmbed key={section._key} value={section} />
+      // ...your other section types
+      default:
+        return null
+    }
+  })
+}
+```
+
+`GuidedTourEmbed` needs `'use client'` the same way `<GuidedTour>` does — see
+[Next.js usage](#nextjs-usage) above for the general server/client split.
+
 ## Theming
 
 The `guidedTourTheme` document (registered when `theme: true`, the default)

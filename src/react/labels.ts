@@ -44,6 +44,14 @@ export interface GuidedTourLabels {
    * would just be a second way to spell the same thing.
    */
   modalClose: string
+  /**
+   * `GuidedTourEmbed`'s modal-mode trigger button, used whenever the
+   * embedded `value.buttonLabel` is empty (M6). Unlike `buttonLabel` —
+   * authored content, personalized via `{{token}}` substitution like a
+   * tour title — this is an ordinary UI string, resolved the same
+   * `labels` override channel as every other member here.
+   */
+  startTour: string
 }
 
 /**
@@ -68,6 +76,7 @@ export const defaultLabels: GuidedTourLabels = {
   leadInvalidEmail: 'Enter a valid email address.',
   leadSubmitError: 'Something went wrong. Please try again.',
   modalClose: 'Close tour',
+  startTour: 'Start the tour',
 }
 
 /**
