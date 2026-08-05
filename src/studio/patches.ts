@@ -157,6 +157,25 @@ export function insertStepPatch(
 }
 
 /**
+ * Appends MULTIPLE steps at once, in `steps`' given order, to the end of a
+ * chapter (Filmstrip.tsx's bulk screenshot upload, master plan Task 8's
+ * amendment: strictly sequential uploads, then ONE `PatchEvent` inserting
+ * every successful `bulkUpload.ts` `stepsFromAssets` scaffold). A same-shape
+ * generalization of `insertStepPatch`'s `afterStepKey === null` branch
+ * (single-item `appendPatches` call) — reusing `appendPatches` here rather
+ * than calling `insertStepPatch` once per step keeps this a single
+ * `setIfMissing` + single `insert` pair (one insert carrying every scaffold)
+ * instead of N pairs, so a chapter with zero prior steps only gets
+ * `setIfMissing([], ...)` guarded against once.
+ */
+export function insertStepsPatch(
+  chapterKey: string,
+  steps: Record<string, unknown>[],
+): FormPatch[] {
+  return appendPatches(steps, stepsPath(chapterKey))
+}
+
+/**
  * Regenerates `_key` on every object that sits inside an array and carries
  * one, walking arbitrarily deep (elements, and anything nested inside them —
  * Portable Text blocks, spans, mark defs, further nested arrays). Objects

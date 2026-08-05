@@ -17,6 +17,33 @@
 // HTML5 drag past M3 with a follow-up issue at milestone end. `handleDragOver`
 // below is where that boundary is enforced: a drag is only ever a valid drop
 // target within the SAME chapter it started in.
+//
+// BULK SCREENSHOT UPLOAD (master plan Task 8, ledger amendment): a second,
+// UNRELATED drag surface lives in `ChapterHeader` below — dropping image
+// files there (or picking them via the "Upload screenshots…" button)
+// uploads them and appends one new step per file to THAT chapter. It's kept
+// entirely separate from the step-reorder drag above (different data being
+// dragged — OS files vs. an in-page step chip — and a different target: any
+// chapter's header, not a same-chapter step row). Uploads are STRICTLY
+// SEQUENTIAL — a `for await` loop, one `props.uploader` call in flight at a
+// time, each wrapped in its own try/catch so one failure never aborts the
+// batch — deliberate per the ledger ruling: screenshot batches are small,
+// order (via `bulkUpload.ts`'s `filesInUploadOrder`) maps to the `n/m`
+// progress text intuitively, and it avoids hammering the assets endpoint.
+// This component only ever runs the upload loop and reports the finished,
+// partitioned batch upward via `onUploadBatch` — same "report intent
+// upward, build no patches here" split as `StepMutationCallbacks`;
+// `CanvasInput.tsx` is the one that turns a finished batch into
+// `stepsFromAssets` scaffolds, a single `insertStepsPatch`/`PatchEvent`, and
+// a `useToast` summary. `uploader` is a plain injected function (real
+// client-backed uploader from `CanvasInput.tsx`'s `useUploader()`, or a fake
+// one in tests) rather than this component calling `useClient()` itself —
+// the same prop-injection split `useProjectDataset.ts`'s module comment
+// establishes for `projectId`/`dataset`, and what keeps this component
+// testable with `fireEvent.drop`/`fireEvent.change` and no `sanity`
+// mocking. `uploader === null` (no Studio client available, e.g. every
+// smoke test in this suite) hides the drop zone/button entirely — there's
+// nothing useful upload UI could do without one.
 import {
   Badge,
   Box,
@@ -33,10 +60,11 @@ import {
   Stack,
   Text,
 } from '@sanity/ui'
-import type {DragEvent, KeyboardEvent, ReactNode} from 'react'
-import {useState} from 'react'
+import type {ChangeEvent, DragEvent, KeyboardEvent, ReactNode} from 'react'
+import {useRef, useState} from 'react'
 
 import {assetRefToUrl} from './assetRef'
+import {filesInUploadOrder, partitionResults, type UploadedAsset} from './bulkUpload'
 import type {EditorSelection} from './useEditorState'
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -355,33 +383,113 @@ interface ChapterHeaderProps {
   stepCount: number
   onAddStep: (chapterKey: string) => void
   onAddChapter: (afterChapterKey: string | null) => void
+  /** `null` outside a Studio client — hides the upload button/drop zone entirely (this file's module comment). */
+  uploader: ((file: File) => Promise<UploadedAsset>) | null
+  isDragOver: boolean
+  /** Set only while THIS chapter's batch is uploading; `null` otherwise (including while a DIFFERENT chapter's batch is running). */
+  progressText: string | null
+  onDragOver: (event: DragEvent<HTMLDivElement>, chapterKey: string) => void
+  onDragLeave: (chapterKey: string) => void
+  onDrop: (event: DragEvent<HTMLDivElement>, chapterKey: string) => void
+  onFilesSelected: (chapterKey: string, files: File[]) => void
 }
 
 function ChapterHeader(props: ChapterHeaderProps): ReactNode {
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const uploading = props.progressText !== null
+
+  function handleFileInputChange(event: ChangeEvent<HTMLInputElement>): void {
+    const files = Array.from(event.target.files ?? [])
+    // Reset so picking the exact same file(s) again still fires `change`.
+    event.target.value = ''
+    if (files.length > 0) props.onFilesSelected(props.chapterKey, files)
+  }
+
   return (
-    <Flex align="center" justify="space-between" padding={2}>
-      <Text data-testid={`filmstrip-chapter-${props.chapterKey}`} size={1} weight="semibold">
-        {props.chapterTitle} ({props.stepCount})
-      </Text>
-      <Inline gap={1}>
-        <Button
-          data-testid={`filmstrip-add-step-${props.chapterKey}`}
-          fontSize={0}
-          mode="bleed"
-          onClick={() => props.onAddStep(props.chapterKey)}
-          padding={2}
-          text="+ Step"
-        />
-        <Button
-          data-testid={`filmstrip-add-chapter-${props.chapterKey}`}
-          fontSize={0}
-          mode="bleed"
-          onClick={() => props.onAddChapter(props.chapterKey)}
-          padding={2}
-          text="+ Chapter"
-        />
-      </Inline>
-    </Flex>
+    <Stack
+      data-testid={`filmstrip-dropzone-${props.chapterKey}`}
+      gap={2}
+      // A drag-over highlight and drop target for image files — see this
+      // file's module comment. `onDragOver` must call `preventDefault` (via
+      // the parent's `onDragOver` callback) for the browser to treat this
+      // as a valid drop target at all; without it, `onDrop` never fires.
+      onDragLeave={() => props.onDragLeave(props.chapterKey)}
+      onDragOver={(event) => props.onDragOver(event, props.chapterKey)}
+      onDrop={(event) => props.onDrop(event, props.chapterKey)}
+      padding={2}
+      style={{
+        borderRadius: 4,
+        // A plain color, not a `var(--card-focus-ring-color, ...)`
+        // custom-property reference: some CSS engines (confirmed against
+        // this suite's own happy-dom test environment) reject a `var()`
+        // token inside the `outline` SHORTHAND specifically, silently
+        // dropping the whole declaration rather than resolving the
+        // fallback — a plain value has no such risk anywhere.
+        outline: props.isDragOver ? '2px dashed #2276fc' : undefined,
+        outlineOffset: -2,
+      }}
+    >
+      <Flex align="center" justify="space-between">
+        <Text data-testid={`filmstrip-chapter-${props.chapterKey}`} size={1} weight="semibold">
+          {props.chapterTitle} ({props.stepCount})
+        </Text>
+        <Inline gap={1}>
+          <Button
+            data-testid={`filmstrip-add-step-${props.chapterKey}`}
+            fontSize={0}
+            mode="bleed"
+            onClick={() => props.onAddStep(props.chapterKey)}
+            padding={2}
+            text="+ Step"
+          />
+          <Button
+            data-testid={`filmstrip-add-chapter-${props.chapterKey}`}
+            fontSize={0}
+            mode="bleed"
+            onClick={() => props.onAddChapter(props.chapterKey)}
+            padding={2}
+            text="+ Chapter"
+          />
+        </Inline>
+      </Flex>
+      {props.uploader !== null && (
+        <Flex align="center" gap={2}>
+          <Button
+            data-testid={`filmstrip-upload-button-${props.chapterKey}`}
+            disabled={uploading}
+            fontSize={0}
+            mode="bleed"
+            onClick={() => fileInputRef.current?.click()}
+            padding={2}
+            text="Upload screenshots…"
+          />
+          {/* Visually hidden, not `display: none` — an off-screen-but-present
+              input keeps this reachable the same way a native file-picker
+              button pattern always does; the visible `<Button>` above is
+              the actual keyboard/click target (`fileInputRef.current?.click()`). */}
+          <input
+            accept="image/*"
+            data-testid={`filmstrip-upload-input-${props.chapterKey}`}
+            multiple
+            onChange={handleFileInputChange}
+            ref={fileInputRef}
+            style={{
+              clipPath: 'inset(50%)',
+              height: 1,
+              overflow: 'hidden',
+              position: 'absolute',
+              width: 1,
+            }}
+            type="file"
+          />
+          {props.progressText !== null && (
+            <Text data-testid={`filmstrip-upload-progress-${props.chapterKey}`} muted size={1}>
+              {props.progressText}
+            </Text>
+          )}
+        </Flex>
+      )}
+    </Stack>
   )
 }
 
@@ -402,12 +510,24 @@ export interface FilmstripProps {
   dataset: string | null
   onSelectStep: (chapterKey: string, stepKey: string) => void
   callbacks: StepMutationCallbacks
+  /** Real client-backed uploader from `CanvasInput.tsx`'s `useUploader()`, a fake one in tests, or `null` (this file's module comment) — threaded down rather than this component calling `useClient()` itself. */
+  uploader: ((file: File) => Promise<UploadedAsset>) | null
+  /** Reports one finished, partitioned upload batch upward — `CanvasInput.tsx` turns it into `stepsFromAssets` scaffolds, a single patch, and a toast. This component builds no patches itself (this file's module comment). */
+  onUploadBatch: (chapterKey: string, ok: UploadedAsset[], failed: number) => void
+}
+
+interface UploadProgress {
+  chapterKey: string
+  done: number
+  total: number
 }
 
 /** The filmstrip pane: chapter-grouped step thumbnails, reorder/duplicate/move/delete via a per-step menu, and add-step/add-chapter per chapter header. */
 export function Filmstrip(props: FilmstripProps): ReactNode {
   const [draggedStep, setDraggedStep] = useState<DraggedStep | null>(null)
   const [pendingAction, setPendingAction] = useState<PendingAction>(null)
+  const [dragOverChapterKey, setDragOverChapterKey] = useState<string | null>(null)
+  const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null)
 
   const chapterOptions: ChapterOption[] = props.chapters.reduce<ChapterOption[]>((acc, chapter) => {
     const key = keyOf(chapter)
@@ -450,6 +570,78 @@ export function Filmstrip(props: FilmstripProps): ReactNode {
     event.preventDefault()
     props.callbacks.onReorderStep(chapterKey, draggedStep.stepKey, targetIndex)
     setDraggedStep(null)
+  }
+
+  // --- bulk screenshot upload (this file's module comment) ---------------
+
+  /**
+   * Strictly sequential: one `props.uploader` call in flight at a time, each
+   * awaited before the next starts, each wrapped in its own try/catch so one
+   * rejection is recorded and the loop moves on rather than aborting the
+   * whole batch (the settled-shaped records `partitionResults`, from
+   * `bulkUpload.ts`, expects). `total` is fixed at the start from
+   * `filesInUploadOrder`'s natural sort order — the same order the finished
+   * `ok` array comes out in, since nothing reorders mid-loop — and `done`
+   * increments once per settled file (success or failure alike) for the
+   * `n/m` progress text.
+   */
+  async function runUpload(chapterKey: string, files: File[]): Promise<void> {
+    const uploader = props.uploader
+    if (uploader === null || files.length === 0) return
+
+    const ordered = filesInUploadOrder(files)
+    setUploadProgress({chapterKey, done: 0, total: ordered.length})
+
+    const results: PromiseSettledResult<UploadedAsset>[] = []
+    for (const file of ordered) {
+      try {
+        // Deliberately sequential — one upload in flight at a time (this
+        // file's module comment / master plan Task 8's ledger amendment).
+        // oxlint-disable-next-line no-await-in-loop
+        const asset = await uploader(file)
+        results.push({status: 'fulfilled', value: asset})
+      } catch (error) {
+        results.push({status: 'rejected', reason: error})
+      }
+      setUploadProgress((current) =>
+        current && current.chapterKey === chapterKey
+          ? {...current, done: current.done + 1}
+          : current,
+      )
+    }
+
+    setUploadProgress(null)
+    const {ok, failed} = partitionResults(results)
+    props.onUploadBatch(chapterKey, ok, failed)
+  }
+
+  function handleChapterDragOver(event: DragEvent<HTMLDivElement>, chapterKey: string): void {
+    if (props.uploader === null) return
+    // Only image-file drags become a valid drop target here — a step-row
+    // drag (HTML5 DnD's own in-page `dragstart`, handled above by
+    // `handleDragStart`/`handleDragOver`) never carries a `Files` type, so
+    // this never fires for it.
+    if (!event.dataTransfer.types.includes('Files')) return
+    event.preventDefault()
+    setDragOverChapterKey(chapterKey)
+  }
+
+  function handleChapterDragLeave(chapterKey: string): void {
+    setDragOverChapterKey((current) => (current === chapterKey ? null : current))
+  }
+
+  function handleChapterDrop(event: DragEvent<HTMLDivElement>, chapterKey: string): void {
+    if (props.uploader === null) return
+    event.preventDefault()
+    setDragOverChapterKey(null)
+    const files = Array.from(event.dataTransfer.files).filter((file) =>
+      file.type.startsWith('image/'),
+    )
+    void runUpload(chapterKey, files)
+  }
+
+  function handleFilesSelected(chapterKey: string, files: File[]): void {
+    void runUpload(chapterKey, files)
   }
 
   function requestDelete(
@@ -523,9 +715,20 @@ export function Filmstrip(props: FilmstripProps): ReactNode {
               <ChapterHeader
                 chapterKey={chapterKey}
                 chapterTitle={chapterTitle}
+                isDragOver={dragOverChapterKey === chapterKey}
                 onAddChapter={props.callbacks.onAddChapter}
                 onAddStep={props.callbacks.onAddStep}
+                onDragLeave={handleChapterDragLeave}
+                onDragOver={handleChapterDragOver}
+                onDrop={handleChapterDrop}
+                onFilesSelected={handleFilesSelected}
+                progressText={
+                  uploadProgress && uploadProgress.chapterKey === chapterKey
+                    ? `${uploadProgress.done}/${uploadProgress.total}`
+                    : null
+                }
                 stepCount={steps.length}
+                uploader={props.uploader}
               />
               <Stack gap={1}>
                 {steps.map((step, index) => {

@@ -10,9 +10,10 @@ import {afterEach, describe, expect, mock, test} from 'bun:test'
 // `smoke.test.tsx`'s job).
 import {LayerProvider, ThemeProvider} from '@sanity/ui'
 import {buildTheme} from '@sanity/ui/theme'
-import {cleanup, fireEvent, render, screen, within} from '@testing-library/react'
+import {cleanup, fireEvent, render, screen, waitFor, within} from '@testing-library/react'
 import type {ReactNode} from 'react'
 
+import type {UploadedAsset} from '../../src/studio/bulkUpload'
 import {
   Filmstrip,
   type FilmstripProps,
@@ -118,8 +119,10 @@ function baseProps(overrides: Partial<FilmstripProps> = {}): FilmstripProps {
     chapters: twoChapterFixture(),
     dataset: null,
     onSelectStep: () => {},
+    onUploadBatch: () => {},
     projectId: null,
     selection: noopSelection(),
+    uploader: null,
     ...overrides,
   }
 }
@@ -498,5 +501,194 @@ describe('Filmstrip: move to chapter', () => {
     openStepMenu('c1', 's1')
 
     expect(screen.queryByText('Move to chapter')).toBeNull()
+  })
+})
+
+// Master plan Task 8 (ledger amendment): bulk screenshot upload — a drop
+// zone plus an "Upload screenshots…" button on each chapter header. Uploads
+// are strictly sequential (this file's/`Filmstrip.tsx`'s module comment); a
+// fake `uploader` function prop is injected throughout (no `sanity`
+// mocking needed for any of this — `Filmstrip` never calls `useClient()`
+// itself), the same prop-injection convention `Canvas.test.tsx`/this file's
+// other describe blocks use for `StepMutationCallbacks`.
+describe('Filmstrip: bulk upload — no uploader (no Studio client available)', () => {
+  test('renders no drop zone/upload button at all', () => {
+    renderWithTheme(<Filmstrip {...baseProps({uploader: null})} />)
+
+    expect(screen.queryByTestId('filmstrip-upload-button-c1')).toBeNull()
+    expect(screen.queryByTestId('filmstrip-upload-input-c1')).toBeNull()
+  })
+})
+
+function pngFile(name: string): File {
+  return new File(['fake-image-bytes'], name, {type: 'image/png'})
+}
+
+/** A controllable fake uploader: each call is logged (by filename, in call order — the sequential-order proof) and returns a promise that stays pending until its matching entry in `pending` is resolved/rejected by the test. */
+function makeControllableUploader(): {
+  uploader: (file: File) => Promise<UploadedAsset>
+  calls: string[]
+  pending: {resolve: (asset: UploadedAsset) => void; reject: (error: unknown) => void}[]
+} {
+  const calls: string[] = []
+  const pending: {resolve: (asset: UploadedAsset) => void; reject: (error: unknown) => void}[] = []
+  const uploader = (file: File): Promise<UploadedAsset> => {
+    calls.push(file.name)
+    return new Promise((resolve, reject) => {
+      pending.push({resolve, reject})
+    })
+  }
+  return {uploader, calls, pending}
+}
+
+describe('Filmstrip: bulk upload — strictly sequential', () => {
+  test('the second file is not uploaded until the first settles (call log proves one-in-flight, not a Promise.all)', async () => {
+    const {uploader, calls, pending} = makeControllableUploader()
+    renderWithTheme(<Filmstrip {...baseProps({uploader})} />)
+
+    // Natural order (bulkUpload.ts's filesInUploadOrder): 'a.png' before 'b.png'.
+    const files = [pngFile('b.png'), pngFile('a.png')]
+    fireEvent.change(screen.getByTestId('filmstrip-upload-input-c1'), {target: {files}})
+
+    await waitFor(() => expect(calls).toEqual(['a.png']))
+    expect(pending).toHaveLength(1)
+
+    pending[0].resolve({fileName: 'a.png', assetId: 'asset-a'})
+
+    await waitFor(() => expect(calls).toEqual(['a.png', 'b.png']))
+  })
+
+  test('progress text shows n/m, incrementing once per settled upload, then disappears', async () => {
+    const {uploader, pending} = makeControllableUploader()
+    renderWithTheme(<Filmstrip {...baseProps({uploader})} />)
+
+    fireEvent.change(screen.getByTestId('filmstrip-upload-input-c1'), {
+      target: {files: [pngFile('a.png'), pngFile('b.png')]},
+    })
+
+    await waitFor(() =>
+      expect(screen.getByTestId('filmstrip-upload-progress-c1').textContent).toBe('0/2'),
+    )
+
+    pending[0].resolve({fileName: 'a.png', assetId: 'asset-a'})
+    await waitFor(() =>
+      expect(screen.getByTestId('filmstrip-upload-progress-c1').textContent).toBe('1/2'),
+    )
+
+    pending[1].resolve({fileName: 'b.png', assetId: 'asset-b'})
+    await waitFor(() => expect(screen.queryByTestId('filmstrip-upload-progress-c1')).toBeNull())
+  })
+})
+
+describe('Filmstrip: bulk upload — partition and reporting', () => {
+  test('2 ok + 1 fail: onUploadBatch gets 2 successes in natural order and a failed count of 1', async () => {
+    const onUploadBatch = mock((_c: string, _ok: UploadedAsset[], _failed: number) => {})
+    const calls: string[] = []
+    const uploader = async (file: File): Promise<UploadedAsset> => {
+      calls.push(file.name)
+      if (file.name === 'b.png') throw new Error('upload failed')
+      return {fileName: file.name, assetId: `asset-${file.name}`}
+    }
+    renderWithTheme(<Filmstrip {...baseProps({onUploadBatch, uploader})} />)
+
+    // Dropped out of natural order on purpose — 'a.png' < 'b.png' < 'c.png'.
+    fireEvent.change(screen.getByTestId('filmstrip-upload-input-c1'), {
+      target: {files: [pngFile('c.png'), pngFile('a.png'), pngFile('b.png')]},
+    })
+
+    await waitFor(() => expect(onUploadBatch).toHaveBeenCalledTimes(1))
+    expect(onUploadBatch).toHaveBeenCalledWith(
+      'c1',
+      [
+        {fileName: 'a.png', assetId: 'asset-a.png'},
+        {fileName: 'c.png', assetId: 'asset-c.png'},
+      ],
+      1,
+    )
+    // Sequential order, natural-sorted, not upload-completion order.
+    expect(calls).toEqual(['a.png', 'b.png', 'c.png'])
+  })
+
+  test('all failures: onUploadBatch gets an empty ok array and the full failed count', async () => {
+    const onUploadBatch = mock((_c: string, _ok: UploadedAsset[], _failed: number) => {})
+    const uploader = async (): Promise<UploadedAsset> => {
+      throw new Error('nope')
+    }
+    renderWithTheme(<Filmstrip {...baseProps({onUploadBatch, uploader})} />)
+
+    fireEvent.change(screen.getByTestId('filmstrip-upload-input-c1'), {
+      target: {files: [pngFile('a.png'), pngFile('b.png')]},
+    })
+
+    await waitFor(() => expect(onUploadBatch).toHaveBeenCalledTimes(1))
+    expect(onUploadBatch).toHaveBeenCalledWith('c1', [], 2)
+  })
+})
+
+describe('Filmstrip: bulk upload — drag and drop', () => {
+  test('dropping image files onto a chapter header uploads them to THAT chapter', async () => {
+    const onUploadBatch = mock((_c: string, _ok: UploadedAsset[], _failed: number) => {})
+    const uploader = async (file: File): Promise<UploadedAsset> => ({
+      fileName: file.name,
+      assetId: `asset-${file.name}`,
+    })
+    renderWithTheme(<Filmstrip {...baseProps({onUploadBatch, uploader})} />)
+
+    const dropzone = screen.getByTestId('filmstrip-dropzone-c2')
+    fireEvent.drop(dropzone, {dataTransfer: {files: [pngFile('z.png')]}})
+
+    await waitFor(() => expect(onUploadBatch).toHaveBeenCalledTimes(1))
+    expect(onUploadBatch).toHaveBeenCalledWith(
+      'c2',
+      [{fileName: 'z.png', assetId: 'asset-z.png'}],
+      0,
+    )
+  })
+
+  test('non-image files in the drop are filtered out before uploading', async () => {
+    const onUploadBatch = mock((_c: string, _ok: UploadedAsset[], _failed: number) => {})
+    const uploader = async (file: File): Promise<UploadedAsset> => ({
+      fileName: file.name,
+      assetId: `asset-${file.name}`,
+    })
+    renderWithTheme(<Filmstrip {...baseProps({onUploadBatch, uploader})} />)
+
+    const textFile = new File(['not an image'], 'notes.txt', {type: 'text/plain'})
+    const dropzone = screen.getByTestId('filmstrip-dropzone-c1')
+    fireEvent.drop(dropzone, {dataTransfer: {files: [pngFile('a.png'), textFile]}})
+
+    await waitFor(() => expect(onUploadBatch).toHaveBeenCalledTimes(1))
+    expect(onUploadBatch).toHaveBeenCalledWith(
+      'c1',
+      [{fileName: 'a.png', assetId: 'asset-a.png'}],
+      0,
+    )
+  })
+
+  test('drag-over with a Files payload highlights the chapter as the drop target', () => {
+    renderWithTheme(
+      <Filmstrip
+        {...baseProps({uploader: async (file) => ({fileName: file.name, assetId: 'x'})})}
+      />,
+    )
+
+    const dropzone = screen.getByTestId('filmstrip-dropzone-c1')
+    fireEvent.dragOver(dropzone, {dataTransfer: {types: ['Files']}})
+
+    expect(dropzone.style.outline).not.toBe('')
+  })
+
+  test('drag-leave clears the highlight', () => {
+    renderWithTheme(
+      <Filmstrip
+        {...baseProps({uploader: async (file) => ({fileName: file.name, assetId: 'x'})})}
+      />,
+    )
+
+    const dropzone = screen.getByTestId('filmstrip-dropzone-c1')
+    fireEvent.dragOver(dropzone, {dataTransfer: {types: ['Files']}})
+    fireEvent.dragLeave(dropzone)
+
+    expect(dropzone.style.outline).toBe('')
   })
 })

@@ -47,6 +47,8 @@ import type {ReactNode} from 'react'
 import {PatchEvent} from 'sanity'
 import type {ArrayOfObjectsInputProps, FormPatch} from 'sanity'
 
+import type {UploadedAsset} from './bulkUpload'
+import {stepsFromAssets, summarizeUploadOutcome} from './bulkUpload'
 import {Canvas} from './Canvas'
 import {Filmstrip, type StepMutationCallbacks} from './Filmstrip'
 import {Inspector} from './Inspector'
@@ -56,6 +58,7 @@ import {
   insertChapterPatch,
   insertElementPatch,
   insertStepPatch,
+  insertStepsPatch,
   moveElementPatch,
   moveStepPatch,
   removeChapterPatch,
@@ -66,6 +69,8 @@ import {
 } from './patches'
 import {useEditorState, type EditorSelection} from './useEditorState'
 import {useProjectDataset} from './useProjectDataset'
+import {useSafeToast} from './useSafeToast'
+import {useUploader} from './useUploader'
 
 /**
  * The prop type Sanity actually hands `components.input` for an array
@@ -144,6 +149,8 @@ function CanvasPanes({
   projectId,
   dataset,
   arrayProps,
+  uploader,
+  onUploadBatch,
 }: {
   chapters: unknown[]
   selection: EditorSelection
@@ -155,6 +162,8 @@ function CanvasPanes({
   projectId: string | null
   dataset: string | null
   arrayProps: CanvasInputProps
+  uploader: ((file: File) => Promise<UploadedAsset>) | null
+  onUploadBatch: (chapterKey: string, ok: UploadedAsset[], failed: number) => void
 }): ReactNode {
   const step = findStep(chapters, selection.chapterKey, selection.stepKey)
 
@@ -165,8 +174,10 @@ function CanvasPanes({
         chapters={chapters}
         dataset={dataset}
         onSelectStep={onSelectStep}
+        onUploadBatch={onUploadBatch}
         projectId={projectId}
         selection={selection}
+        uploader={uploader}
       />
       <Canvas
         dataset={dataset}
@@ -228,9 +239,28 @@ export function CanvasInput(props: CanvasInputProps): ReactNode {
   const {selection, selectStep, selectElement, device, setDevice, expanded, setExpanded} =
     useEditorState(chapters)
   const {projectId, dataset} = useProjectDataset()
+  const uploader = useUploader()
+  const toast = useSafeToast()
 
   function emit(patches: FormPatch[]): void {
     props.onChange(PatchEvent.from(patches))
+  }
+
+  /**
+   * `Filmstrip.tsx`'s bulk-upload drop zone reports one finished, partitioned
+   * batch here (master plan Task 8) — this is the one place that turns it
+   * into document mutations: `ok` assets become `stepsFromAssets` scaffolds
+   * appended to `chapterKey` via a single `insertStepsPatch`/`PatchEvent`
+   * (skipped entirely when every upload failed — an empty `insert` patch
+   * would be a no-op mutation), then a `useSafeToast` summary reports the
+   * ok/failed counts regardless. Filmstrip itself never builds patches or
+   * shows toasts (its own module comment) — this handler is the seam.
+   */
+  function handleUploadBatch(chapterKey: string, ok: UploadedAsset[], failed: number): void {
+    if (ok.length > 0) {
+      emit(insertStepsPatch(chapterKey, stepsFromAssets(ok, randomKey)))
+    }
+    toast.push(summarizeUploadOutcome(ok.length, failed))
   }
 
   // Bundles the five element-mutation callbacks `Canvas.tsx` expects
@@ -335,9 +365,11 @@ export function CanvasInput(props: CanvasInputProps): ReactNode {
           elementCallbacks={elementCallbacks}
           onSelectElement={selectElement}
           onSelectStep={selectStep}
+          onUploadBatch={handleUploadBatch}
           projectId={projectId}
           selection={selection}
           stepCallbacks={stepCallbacks}
+          uploader={uploader}
         />
       </Card>
     </Box>

@@ -8,6 +8,7 @@ import {
   insertChapterPatch,
   insertElementPatch,
   insertStepPatch,
+  insertStepsPatch,
   moveElementPatch,
   moveStepPatch,
   removeChapterPatch,
@@ -173,6 +174,44 @@ describe('insertStepPatch', () => {
     expect(patches).toEqual([
       setIfMissing([], [{_key: 'ch1'}, 'steps']),
       insert([step], 'after', [{_key: 'ch1'}, 'steps', -1]),
+    ])
+  })
+})
+
+describe('insertStepsPatch', () => {
+  test('appends every step at once, in the given order, into a possibly-missing/empty steps array', () => {
+    const steps = [
+      {_type: 'guidedTourStep', _key: 'new1', title: 'New 1'},
+      {_type: 'guidedTourStep', _key: 'new2', title: 'New 2'},
+    ]
+    const patches = insertStepsPatch('ch1', steps)
+
+    expect(patches).toEqual([
+      setIfMissing([], [{_key: 'ch1'}, 'steps']),
+      insert(steps, 'after', [{_key: 'ch1'}, 'steps', -1]),
+    ])
+  })
+
+  test('a single insert patch carries all items — not one insert per step', () => {
+    const steps = [
+      {_type: 'guidedTourStep', _key: 'new1'},
+      {_type: 'guidedTourStep', _key: 'new2'},
+      {_type: 'guidedTourStep', _key: 'new3'},
+    ]
+    const patches = insertStepsPatch('ch1', steps)
+
+    expect(patches).toHaveLength(2)
+    const insertPatch = patches[1]
+    if (!isInsertPatch(insertPatch)) throw new Error('expected an insert patch')
+    expect(insertPatch.items).toHaveLength(3)
+  })
+
+  test('empty steps array still emits the setIfMissing + insert pair (a no-op insert of nothing)', () => {
+    const patches = insertStepsPatch('ch1', [])
+
+    expect(patches).toEqual([
+      setIfMissing([], [{_key: 'ch1'}, 'steps']),
+      insert([], 'after', [{_key: 'ch1'}, 'steps', -1]),
     ])
   })
 })
