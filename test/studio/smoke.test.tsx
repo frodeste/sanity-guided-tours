@@ -359,6 +359,46 @@ describe('Canvas interactions', () => {
     expect(screen.getByTestId('canvas-tool-select').getAttribute('aria-pressed')).toBe('true')
   })
 
+  test('clicking the canvas surface with a tool active in mobile device mode writes both top-level and mobile positions', () => {
+    // Regression test for PR #97's review finding: click-to-place ignored
+    // `device`, so a mobile-mode click (coordinates measured against the
+    // *mobile* screenshot) landed only in top-level desktop x/y with no
+    // `mobile` override — nonsense positions once viewed on desktop.
+    // `insertElementPatch`'s `device` param (patches.ts) now composes a
+    // `mobile: {x, y}` override from those same coordinates into the
+    // inserted element in mobile mode, so both the desktop default and the
+    // mobile override land in a single insert patch.
+    const onChange = mock((_patch: FormPatch | FormPatch[] | PatchEvent) => {})
+    renderWithTheme(
+      <CanvasInput {...baseInputProps()} onChange={onChange} value={fixtureChapters} />,
+    )
+
+    fireEvent.click(screen.getByTestId('device-mobile'))
+    fireEvent.click(screen.getByTestId('canvas-tool-hotspot'))
+    fireEvent.click(screen.getByTestId('canvas-surface'))
+
+    expect(onChange).toHaveBeenCalledTimes(1)
+    const call = onChange.mock.calls[0][0]
+    if (!isPatchEvent(call)) throw new Error('expected a PatchEvent')
+
+    const insertPatch = call.patches[1]
+    if (!isInsertPatch(insertPatch)) throw new Error('expected an insert patch')
+    expect(insertPatch.items).toHaveLength(1)
+    // Same zero-rect caveat as the desktop insert test above: happy-dom's
+    // `getBoundingClientRect()` places the click at (0, 0) on both axes —
+    // the point under test is that `mobile.x`/`mobile.y` match the
+    // top-level `x`/`y` exactly (same measured coordinates, written to
+    // both places), not the specific value.
+    expect(insertPatch.items[0]).toMatchObject({
+      _type: 'guidedTourHotspot',
+      action: 'advance',
+      pulse: true,
+      x: 0,
+      y: 0,
+      mobile: {x: 0, y: 0},
+    })
+  })
+
   test('nudging the selected element with an arrow key emits a move patch via onChange', () => {
     const onChange = mock((_patch: FormPatch | FormPatch[] | PatchEvent) => {})
     renderWithTheme(

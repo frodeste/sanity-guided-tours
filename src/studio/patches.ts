@@ -65,12 +65,37 @@ function appendPatches(items: unknown[], path: PathStep[]): FormPatch[] {
   return [setIfMissing([], path), insert(items, 'after', [...path, -1])]
 }
 
+/**
+ * Inserts a newly placed element. `device` mirrors `moveElementPatch`'s
+ * parameter but — since this is a single insert, not a move against an
+ * existing document value — there's no existing document state to patch
+ * around: the override has to ride *in* the inserted element itself. In
+ * mobile mode, `element.x`/`element.y` were measured against the mobile
+ * screenshot (`Canvas.tsx`'s `pointToPercent` against whichever screenshot
+ * `device` is currently showing), so they're wrong as *desktop* coordinates
+ * on their own — desktop and mobile screenshots routinely have very
+ * different aspect ratios. Composing `mobile: {x, y}` from those same
+ * values into the element before insert (any existing `mobile` members —
+ * none from a fresh `elementDefaults()` call, but this stays correct for a
+ * caller that already set e.g. `mobile.width` — are preserved) fixes that:
+ * the desktop `x`/`y` become a reasonable least-surprise default, and the
+ * mobile override is the one that actually governs the mobile view
+ * (`resolvedPosition`'s `mobile.x ?? x`). Desktop mode is unchanged from
+ * before this parameter existed.
+ */
 export function insertElementPatch(
   chapterKey: string,
   stepKey: string,
   element: {_type: string; _key: string; x: number; y: number} & Record<string, unknown>,
+  device: 'desktop' | 'mobile',
 ): FormPatch[] {
-  return appendPatches([element], elementsPath(chapterKey, stepKey))
+  if (device === 'desktop') {
+    return appendPatches([element], elementsPath(chapterKey, stepKey))
+  }
+
+  const existingMobile = isRecord(element.mobile) ? element.mobile : {}
+  const composed = {...element, mobile: {...existingMobile, x: element.x, y: element.y}}
+  return appendPatches([composed], elementsPath(chapterKey, stepKey))
 }
 
 export function moveElementPatch(

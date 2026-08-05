@@ -305,7 +305,7 @@ export function CanvasInput(props: CanvasInputProps): ReactNode {
   const elementCallbacks: ElementMutationCallbacks = {
     onInsertElement(element) {
       if (selection.chapterKey === null || selection.stepKey === null) return
-      emit(insertElementPatch(selection.chapterKey, selection.stepKey, element))
+      emit(insertElementPatch(selection.chapterKey, selection.stepKey, element, device))
       selectElement(element._key)
     },
     onMoveElement(elementKey, pos) {

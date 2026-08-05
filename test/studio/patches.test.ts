@@ -44,13 +44,42 @@ function collectKeys(value: unknown, acc: string[] = []): string[] {
 }
 
 describe('insertElementPatch', () => {
-  test('appends the element into a possibly-missing/empty elements array', () => {
+  test('desktop appends the element into a possibly-missing/empty elements array, unchanged', () => {
     const element = {_type: 'hotspot', _key: 'el1', x: 10, y: 20}
-    const patches = insertElementPatch('ch1', 'st1', element)
+    const patches = insertElementPatch('ch1', 'st1', element, 'desktop')
 
     expect(patches).toEqual([
       setIfMissing([], [{_key: 'ch1'}, 'steps', {_key: 'st1'}, 'elements']),
       insert([element], 'after', [{_key: 'ch1'}, 'steps', {_key: 'st1'}, 'elements', -1]),
+    ])
+  })
+
+  test('mobile composes a mobile {x, y} override from the same coordinates into the inserted element', () => {
+    const element = {_type: 'hotspot', _key: 'el1', x: 10, y: 20}
+    const patches = insertElementPatch('ch1', 'st1', element, 'mobile')
+
+    const composed = {_type: 'hotspot', _key: 'el1', x: 10, y: 20, mobile: {x: 10, y: 20}}
+    expect(patches).toEqual([
+      setIfMissing([], [{_key: 'ch1'}, 'steps', {_key: 'st1'}, 'elements']),
+      insert([composed], 'after', [{_key: 'ch1'}, 'steps', {_key: 'st1'}, 'elements', -1]),
+    ])
+  })
+
+  test('mobile preserves other existing mobile members (e.g. width) alongside the composed x/y', () => {
+    const element = {_type: 'tooltip', _key: 'el1', x: 10, y: 20, width: 300, mobile: {width: 250}}
+    const patches = insertElementPatch('ch1', 'st1', element, 'mobile')
+
+    const composed = {
+      _type: 'tooltip',
+      _key: 'el1',
+      x: 10,
+      y: 20,
+      width: 300,
+      mobile: {width: 250, x: 10, y: 20},
+    }
+    expect(patches).toEqual([
+      setIfMissing([], [{_key: 'ch1'}, 'steps', {_key: 'st1'}, 'elements']),
+      insert([composed], 'after', [{_key: 'ch1'}, 'steps', {_key: 'st1'}, 'elements', -1]),
     ])
   })
 })
