@@ -9,15 +9,18 @@ covers what we're building and why.
 [Bun](https://bun.sh) is the package manager and test runner.
 
 ```bash
-bun install        # workspace root — installs plugin + example app
-bun test           # unit and component tests
-bun run build      # build the plugin package
-bun run dev        # example app with embedded Studio at /studio
+bun install                  # workspace root — installs plugin + example app
+bun test                     # unit and component tests
+bun run build                # build the plugin package
+cd examples/web && bun run dev   # example app with embedded Studio at /studio
 ```
 
-The example app in `examples/web` needs a Sanity dataset — copy
-`examples/web/.env.example`, point it at your own project, and run
-`bun run seed` to populate a sample tour.
+There is no root-level `dev` script — the example app's `dev` script lives in
+`examples/web/package.json` and needs the plugin already built (see
+[`examples/web/README.md`](examples/web/README.md) for the full local setup).
+It needs a Sanity dataset to show real content — copy
+`examples/web/.env.example` to `.env.local`, point it at your own project, and
+run `bun run seed` (from the repository root) to populate a sample tour.
 
 ## Branches and pull requests
 
