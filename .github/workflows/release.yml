@@ -30,6 +30,12 @@ permissions:
   pull-requests: write
   id-token: write
 
+# One release at a time: a duplicate dispatch queues behind the first
+# instead of racing it to the npm publish (never cancel a publish mid-flight).
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
   release:
     name: semantic-release
