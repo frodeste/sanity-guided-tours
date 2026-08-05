@@ -10,6 +10,19 @@
 // files that are supposed to stay in sync. Values are lifted verbatim from
 // each field's `initialValue` in `src/schema/*`.
 
+/**
+ * Matches a plausible Google Font family name (letters, digits, spaces —
+ * excludes quotes, parens and other characters that would matter if
+ * interpolated into a URL or CSS value). Shared by the theme schema's
+ * `googleFont` validation (src/schema/theme.ts) AND the viewer's font loader
+ * (src/react/fontLoader.ts, Task 3), which re-validates against this same
+ * constant before using the value in a stylesheet URL or custom property —
+ * Studio validation doesn't bind documents written directly via the Content
+ * API, so the viewer can't trust a `googleFont` value has actually been
+ * checked.
+ */
+export const GOOGLE_FONT_NAME_PATTERN = /^[A-Za-z0-9 ]+$/
+
 /** `guidedTourTheme`'s color/size fields (src/schema/theme.ts). `fontFamily`/`logo` have no `initialValue`, so they aren't here. */
 export const THEME_DEFAULTS = {
   accent: '#2276fc',

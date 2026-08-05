@@ -1,6 +1,8 @@
 import {describe, expect, test} from 'bun:test'
 
+import {GOOGLE_FONT_NAME_PATTERN} from '../../src/queries/defaults'
 import chapter from '../../src/schema/chapter'
+import {CSS_COLOR_VALUE_PATTERN} from '../../src/schema/cssValue'
 import embed from '../../src/schema/embed'
 import {guidedTourDocument} from '../../src/schema/guidedTour'
 import {schemaTypes} from '../../src/schema/index'
@@ -15,6 +17,7 @@ import {customValidator, findCall, methodNames, runValidation} from './support/r
 interface FieldLike {
   name: string
   type: string
+  description?: string
   validation?: unknown
   initialValue?: unknown
   fields?: unknown
@@ -25,6 +28,8 @@ interface FieldLike {
     hotspot?: boolean
     source?: string
     maxLength?: number
+    collapsible?: boolean
+    collapsed?: boolean
   }
 }
 
@@ -284,13 +289,16 @@ describe('guidedTourTheme', () => {
       expect.arrayContaining([
         'name',
         'isDefault',
+        'brand',
         'accent',
         'surface',
         'text',
         'overlay',
+        'dark',
         'radius',
         'hotspotSize',
         'fontFamily',
+        'googleFont',
         'logo',
       ]),
     )
@@ -308,7 +316,13 @@ describe('guidedTourTheme', () => {
     expect(isDefault.initialValue).toBe(false)
   })
 
-  test('colors are hex strings with the expected initial values', () => {
+  test('brand is an optional string', () => {
+    const brand = fieldByName(fields(theme), 'brand')
+    expect(brand.type).toBe('string')
+    expect(isRequired(brand)).toBe(false)
+  })
+
+  test('colors accept hex or CSS variables, with the expected initial values', () => {
     const expected: Record<string, string> = {
       accent: '#2276fc',
       surface: '#ffffff',
@@ -320,7 +334,26 @@ describe('guidedTourTheme', () => {
       expect(field.type).toBe('string')
       expect(field.initialValue).toBe(initial)
       const spy = runValidation(field.validation)
-      expect(findCall(spy, 'regex')?.args[0]).toEqual(/^#[0-9a-f]{6}$/i)
+      expect(findCall(spy, 'regex')?.args[0]).toEqual(CSS_COLOR_VALUE_PATTERN)
+      expect(findCall(spy, 'error')?.args[0]).toMatch(/hex color/i)
+    }
+  })
+
+  test('dark is an optional, collapsible object of independently optional color overrides', () => {
+    const dark = fieldByName(fields(theme), 'dark')
+    expect(dark.type).toBe('object')
+    expect(isRequired(dark)).toBe(false)
+    expect(dark.options?.collapsible).toBe(true)
+    expect(dark.options?.collapsed).toBe(true)
+
+    const darkFields = fields(dark)
+    for (const name of ['accent', 'surface', 'text', 'overlay']) {
+      const field = fieldByName(darkFields, name)
+      expect(field.type).toBe('string')
+      expect(field.initialValue).toBeUndefined()
+      expect(isRequired(field)).toBe(false)
+      const spy = runValidation(field.validation)
+      expect(findCall(spy, 'regex')?.args[0]).toEqual(CSS_COLOR_VALUE_PATTERN)
     }
   })
 
@@ -342,10 +375,20 @@ describe('guidedTourTheme', () => {
     expect(findCall(spy, 'max')?.args).toEqual([64])
   })
 
-  test('fontFamily is an optional string', () => {
+  test('fontFamily is an optional string documenting precedence over googleFont', () => {
     const fontFamily = fieldByName(fields(theme), 'fontFamily')
     expect(fontFamily.type).toBe('string')
     expect(isRequired(fontFamily)).toBe(false)
+    expect(fontFamily.description).toMatch(/precedence/i)
+  })
+
+  test('googleFont is an optional string limited to 40 chars matching the shared name pattern', () => {
+    const googleFont = fieldByName(fields(theme), 'googleFont')
+    expect(googleFont.type).toBe('string')
+    expect(isRequired(googleFont)).toBe(false)
+    const spy = runValidation(googleFont.validation)
+    expect(findCall(spy, 'max')?.args).toEqual([40])
+    expect(findCall(spy, 'regex')?.args[0]).toEqual(GOOGLE_FONT_NAME_PATTERN)
   })
 
   test('logo is an optional image', () => {
@@ -354,8 +397,42 @@ describe('guidedTourTheme', () => {
     expect(isRequired(logo)).toBe(false)
   })
 
+  test('back-compat: none of the new fields are required', () => {
+    for (const name of ['brand', 'dark', 'googleFont']) {
+      expect(isRequired(fieldByName(fields(theme), name))).toBe(false)
+    }
+  })
+
+  test('orders by brand, then name', () => {
+    expect(theme.orderings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'brandAsc',
+          by: [
+            {field: 'brand', direction: 'asc'},
+            {field: 'name', direction: 'asc'},
+          ],
+        }),
+      ]),
+    )
+  })
+
   test('prepare is defensive against undefined selections', () => {
     expect(() => theme.preview?.prepare?.({})).not.toThrow()
+  })
+
+  test('prepare surfaces default status and brand in the subtitle', () => {
+    const prepare = theme.preview?.prepare
+    expect(prepare?.({name: 'Acme theme', isDefault: true, brand: 'Acme'})).toEqual(
+      expect.objectContaining({title: 'Acme theme', subtitle: 'Default · Acme'}),
+    )
+    expect(prepare?.({name: 'Acme theme', brand: 'Acme'})).toEqual(
+      expect.objectContaining({subtitle: 'Acme'}),
+    )
+    expect(prepare?.({name: 'Acme theme', isDefault: true})).toEqual(
+      expect.objectContaining({subtitle: 'Default'}),
+    )
+    expect(prepare?.({name: 'Acme theme'})).toEqual(expect.objectContaining({subtitle: undefined}))
   })
 })
 

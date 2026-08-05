@@ -1,26 +1,47 @@
 import type {PreviewConfig} from 'sanity'
 import {defineField, defineType} from 'sanity'
 
-const HEX_COLOR = /^#[0-9a-f]{6}$/i
+import {GOOGLE_FONT_NAME_PATTERN, THEME_DEFAULTS} from '../queries/defaults'
+import {cssColorValue} from './cssValue'
+
+const GOOGLE_FONT_NAME_ERROR = 'letters, digits and spaces only, up to 40 characters'
 
 function colorField(name: string, title: string, initialValue: string) {
   return defineField({
     name,
     title,
     type: 'string',
-    description: `Hex color, e.g. ${initialValue}.`,
+    description: 'Hex color or a CSS variable from your site, e.g. var(--brand-primary).',
     initialValue,
-    validation: (rule) => rule.regex(HEX_COLOR).error('must be a 6-digit hex color, e.g. #2276fc'),
+    validation: (rule) => cssColorValue(rule),
   })
 }
 
+/** Same validator as `colorField`, but without an initial value — used for the optional `dark` overrides. */
+function darkColorField(name: string, title: string) {
+  return defineField({
+    name,
+    title,
+    type: 'string',
+    description: 'Hex color or a CSS variable from your site, e.g. var(--brand-primary).',
+    validation: (rule) => cssColorValue(rule),
+  })
+}
+
+/** Joins the preview subtitle's parts, dropping any that are absent. */
+function subtitleOf(isDefault: unknown, brand: unknown): string | undefined {
+  const parts = [isDefault ? 'Default' : undefined, typeof brand === 'string' ? brand : undefined]
+  const joined = parts.filter((part): part is string => Boolean(part)).join(' · ')
+  return joined || undefined
+}
+
 const preview: PreviewConfig = {
-  select: {name: 'name', isDefault: 'isDefault'},
+  select: {name: 'name', isDefault: 'isDefault', brand: 'brand'},
   prepare(selection) {
     const name = typeof selection.name === 'string' ? selection.name : undefined
     return {
       title: name || 'Theme',
-      subtitle: selection.isDefault ? 'Default' : undefined,
+      subtitle: subtitleOf(selection.isDefault, selection.brand),
     }
   },
 }
@@ -43,16 +64,36 @@ export default defineType({
       description: 'Used when a tour does not reference a theme.',
       initialValue: false,
     }),
-    colorField('accent', 'Accent color', '#2276fc'),
-    colorField('surface', 'Surface color', '#ffffff'),
-    colorField('text', 'Text color', '#1a1a1a'),
-    colorField('overlay', 'Overlay color', '#0f172a'),
+    defineField({
+      name: 'brand',
+      title: 'Brand',
+      type: 'string',
+      description: 'Organizational label for multi-brand setups. Shown in the theme list.',
+    }),
+    colorField('accent', 'Accent color', THEME_DEFAULTS.accent),
+    colorField('surface', 'Surface color', THEME_DEFAULTS.surface),
+    colorField('text', 'Text color', THEME_DEFAULTS.text),
+    colorField('overlay', 'Overlay color', THEME_DEFAULTS.overlay),
+    defineField({
+      name: 'dark',
+      title: 'Dark mode overrides',
+      type: 'object',
+      description:
+        'Optional dark-mode overrides; fields left empty fall back to sensible dark defaults.',
+      options: {collapsible: true, collapsed: true},
+      fields: [
+        darkColorField('accent', 'Accent color'),
+        darkColorField('surface', 'Surface color'),
+        darkColorField('text', 'Text color'),
+        darkColorField('overlay', 'Overlay color'),
+      ],
+    }),
     defineField({
       name: 'radius',
       title: 'Corner radius',
       type: 'number',
       description: 'Corner radius in pixels.',
-      initialValue: 8,
+      initialValue: THEME_DEFAULTS.radius,
       validation: (rule) => rule.min(0).max(32),
     }),
     defineField({
@@ -60,20 +101,40 @@ export default defineType({
       title: 'Hotspot size',
       type: 'number',
       description: 'Hotspot diameter in pixels.',
-      initialValue: 24,
+      initialValue: THEME_DEFAULTS.hotspotSize,
       validation: (rule) => rule.min(12).max(64),
     }),
     defineField({
       name: 'fontFamily',
       title: 'Font family',
       type: 'string',
-      description: 'CSS font-family value.',
+      description:
+        'CSS font-family value. Takes precedence over Google Font below when both are set.',
+    }),
+    defineField({
+      name: 'googleFont',
+      title: 'Google Font',
+      type: 'string',
+      description:
+        "Google Font family name, e.g. Inter or Manrope — loaded by the viewer unless disabled; leave empty to use the site's font stack. Ignored when Font family above is also set.",
+      validation: (rule) =>
+        rule.max(40).regex(GOOGLE_FONT_NAME_PATTERN).error(GOOGLE_FONT_NAME_ERROR),
     }),
     defineField({
       name: 'logo',
       title: 'Logo',
       type: 'image',
     }),
+  ],
+  orderings: [
+    {
+      name: 'brandAsc',
+      title: 'Brand',
+      by: [
+        {field: 'brand', direction: 'asc'},
+        {field: 'name', direction: 'asc'},
+      ],
+    },
   ],
   preview,
 })
