@@ -21,6 +21,7 @@
 // `setIfMissing` guard is omitted.
 
 import {insert, set, setIfMissing, unset} from 'sanity'
+import type {FormPatch} from 'sanity'
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
@@ -60,7 +61,7 @@ function elementPath(chapterKey: string, stepKey: string, elementKey: string): P
 }
 
 /** Two-patch safe-append: guards against `path` being absent or empty. */
-function appendPatches(items: unknown[], path: PathStep[]): unknown[] {
+function appendPatches(items: unknown[], path: PathStep[]): FormPatch[] {
   return [setIfMissing([], path), insert(items, 'after', [...path, -1])]
 }
 
@@ -68,7 +69,7 @@ export function insertElementPatch(
   chapterKey: string,
   stepKey: string,
   element: {_type: string; _key: string; x: number; y: number} & Record<string, unknown>,
-): unknown[] {
+): FormPatch[] {
   return appendPatches([element], elementsPath(chapterKey, stepKey))
 }
 
@@ -78,7 +79,7 @@ export function moveElementPatch(
   elementKey: string,
   pos: {x: number; y: number},
   device: 'desktop' | 'mobile',
-): unknown[] {
+): FormPatch[] {
   const base = elementPath(chapterKey, stepKey, elementKey)
 
   if (device === 'desktop') {
@@ -98,7 +99,7 @@ export function setElementWidthPatch(
   elementKey: string,
   width: number,
   device: 'desktop' | 'mobile',
-): unknown[] {
+): FormPatch[] {
   const base = elementPath(chapterKey, stepKey, elementKey)
 
   if (device === 'desktop') {
@@ -112,7 +113,7 @@ export function removeElementPatch(
   chapterKey: string,
   stepKey: string,
   elementKey: string,
-): unknown[] {
+): FormPatch[] {
   return [unset(elementPath(chapterKey, stepKey, elementKey))]
 }
 
@@ -120,7 +121,7 @@ export function insertStepPatch(
   chapterKey: string,
   step: Record<string, unknown>,
   afterStepKey: string | null,
-): unknown[] {
+): FormPatch[] {
   const path = stepsPath(chapterKey)
 
   if (afterStepKey === null) {
@@ -167,7 +168,7 @@ export function duplicateStepPatch(
   step: Record<string, unknown>,
   newKey: string,
   elementKeyGen: () => string,
-): unknown[] {
+): FormPatch[] {
   const sourceKey = step._key
   if (typeof sourceKey !== 'string') {
     throw new Error('duplicateStepPatch: step is missing a string _key')
@@ -183,7 +184,7 @@ export function duplicateStepPatch(
   return [insert([duplicated], 'after', stepPath(chapterKey, sourceKey))]
 }
 
-export function removeStepPatch(chapterKey: string, stepKey: string): unknown[] {
+export function removeStepPatch(chapterKey: string, stepKey: string): FormPatch[] {
   return [unset(stepPath(chapterKey, stepKey))]
 }
 
@@ -193,7 +194,7 @@ export function moveStepPatch(
   step: Record<string, unknown>,
   toChapterKey: string,
   afterStepKey: string | null,
-): unknown[] {
+): FormPatch[] {
   const removePatch = unset(stepPath(fromChapterKey, stepKey))
   const targetPath = stepsPath(toChapterKey)
 
@@ -207,7 +208,7 @@ export function moveStepPatch(
 export function insertChapterPatch(
   chapter: Record<string, unknown>,
   afterChapterKey: string | null,
-): unknown[] {
+): FormPatch[] {
   if (afterChapterKey === null) {
     return appendPatches([chapter], [])
   }
@@ -220,6 +221,6 @@ export function setStepFieldPatch(
   stepKey: string,
   field: string,
   value: unknown,
-): unknown[] {
+): FormPatch[] {
   return [set(value, [...stepPath(chapterKey, stepKey), field])]
 }

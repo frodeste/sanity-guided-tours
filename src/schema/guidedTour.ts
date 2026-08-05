@@ -1,6 +1,8 @@
 import type {DocumentDefinition, FieldDefinition, PreviewConfig} from 'sanity'
 import {defineField, defineType} from 'sanity'
 
+import {CanvasInput} from '../studio/CanvasInput'
+
 export interface GuidedTourDocumentOptions {
   /** Register the `theme` reference field. */
   theme: boolean
@@ -87,6 +89,7 @@ export function guidedTourDocument(opts: GuidedTourDocumentOptions): DocumentDef
       type: 'array',
       of: [{type: 'guidedTourChapter'}],
       validation: (rule) => rule.required().min(1),
+      components: {input: CanvasInput},
     }),
   )
 
