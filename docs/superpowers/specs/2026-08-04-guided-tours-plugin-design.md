@@ -449,7 +449,9 @@ properties.
     app/studio/[[...tool]]/  embedded Studio, plugin loaded from the workspace
     app/tours/[slug]/        the viewer
     app/api/lead/            onLeadSubmit target; logs, stores nothing
-  seed/                      sample tour as NDJSON + `bun run seed`
+  seed/                      sample tours as a seed script + bundled images
+                             (amended 2026-08-05: NDJSON can't carry image
+                             assets; `bun run seed` uploads and creates instead)
   test/
   .github/workflows/
 ```
@@ -482,7 +484,9 @@ through.
 Prerequisites, to be established as the first implementation task: a Sanity
 project and dataset for the demo, with public read access and CORS entries for
 the Vercel preview and production domains plus `localhost`. Seed content ships
-as NDJSON with a `bun run seed` script, so contributors can populate their own
+as a dependency-free `bun run seed` script with bundled images (amended
+2026-08-05 from NDJSON, which cannot carry image assets), so contributors can
+populate their own
 dataset without access to the project used by the deployed demo.
 
 ## 10. Testing
