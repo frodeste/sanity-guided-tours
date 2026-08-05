@@ -95,16 +95,22 @@ describe('useEditorState', () => {
     expect(result.current.selection).toEqual({chapterKey: 'c1', stepKey: 's2', elementKey: null})
   })
 
-  // The heal-away race (PR 97 review): `CanvasInput.tsx` calls
-  // `selectElement(newKey)` in the same tick it emits the patch that
+  // The heal-away race (PR 97 review, then a re-review): `CanvasInput.tsx`
+  // calls `selectElement(newKey)` in the same tick it emits the patch that
   // inserts that element — a local `setState`. `chapters` (from
   // `props.value`) doesn't catch up synchronously; it only reflects the
   // insert once Sanity's document store round-trips the patch back down.
-  // An unconditional heal can't tell "not visible yet" apart from
-  // "deleted" and clears the fresh selection before `chapters` ever
-  // catches up, so the "placing an element also selects it" behavior
-  // (design spec §7.2) never actually holds. These three reproduce that
-  // race directly against the hook.
+  //
+  // The first fix gated the heal on "did chapters' overall content change
+  // at all" — better than unconditional, but still wrong: a *second*,
+  // unrelated content change (or a second pending insert's own patch
+  // landing) still made the still-missing key look confirmed-gone, and
+  // once `elementKey` was cleared to `null` there was nothing left to
+  // heal back. The actual fix (this file) only heals a key that was
+  // PRESENT in some snapshot `chapters` previously held and is absent
+  // from the current one — never-yet-seen keys survive any number of
+  // unrelated snapshot changes, however many, until the snapshot that
+  // introduces them finally arrives.
   describe('heal-away race: a selection set ahead of a stale `chapters` snapshot', () => {
     test('survives a re-render whose chapters snapshot is unchanged', () => {
       const chapters = [chapter('c1', [step('s1', [{_key: 'e1'}])])]
@@ -124,7 +130,12 @@ describe('useEditorState', () => {
       expect(result.current.selection).toEqual({chapterKey: 'c1', stepKey: 's1', elementKey: 'e2'})
     })
 
-    test('heals once a changed snapshot still lacks the selected key', () => {
+    // Encoded the OLD (first-fix) "any content change + still missing =
+    // heal" semantics before the re-review — that's exactly the bug: e2
+    // was never confirmed present anywhere, so an unrelated change (e3
+    // showing up) elsewhere must NOT read as "e2 was deleted". Updated to
+    // assert the correct survive behavior.
+    test('an unrelated concurrent edit landing before the pending insert does not heal it away', () => {
       const chapters = [chapter('c1', [step('s1', [{_key: 'e1'}])])]
       const {result, rerender} = renderHook(({chapters}) => useEditorState(chapters), {
         initialProps: {chapters},
@@ -133,11 +144,12 @@ describe('useEditorState', () => {
       act(() => result.current.selectElement('e2'))
       expect(result.current.selection.elementKey).toBe('e2')
 
-      // The snapshot changes (a *different* element, e3, shows up) but e2
-      // still isn't in it — now the absence is a confirmed one.
+      // The snapshot changes — a wholly unrelated element, e3, shows up —
+      // but e2 was never in a previous snapshot to begin with, so its
+      // continued absence here isn't a confirmed deletion.
       rerender({chapters: [chapter('c1', [step('s1', [{_key: 'e1'}, {_key: 'e3'}])])]})
 
-      expect(result.current.selection).toEqual({chapterKey: 'c1', stepKey: 's1', elementKey: null})
+      expect(result.current.selection).toEqual({chapterKey: 'c1', stepKey: 's1', elementKey: 'e2'})
     })
 
     test('insert flow: selection survives until a snapshot containing the new key arrives', () => {
@@ -157,6 +169,35 @@ describe('useEditorState', () => {
       rerender({chapters: [chapter('c1', [step('s1', [{_key: 'e1'}, {_key: 'e2'}])])]})
 
       expect(result.current.selection).toEqual({chapterKey: 'c1', stepKey: 's1', elementKey: 'e2'})
+    })
+
+    // The regression the re-review caught: selecting e2 then e3 while
+    // BOTH inserts are still in flight. When e2's patch lands first, the
+    // snapshot changes (e2 now present) but e3 — the actual current
+    // selection — still isn't in it. The old "any change + still missing"
+    // heal read that as e3 being deleted and cleared it, permanently
+    // (nothing ever heals a selection back from `null`). e3 must survive
+    // e2's patch landing, and then stay selected once its own patch lands
+    // too.
+    test('a second selection made before the first pending insert lands survives that insert landing', () => {
+      const chapters = [chapter('c1', [step('s1', [{_key: 'e1'}])])]
+      const {result, rerender} = renderHook(({chapters}) => useEditorState(chapters), {
+        initialProps: {chapters},
+      })
+
+      act(() => result.current.selectElement('e2'))
+      act(() => result.current.selectElement('e3'))
+      expect(result.current.selection.elementKey).toBe('e3')
+
+      // e2's insert round-trips first — e3's is still in flight.
+      rerender({chapters: [chapter('c1', [step('s1', [{_key: 'e1'}, {_key: 'e2'}])])]})
+      expect(result.current.selection).toEqual({chapterKey: 'c1', stepKey: 's1', elementKey: 'e3'})
+
+      // e3's insert round-trips too.
+      rerender({
+        chapters: [chapter('c1', [step('s1', [{_key: 'e1'}, {_key: 'e2'}, {_key: 'e3'}])])],
+      })
+      expect(result.current.selection).toEqual({chapterKey: 'c1', stepKey: 's1', elementKey: 'e3'})
     })
   })
 })
