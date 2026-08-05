@@ -1,5 +1,5 @@
 import {notFound} from 'next/navigation'
-import {guidedTourBySlugQuery, guidedTourSlugsQuery, type GuidedTourDoc} from 'sanity-plugin-guided-tours/queries'
+import {guidedTourBySlugQuery, type GuidedTourDoc} from 'sanity-plugin-guided-tours/queries'
 import 'sanity-plugin-guided-tours/react/styles.css'
 
 import {getSanityClient, SanityConfigError} from '@/lib/sanity'
@@ -13,7 +13,14 @@ import TourClient from './TourClient'
 // client boundary, so `<GuidedTour>` itself can only ever be rendered from
 // a client component here.
 
-export const revalidate = 60
+// This route is inherently DYNAMIC: personalization tokens come from the
+// URL's search params, and reading `searchParams` is a dynamic API. The
+// original M1/M2 setup combined `generateStaticParams` + `revalidate` (ISR)
+// with `await searchParams`, which throws DYNAMIC_SERVER_USAGE on every
+// on-demand render in production (observed live 2026-08-05). Declaring the
+// route dynamic matches what the page actually does; tour data itself is
+// still CDN-cached by Sanity's API CDN.
+export const dynamic = 'force-dynamic'
 
 export default async function TourPage({
   params,
@@ -65,18 +72,3 @@ function ConfigErrorBanner({slug, message}: {slug: string; message: string}) {
   )
 }
 
-// Wrapped in try/catch: this repo's demo Sanity project access isn't
-// provisioned for every environment that builds this app, and `next build`
-// calls `generateStaticParams` eagerly. A missing project ID or an
-// unreachable dataset must fall back to an empty param list — every
-// `/tours/[slug]` request then renders dynamically instead of failing the
-// build — rather than crashing the build.
-export async function generateStaticParams() {
-  try {
-    const client = getSanityClient()
-    const slugs = await client.fetch<string[]>(guidedTourSlugsQuery)
-    return slugs.map((slug) => ({slug}))
-  } catch {
-    return []
-  }
-}
