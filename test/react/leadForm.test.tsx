@@ -994,6 +994,48 @@ describe('LeadForm: navigation guard while a submit is pending', () => {
   })
 })
 
+// CI review fix (PR 102): same class of bug as the outro's own controlled-
+// reconciliation fix (test/react/outro.test.tsx) — the render-time
+// controlled-sync block only cleared `showOutro` on an external `step`
+// change, not `showAtEndLead`, so a controlled consumer changing `step`
+// while the atEnd interstitial was showing left it stuck rendered over
+// whatever step the UI had actually moved on to.
+describe('LeadForm: controlled step reconciliation (atEnd interstitial)', () => {
+  test('an external step prop change dismisses the atEnd interstitial, even though onStepChange was never called to leave it', () => {
+    const fixtureTour = tour({leadCapture: leadCapture({trigger: 'atEnd'})})
+    const {container, rerender} = render(
+      <GuidedTour tour={fixtureTour} step={2} onStepChange={() => {}} />,
+    )
+    expect(query(container, '.gt-counter').textContent).toBe('3 / 3')
+
+    clickNext(container) // -> atEnd interstitial; controlled `step` (2) is never touched by this
+    expect(container.querySelector('.gt-lead')).not.toBeNull()
+
+    // The consumer drives `step` back to 0 itself — entirely independent
+    // of the component's own Prev/goTo path (which never fires here).
+    rerender(<GuidedTour tour={fixtureTour} step={0} onStepChange={() => {}} />)
+
+    expect(container.querySelector('.gt-lead')).toBeNull()
+    expect(query(container, '.gt-counter').textContent).toBe('1 / 3')
+  })
+
+  test('the reconciliation only fires on an actual step change, not every render', () => {
+    const fixtureTour = tour({leadCapture: leadCapture({trigger: 'atEnd'})})
+    const {container, rerender} = render(
+      <GuidedTour tour={fixtureTour} step={2} onStepChange={() => {}} />,
+    )
+
+    clickNext(container) // -> atEnd interstitial
+    expect(container.querySelector('.gt-lead')).not.toBeNull()
+
+    // Re-rendering with the SAME `step` value must not disturb the
+    // interstitial that's showing on top of it.
+    rerender(<GuidedTour tour={fixtureTour} step={2} onStepChange={() => {}} />)
+
+    expect(container.querySelector('.gt-lead')).not.toBeNull()
+  })
+})
+
 describe('LeadForm: consent, submit label, personalization', () => {
   test('renders consent text verbatim (personalized, plain text) below the fields', () => {
     const {container} = render(

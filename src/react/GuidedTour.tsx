@@ -163,8 +163,14 @@ export function GuidedTour({
   // `currentIndex` (entering a specific step index) — `atEnd` has no step
   // index of its own to derive from: it fires from the last step's Next,
   // which doesn't move `currentIndex` (same reason `showOutro` isn't
-  // derived either). Reset by `goTo`, mirroring `showOutro`, so Prev/Home/
-  // End/dots/chapter-jumps all leave it the same way they leave the outro.
+  // derived either). Reset in the same two places `showOutro` is, for the
+  // same two reasons: by `goTo`, so Prev/Home/End/dots/chapter-jumps all
+  // leave it the way they leave the outro; and by the controlled-sync
+  // block just below, so an externally-driven `step` change dismisses it
+  // too (CI review fix, PR 102 — same class of bug the outro one already
+  // had a fix for: without this, a controlled consumer changing `step`
+  // while this interstitial is showing left it stuck rendered over
+  // whatever step the UI had actually moved on to).
   const [showAtEndLead, setShowAtEndLead] = useState(false)
 
   // CI review fix: whether a lead-capture submit is currently awaiting
@@ -192,16 +198,26 @@ export function GuidedTour({
   // "restart", browser back/forward — see `GuidedTourProps.step`'s doc
   // comment): `internalStep` already holds the last controlled value this
   // component itself observed, so a difference here can only come from the
-  // `step` prop having moved out from under it. The outro isn't a step
-  // index the controlled contract can express, so any such change clears
-  // `showOutro` unconditionally. (A "restart" that re-sets `step` to the
-  // very index it already held — the tour was showing the outro past that
-  // same last step — produces no observable prop change here and so isn't
-  // caught by this branch; nothing short of an explicit remount can
-  // distinguish that from "nothing happened," and it's not the reported
-  // bug — the reported case is moving to a genuinely different index.) The
-  // component's own transitions (Prev off the outro) go through `goTo`,
-  // which resets `showOutro` itself and, while controlled, never changes
+  // `step` prop having moved out from under it. Neither the outro nor the
+  // `atEnd` lead interstitial is a step index the controlled contract can
+  // express, so any such change clears `showOutro` AND `showAtEndLead`
+  // unconditionally (the latter, CI review fix on PR 102, was the same
+  // class of bug the former already had a fix for — see `showAtEndLead`'s
+  // own doc comment above). (A "restart" that re-sets `step` to the very
+  // index it already held — the tour was showing the outro/interstitial
+  // past that same last step — produces no observable prop change here
+  // and so isn't caught by this branch; nothing short of an explicit
+  // remount can distinguish that from "nothing happened," and it's not
+  // the reported bug — the reported case is moving to a genuinely
+  // different index.) `leadPending` is deliberately left untouched here:
+  // it only gates navigation, not rendering, and a pending submit's own
+  // resolution already clears it via `handleLeadDismiss` regardless of
+  // whatever `showAtEndLead` does in the meantime — if a consumer forces
+  // a `step` change out from under a pending submit, the interstitial
+  // disappearing mid-submit is acceptable (dismissal semantics still
+  // resolve normally once the promise settles). The component's own
+  // transitions (Prev off the outro/interstitial) go through `goTo`,
+  // which resets both itself and, while controlled, never changes
   // `internalStep` directly — so they never hit this branch and are
   // unaffected by it.
   if (isControlled) {
@@ -209,6 +225,7 @@ export function GuidedTour({
     if (internalStep !== clampedControlled) {
       setInternalStep(clampedControlled)
       setShowOutro(false)
+      setShowAtEndLead(false)
     }
   }
 
