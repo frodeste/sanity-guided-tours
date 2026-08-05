@@ -23,6 +23,11 @@ export const guidedTourSlugsQuery = /* groq */ `*[_type == "guidedTour" && defin
 // own. See the doc comment on each in ./projections for what it does; the
 // release tag has to live there, at the actual declaration, for
 // api-extractor to recognize it on a re-export.
-export {imageProjection, elementProjection, tourProjection} from './projections'
+export {
+  imageProjection,
+  elementProjection,
+  tourProjection,
+  guidedTourEmbedProjection,
+} from './projections'
 
 export * from './types'
