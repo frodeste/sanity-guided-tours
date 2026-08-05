@@ -39,7 +39,17 @@ export interface GuidedTourProps {
    * neighbors' — receiving `GuidedTourImageProps` for each.
    */
   renderImage?: (props: GuidedTourImageProps) => ReactNode
-  /** Controlled position (global step index). */
+  /**
+   * Controlled position (global step index). The outro screen (M4) is not
+   * itself a step index — there is no value of `step` that means "showing
+   * the outro" — so an externally-driven change to this prop to a
+   * DIFFERENT index (a route change, a "restart" action, browser
+   * back/forward) always dismisses the outro if it's currently showing.
+   * Re-setting `step` to the exact index it already held is not observable
+   * as a change and won't dismiss it on its own. Only the component's own
+   * internal transitions (e.g. Prev from the outro) manage the outro's
+   * visibility themselves otherwise.
+   */
   step?: number
   onStepChange?: (step: number) => void
   className?: string
@@ -112,13 +122,17 @@ export function GuidedTour({
   // `.gt-stage`. Deliberately not part of `flat`/`currentIndex` — the
   // outro isn't a step (no `step_viewed`, no dot, no progress movement:
   // progress freezes at 100% and the dots stay put on the last step,
-  // design doc's "simplest" pick). Always uncontrolled: `GuidedTourProps`
-  // has no `outro`-position prop, so this never needs to sync against an
-  // external value the way `internalStep` does above. Set `true` only by
-  // `handleNext` completing the last step of a tour that has an `outro`;
-  // reset `false` by `goTo` (every other navigation — Prev, Home/End, a
-  // dot, a chapter jump — exits the outro back into the ordinary step
-  // flow).
+  // design doc's "simplest" pick). `GuidedTourProps` has no `outro`-position
+  // prop of its own to control this directly — it's always this component's
+  // own `useState` — but while controlled it's still reconciled against
+  // `step` below (the render-time sync block just after this), because an
+  // externally-driven step change is the one thing besides the component's
+  // own transitions that must be able to end it (see `GuidedTourProps.step`'s
+  // doc comment). Set `true` only by `handleNext` completing the last step
+  // of a tour that has an `outro`; reset `false` by `goTo` (every other
+  // in-component navigation — Prev, Home/End, a dot, a chapter jump — exits
+  // the outro back into the ordinary step flow) and, while controlled, by
+  // the sync block below whenever `step` itself changes externally.
   const [showOutro, setShowOutro] = useState(false)
 
   // Keep `internalStep` mirroring the controlled value for as long as the
@@ -130,10 +144,29 @@ export function GuidedTour({
   // because it's gated on the value actually differing, so it converges in
   // the same render rather than looping, and it avoids the extra tick (and
   // stale-frame flash) a `useEffect` sync would introduce.
+  //
+  // `internalStep !== clampedControlled` is also the signal for a
+  // genuinely *external* step change (a consumer-driven route change,
+  // "restart", browser back/forward — see `GuidedTourProps.step`'s doc
+  // comment): `internalStep` already holds the last controlled value this
+  // component itself observed, so a difference here can only come from the
+  // `step` prop having moved out from under it. The outro isn't a step
+  // index the controlled contract can express, so any such change clears
+  // `showOutro` unconditionally. (A "restart" that re-sets `step` to the
+  // very index it already held — the tour was showing the outro past that
+  // same last step — produces no observable prop change here and so isn't
+  // caught by this branch; nothing short of an explicit remount can
+  // distinguish that from "nothing happened," and it's not the reported
+  // bug — the reported case is moving to a genuinely different index.) The
+  // component's own transitions (Prev off the outro) go through `goTo`,
+  // which resets `showOutro` itself and, while controlled, never changes
+  // `internalStep` directly — so they never hit this branch and are
+  // unaffected by it.
   if (isControlled) {
     const clampedControlled = clampStep(flat, controlledStep)
     if (internalStep !== clampedControlled) {
       setInternalStep(clampedControlled)
+      setShowOutro(false)
     }
   }
 

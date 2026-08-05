@@ -419,3 +419,67 @@ describe('Outro: live region announcement', () => {
     expect(query(container, '.gt-live').textContent).toBe('Tour complete: ')
   })
 })
+
+// Regression: `showOutro` used to be reconciled only by the component's
+// own transitions (`goTo`) — a controlled consumer changing `step`
+// *externally* (a route change, a "restart" action, browser back/forward)
+// left the outro rendered on top of a counter that had already moved on to
+// the new step. Fixed by clearing `showOutro` in the same render-time
+// controlled-sync block that already detects `step` actually changing
+// (`GuidedTour.tsx`, just above `currentIndex`).
+describe('Outro: controlled step reconciliation', () => {
+  test('an external step prop change dismisses the outro, even though onStepChange was never called to leave it', () => {
+    const fixtureTour = tour({outro: outro()})
+    const {container, rerender} = render(
+      <GuidedTour tour={fixtureTour} step={1} onStepChange={() => {}} />,
+    )
+    expect(query(container, '.gt-counter').textContent).toBe('2 / 2')
+
+    clickNext(container) // completes the tour and shows the outro; the controlled `step` (1) is never touched by this
+    expect(container.querySelector('.gt-outro')).not.toBeNull()
+
+    // The consumer drives `step` back to 0 itself — entirely independent
+    // of the component's own Prev/goTo path (which never fires here).
+    rerender(<GuidedTour tour={fixtureTour} step={0} onStepChange={() => {}} />)
+
+    expect(container.querySelector('.gt-outro')).toBeNull()
+    expect(query(container, '.gt-counter').textContent).toBe('1 / 2')
+  })
+
+  test('the reconciliation only fires on an actual step change, not every render', () => {
+    const fixtureTour = tour({outro: outro()})
+    const {container, rerender} = render(
+      <GuidedTour tour={fixtureTour} step={1} onStepChange={() => {}} />,
+    )
+
+    clickNext(container) // -> outro
+    expect(container.querySelector('.gt-outro')).not.toBeNull()
+
+    // Re-rendering with the SAME `step` value (a parent re-render for an
+    // unrelated reason, e.g. its own state changing) must not disturb the
+    // outro that's showing on top of it.
+    rerender(<GuidedTour tour={fixtureTour} step={1} onStepChange={() => {}} />)
+
+    expect(container.querySelector('.gt-outro')).not.toBeNull()
+  })
+
+  test("the component's own Prev off the outro still dismisses it immediately while controlled", () => {
+    const fixtureTour = tour({outro: outro()})
+    const changes: number[] = []
+    const {container} = render(
+      <GuidedTour tour={fixtureTour} step={1} onStepChange={(next) => changes.push(next)} />,
+    )
+
+    clickNext(container) // -> outro (controlled `step` stays 1)
+    expect(container.querySelector('.gt-outro')).not.toBeNull()
+
+    clickPrev(container)
+
+    // `goTo`'s own `setShowOutro(false)` — not the external-change
+    // reconciliation branch — is what clears this: the requested index (1)
+    // equals `step` already, so the render-time sync block would never see
+    // a difference to react to. This proves the two paths are independent.
+    expect(container.querySelector('.gt-outro')).toBeNull()
+    expect(changes).toEqual([1])
+  })
+})
