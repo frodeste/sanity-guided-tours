@@ -560,6 +560,39 @@ describe('LeadForm: field rendering', () => {
     )
     expect(labels).toEqual(['Full name *', 'Email *', 'Phone', 'Notes'])
   })
+
+  // CI review fix: the `*` marker is `aria-hidden` (it's a visual-only
+  // convention), so nothing previously told assistive tech a field was
+  // required before the viewer actually tried to submit and saw a
+  // validation error. `aria-required` fixes that — present up front,
+  // independent of validation state.
+  test('a required field carries aria-required="true"; a non-required one carries "false"', () => {
+    const {container} = render(
+      <GuidedTour
+        tour={tour({
+          leadCapture: leadCapture({
+            fields: [
+              leadField({_key: 'f1', name: 'name', label: 'Name', type: 'text', required: true}),
+              leadField({
+                _key: 'f2',
+                name: 'notes',
+                label: 'Notes',
+                type: 'textarea',
+                required: false,
+              }),
+            ],
+          }),
+        })}
+      />,
+    )
+
+    clickNext(container)
+    clickNext(container)
+    clickNext(container)
+
+    expect(queryInput(container, 'input[name="name"]').getAttribute('aria-required')).toBe('true')
+    expect(query(container, 'textarea[name="notes"]').getAttribute('aria-required')).toBe('false')
+  })
 })
 
 describe('LeadForm: validation', () => {
@@ -771,6 +804,57 @@ describe('LeadForm: submit flow', () => {
     expect(events.filter((event) => event.type === 'lead_submitted')).toHaveLength(0)
   })
 
+  // CI review fix: a non-async `onLeadSubmit` that throws SYNCHRONOUSLY
+  // (as opposed to returning a rejected Promise) used to escape uncaught —
+  // `onLeadSubmit?.(values)` was evaluated eagerly as the argument to
+  // `Promise.resolve(...)`, before that Promise wrapper existed to catch
+  // anything. Fixed by moving the call inside the first `.then()`, so a
+  // synchronous throw there rejects the chain exactly like an async
+  // rejection would, hitting the same `.catch()`.
+  test('a synchronously-throwing onLeadSubmit is caught too — generic error, stays open, pending cleared', async () => {
+    const onLeadSubmit = (): void => {
+      throw new Error('boom')
+    }
+    const {events, handler} = collector()
+    const {container} = render(
+      <GuidedTour
+        tour={tour({
+          leadCapture: leadCapture({
+            fields: [
+              leadField({_key: 'f1', name: 'email', label: 'Email', type: 'email', required: true}),
+            ],
+          }),
+        })}
+        onEvent={handler}
+        onLeadSubmit={onLeadSubmit}
+      />,
+    )
+
+    clickNext(container)
+    clickNext(container)
+    clickNext(container)
+
+    fireEvent.change(queryInput(container, 'input[name="email"]'), {
+      target: {value: 'ada@example.com'},
+    })
+
+    // The throw must not propagate out of the submit handler itself.
+    expect(() => {
+      fireEvent.submit(query(container, '.gt-lead-form'))
+    }).not.toThrow()
+
+    await waitFor(() => {
+      expect(container.querySelector('.gt-lead-submit-error')).not.toBeNull()
+    })
+
+    expect(query(container, '.gt-lead-submit-error').textContent).not.toContain('boom')
+    // Pending is cleared, not stranded at `true` — the submit button is
+    // re-enabled and the interstitial stays open (never dismissed).
+    expect(queryButton(container, '.gt-lead-submit').disabled).toBe(false)
+    expect(container.querySelector('.gt-lead')).not.toBeNull()
+    expect(events.filter((event) => event.type === 'lead_submitted')).toHaveLength(0)
+  })
+
   test('skip dismisses without validating, without calling onLeadSubmit, and without emitting lead_submitted', () => {
     let called = false
     const onLeadSubmit = () => {
@@ -823,6 +907,90 @@ describe('LeadForm: submit flow', () => {
       expect(container.querySelector('.gt-lead')).toBeNull()
     })
     expect(events.filter((event) => event.type === 'lead_submitted')).toHaveLength(1)
+  })
+})
+
+// CI review fix: navigation used to be entirely unaware of an in-flight
+// atEnd/afterStep submit — a viewer could press Prev (or Home/End/a dot/a
+// chapter jump) mid-submit, and the eventual resolution would fire
+// lead_submitted/complete()/the outro transition against a UI that had
+// already moved elsewhere. `GuidedTour.tsx`'s `goTo` (and, defensively,
+// `handleNext`/`handlePrev` directly) now no-op while `leadPending` is
+// true, fed by `LeadForm`'s `onPendingChange`.
+describe('LeadForm: navigation guard while a submit is pending', () => {
+  function renderPendingAtEnd() {
+    let resolveSubmit: (() => void) | undefined
+    const onLeadSubmit = () =>
+      new Promise<void>((resolve) => {
+        resolveSubmit = resolve
+      })
+    const {events, handler} = collector()
+    const rendered = render(
+      <GuidedTour
+        tour={tour({
+          leadCapture: leadCapture({
+            trigger: 'atEnd',
+            fields: [
+              leadField({_key: 'f1', name: 'email', label: 'Email', type: 'email', required: true}),
+            ],
+          }),
+        })}
+        onEvent={handler}
+        onLeadSubmit={onLeadSubmit}
+      />,
+    )
+
+    clickNext(rendered.container)
+    clickNext(rendered.container)
+    clickNext(rendered.container) // -> gated (atEnd)
+
+    fireEvent.change(queryInput(rendered.container, 'input[name="email"]'), {
+      target: {value: 'ada@example.com'},
+    })
+    fireEvent.submit(query(rendered.container, '.gt-lead-form'))
+    expect(queryButton(rendered.container, '.gt-lead-submit').disabled).toBe(true) // now pending
+
+    return {...rendered, events, resolveSubmit: () => resolveSubmit?.()}
+  }
+
+  test('Prev is a no-op while pending — the interstitial stays put, unresolved', () => {
+    const {container} = renderPendingAtEnd()
+
+    clickPrev(container)
+
+    expect(container.querySelector('.gt-lead')).not.toBeNull()
+    expect(query(container, '.gt-counter').textContent).toBe('3 / 3')
+  })
+
+  test('Home/End/dots are no-ops while pending', () => {
+    const {container} = renderPendingAtEnd()
+
+    fireEvent.keyDown(query(container, '.gt-tour'), {key: 'Home'})
+    expect(container.querySelector('.gt-lead')).not.toBeNull()
+
+    const firstDot = container.querySelectorAll<HTMLButtonElement>('.gt-dot')[0]
+    if (!firstDot) throw new Error('expected a first dot')
+    fireEvent.click(firstDot)
+    expect(container.querySelector('.gt-lead')).not.toBeNull()
+    expect(query(container, '.gt-counter').textContent).toBe('3 / 3')
+  })
+
+  test('once the pending submit resolves, the flow completes normally (lead_submitted then tour_completed)', async () => {
+    const {container, events, resolveSubmit} = renderPendingAtEnd()
+
+    clickPrev(container) // no-op, still pending
+    resolveSubmit()
+
+    await waitFor(() => {
+      expect(container.querySelector('.gt-lead')).toBeNull()
+    })
+
+    expect(events.filter((event) => event.type === 'lead_submitted')).toHaveLength(1)
+    expect(events.filter((event) => event.type === 'tour_completed')).toHaveLength(1)
+    // Navigation is un-gated again once it's no longer pending — this Prev
+    // actually moves, unlike the no-op one above while still pending.
+    clickPrev(container)
+    expect(query(container, '.gt-counter').textContent).toBe('2 / 3')
   })
 })
 

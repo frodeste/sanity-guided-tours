@@ -1,6 +1,6 @@
 'use client'
 
-import {useState, type ReactNode, type SubmitEvent} from 'react'
+import {useEffect, useState, type ReactNode, type SubmitEvent} from 'react'
 
 import type {GuidedTourLeadCapture, GuidedTourLeadCaptureField} from '../queries/types'
 import {useGuidedTourContext} from './context'
@@ -21,6 +21,17 @@ export interface LeadFormProps {
    * entirely to `GuidedTour.tsx`, which already tracks it via `showAtEndLead`.
    */
   onDismiss: () => void
+  /**
+   * Fired whenever `pending` (the async submit's in-flight state) changes —
+   * CI review fix: `GuidedTour.tsx` needs to know a submit is in flight so
+   * it can ignore navigation (Prev/Home/End/dots/chapter jumps) until it
+   * settles, otherwise a viewer could navigate away mid-submit and have the
+   * resolution fire `lead_submitted`/`complete()` against a UI that's moved
+   * on. `pending` itself stays local state here (it drives this
+   * component's own disabled-button rendering); this is purely a
+   * notification channel, not a controlled prop.
+   */
+  onPendingChange?: (pending: boolean) => void
 }
 
 /** Simple RFC-lite pattern, per the design spec — not a full RFC 5322 validator. */
@@ -41,7 +52,10 @@ function fieldErrorId(field: GuidedTourLeadCaptureField): string {
  * `tel` → `<input type>`, `textarea` → `<textarea>`), validates on submit
  * (required non-empty; `type: 'email'` fields additionally against a
  * simple email pattern), and shows errors inline via `aria-invalid` +
- * `aria-describedby`. Submit awaits `onLeadSubmit` (disabled while
+ * `aria-describedby`; a required field's control also carries
+ * `aria-required` up front (the visual `*` marker is `aria-hidden`, so
+ * this is what actually conveys requiredness to assistive tech before any
+ * validation has run). Submit awaits `onLeadSubmit` (disabled while
  * pending), emits `lead_submitted` and calls `onDismiss` on success, or
  * shows a generic `leadSubmitError` and stays open on rejection. A Skip
  * button (controller ruling — the design spec is silent, but a form a
@@ -53,7 +67,12 @@ function fieldErrorId(field: GuidedTourLeadCaptureField): string {
  *
  * @public
  */
-export function LeadForm({leadCapture, onLeadSubmit, onDismiss}: LeadFormProps): ReactNode {
+export function LeadForm({
+  leadCapture,
+  onLeadSubmit,
+  onDismiss,
+  onPendingChange,
+}: LeadFormProps): ReactNode {
   const {tokens, labels, trackerRef} = useGuidedTourContext()
   const fields = leadCapture.fields ?? []
 
@@ -63,6 +82,16 @@ export function LeadForm({leadCapture, onLeadSubmit, onDismiss}: LeadFormProps):
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [pending, setPending] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
+
+  // Single source of truth for `pending` is this component's own state
+  // (above) — this effect is purely the notification side-channel to
+  // `GuidedTour.tsx` described on `onPendingChange`'s doc comment, kept as
+  // an effect (rather than calling `onPendingChange` inline at every
+  // `setPending` call site) so there's exactly one place this ever happens,
+  // always in sync with what actually rendered.
+  useEffect(() => {
+    onPendingChange?.(pending)
+  }, [pending, onPendingChange])
 
   function handleChange(name: string, value: string): void {
     setValues((prev) => ({...prev, [name]: value}))
@@ -85,12 +114,30 @@ export function LeadForm({leadCapture, onLeadSubmit, onDismiss}: LeadFormProps):
     return nextErrors
   }
 
-  // `onLeadSubmit` is optional and may return `void` or a `Promise` —
-  // `Promise.resolve(...)` normalizes both into a single async path so
-  // pending/rejection handling doesn't need to branch on which one a
-  // consumer passed. Only a rejection shows `leadSubmitError` and leaves
-  // the form open; resolution (including a consumer-less no-op) always
-  // proceeds to `lead_submitted` + `onDismiss`.
+  // `onLeadSubmit?.(values)` called synchronously, on purpose — deferring
+  // it into a `.then()` (the chain's own microtask) would delay a
+  // synchronous consumer handler's invocation by a tick from what firing
+  // the form's `submit` event visibly did, for no benefit. The `try`/
+  // `catch` is what actually matters (CI review fix): the previous shape,
+  // `Promise.resolve(onLeadSubmit?.(values))`, evaluated the call EAGERLY
+  // as part of building that expression's argument — before
+  // `Promise.resolve` existed to catch anything — so a non-async consumer
+  // handler that threw synchronously (as opposed to returning a rejected
+  // `Promise`) threw straight out of this function, uncaught, skipping
+  // `.catch()` below entirely and stranding `pending` at `true` forever.
+  // Wrapping the call itself in `try`/`catch` and funneling a synchronous
+  // throw into `Promise.reject(...)` puts both failure shapes — a
+  // rejected `Promise` and a synchronous throw — on the exact same path
+  // into the `.catch()` below, while a normal (non-throwing) return keeps
+  // exactly its previous behavior and timing.
+  function invokeLeadSubmit(): Promise<void> {
+    try {
+      return Promise.resolve(onLeadSubmit?.(values))
+    } catch (error) {
+      return Promise.reject(error)
+    }
+  }
+
   function handleSubmit(event: SubmitEvent<HTMLFormElement>): void {
     event.preventDefault()
     if (pending) return
@@ -101,7 +148,7 @@ export function LeadForm({leadCapture, onLeadSubmit, onDismiss}: LeadFormProps):
 
     setSubmitError(null)
     setPending(true)
-    Promise.resolve(onLeadSubmit?.(values))
+    invokeLeadSubmit()
       .then(() => {
         trackerRef.current?.leadSubmitted()
         setPending(false)
@@ -151,6 +198,7 @@ export function LeadForm({leadCapture, onLeadSubmit, onDismiss}: LeadFormProps):
                   onChange={(event) => handleChange(field.name, event.target.value)}
                   aria-invalid={hasError}
                   aria-describedby={hasError ? fieldErrorId(field) : undefined}
+                  aria-required={field.required}
                 />
               ) : (
                 <input
@@ -162,6 +210,7 @@ export function LeadForm({leadCapture, onLeadSubmit, onDismiss}: LeadFormProps):
                   onChange={(event) => handleChange(field.name, event.target.value)}
                   aria-invalid={hasError}
                   aria-describedby={hasError ? fieldErrorId(field) : undefined}
+                  aria-required={field.required}
                 />
               )}
               {hasError && (

@@ -167,6 +167,16 @@ export function GuidedTour({
   // End/dots/chapter-jumps all leave it the same way they leave the outro.
   const [showAtEndLead, setShowAtEndLead] = useState(false)
 
+  // CI review fix: whether a lead-capture submit is currently awaiting
+  // `onLeadSubmit` (either trigger — `LeadForm.tsx` reports this via its
+  // `onPendingChange` prop, its own `pending` state remaining the single
+  // source of truth). `goTo`/`handleNext`/`handlePrev` all ignore
+  // navigation while this is `true`: without it, a viewer could navigate
+  // away mid-submit (Prev, Home/End, a dot, a chapter jump) and have the
+  // eventual resolution fire `lead_submitted`/`complete()`/advance to the
+  // outro against a UI that had already moved on to something else.
+  const [leadPending, setLeadPending] = useState(false)
+
   // Keep `internalStep` mirroring the controlled value for as long as the
   // component is controlled, so that a later transition to uncontrolled
   // (the `step` prop dropped) picks up from the last controlled position
@@ -376,6 +386,18 @@ export function GuidedTour({
   // (which happens when `isControlled`/`onStepChange` change).
   const goTo = useCallback(
     (index: number): void => {
+      // CI review fix: ignore ALL explicit navigation (Prev, Home/End, a
+      // dot, a chapter jump — every one of them routes through `goTo`)
+      // while a lead-capture submit is in flight (`leadPending`). Without
+      // this, a viewer could navigate away mid-submit and have the
+      // eventual resolution (`lead_submitted`/`complete()`/the outro
+      // transition, all in `LeadForm.tsx`'s `.then()` or
+      // `handleLeadDismiss` below) fire against a UI that's already moved
+      // on to a different step. The interstitial's own Skip/Submit buttons
+      // are separately disabled while pending (`LeadForm.tsx`), so the
+      // only paths left to guard are the ones that go through here.
+      if (leadPending) return
+
       const clamped = clampStep(flat, index)
       // Any explicit navigation to a step index exits the outro — Prev
       // (below, `prevStep` on the last index resolves to that same last
@@ -394,7 +416,7 @@ export function GuidedTour({
       }
       setInternalStep(clamped)
     },
-    [flat, isControlled, onStepChange],
+    [flat, isControlled, leadPending, onStepChange],
   )
 
   // Next on the last step of a tour with an `outro` completes AND
@@ -416,6 +438,13 @@ export function GuidedTour({
   // and (once shown) the `atEnd` interstitial make Next a no-op, the same
   // "don't re-trigger the transition" reasoning as `showOutro` itself.
   const handleNext = useCallback((): void => {
+    // `leadPending` implies `showLeadForm` (LeadForm can only be pending
+    // while mounted), so this is subsumed by the `showLeadForm` check right
+    // after it in practice — kept as its own explicit condition anyway
+    // (CI review fix) so this reads as a direct answer to "is Next gated
+    // while a submit is in flight", not something a reader has to infer
+    // from a different component's invariant.
+    if (leadPending) return
     if (showOutro || showLeadForm) return
     if (currentIndex === flat.length - 1) {
       if (leadCapture?.trigger === 'atEnd' && !leadDismissed) {
@@ -429,7 +458,17 @@ export function GuidedTour({
       return
     }
     goTo(nextStep(flat, currentIndex))
-  }, [currentIndex, flat, goTo, leadCapture, leadDismissed, showLeadForm, showOutro, tour.outro])
+  }, [
+    currentIndex,
+    flat,
+    goTo,
+    leadCapture,
+    leadDismissed,
+    leadPending,
+    showLeadForm,
+    showOutro,
+    tour.outro,
+  ])
 
   // Closes whichever lead-capture interstitial is currently showing —
   // called by `LeadForm`'s Skip button and, after a successful submit, by
@@ -442,6 +481,19 @@ export function GuidedTour({
   // `handleNext`'s own last-step branch above, minus the interstitial
   // check it would otherwise re-trigger.
   function handleLeadDismiss(): void {
+    // Explicit, not left to `LeadForm`'s `onPendingChange` effect: a
+    // successful submit calls `setPending(false)` and `onDismiss()`
+    // (-> here) together, synchronously, in the same `.then()` — which
+    // unmounts `<LeadForm>` in that very same commit (`leadDismissed`
+    // becoming `true` makes `showLeadForm` false). React never runs a new
+    // effect body for a component being removed in the SAME commit that
+    // effect's dependency changed in — only prior cleanups — so
+    // `onPendingChange(false)` would silently never fire and
+    // `leadPending` would be stuck `true` forever, permanently blocking
+    // navigation. Dismissal always means "no longer pending" by
+    // definition (Skip never was; a resolved submit just finished), so
+    // this clears it directly rather than depending on that effect.
+    setLeadPending(false)
     setLeadDismissed(true)
     if (showAtEndLead) {
       setShowAtEndLead(false)
@@ -486,6 +538,10 @@ export function GuidedTour({
   // that same index. `goTo` resolves both cases identically: clamp, exit
   // the outro, commit.
   function handlePrev(): void {
+    // Also subsumed by `goTo`'s own `leadPending` guard — kept explicit
+    // here too (CI review fix) purely for readability at the call site;
+    // `goTo` is still the single enforcement point.
+    if (leadPending) return
     goTo(showOutro || showAtEndLead ? currentIndex : prevStep(flat, currentIndex))
   }
 
@@ -764,6 +820,7 @@ export function GuidedTour({
               leadCapture={leadCapture}
               onLeadSubmit={onLeadSubmit}
               onDismiss={handleLeadDismiss}
+              onPendingChange={setLeadPending}
             />
           </div>
         ) : (
