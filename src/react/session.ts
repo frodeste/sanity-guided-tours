@@ -50,6 +50,8 @@ export interface GuidedTourTracker {
   start(): void
   stepViewed(step: {stepIndex: number; stepKey: string; chapterIndex: number}): void
   elementClicked(element: {elementType: string; elementKey: string}): void
+  /** Emits `cta_clicked` for an outro CTA click — `label` is the personalized, displayed text; `href` is the raw, unpersonalized target (spec §8.3). */
+  ctaClicked(cta: {label: string; href: string}): void
   complete(stepsViewed: number): void
   abandon(lastStepIndex: number): void
   scheduleAbandon(lastStepIndex: number): void
@@ -93,6 +95,10 @@ export function createTracker(
     emit({type: 'element_clicked', ...element})
   }
 
+  function ctaClicked(cta: {label: string; href: string}): void {
+    emit({type: 'cta_clicked', ...cta})
+  }
+
   function cancelScheduledAbandon(): void {
     if (scheduledTimer === null) return
     clearTimeout(scheduledTimer)
@@ -125,6 +131,7 @@ export function createTracker(
     start,
     stepViewed,
     elementClicked,
+    ctaClicked,
     complete,
     abandon,
     scheduleAbandon,

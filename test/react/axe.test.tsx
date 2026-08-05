@@ -8,6 +8,8 @@ import type {
   GuidedTourDoc,
   GuidedTourHotspot,
   GuidedTourImage,
+  GuidedTourOutro,
+  GuidedTourOutroCta,
   GuidedTourPortableText,
   GuidedTourSettings,
   GuidedTourStep,
@@ -95,6 +97,32 @@ function linkHotspot(overrides: Partial<GuidedTourHotspot> & {_key: string}): Gu
   }
 }
 
+function outroCta(overrides: Partial<GuidedTourOutroCta> & {_key: string}): GuidedTourOutroCta {
+  return {
+    label: 'Book a demo',
+    href: 'https://example.com/demo',
+    style: 'primary',
+    ...overrides,
+  }
+}
+
+function outro(overrides: Partial<GuidedTourOutro> = {}): GuidedTourOutro {
+  return {
+    heading: 'All done!',
+    body: plainText('Thanks for taking the tour.'),
+    ctas: [
+      outroCta({_key: 'cta-1', label: 'Book a demo', style: 'primary'}),
+      outroCta({
+        _key: 'cta-2',
+        label: 'Read the docs',
+        href: 'https://example.com/docs',
+        style: 'secondary',
+      }),
+    ],
+    ...overrides,
+  }
+}
+
 function step(overrides: Partial<GuidedTourStep> & {_key: string}): GuidedTourStep {
   return {
     title: null,
@@ -157,6 +185,11 @@ function fixtureTour(): GuidedTourDoc {
       ]),
     ],
   })
+}
+
+/** Same shape as {@link fixtureTour}, but with an `outro` (M4 Task 2) to reach the outro state below. */
+function fixtureTourWithOutro(): GuidedTourDoc {
+  return tour({...fixtureTour(), outro: outro()})
 }
 
 // Narrowing `Element | null` to `Element` with `as` is banned (oxlint);
@@ -259,6 +292,21 @@ describe('axe: accessibility states', () => {
     const nextButton = queryButton(container, '.gt-next')
     expect(nextButton.disabled).toBe(false)
     expect(nextButton.textContent).toBe('Next')
+
+    await assertNoAxeViolations(container)
+  })
+
+  // M4 Task 2: the outro screen that replaces `.gt-stage` once Next
+  // completes a tour that has one — heading, PT body, and both CTA styles
+  // (real `<a>`s, per the same accessibility carve-out as a link hotspot).
+  test('outro screen has no violations', async () => {
+    const {container} = render(<GuidedTour tour={fixtureTourWithOutro()} />)
+    clickNext(container)
+    clickNext(container)
+    clickNext(container)
+    clickNext(container) // -> outro
+    expect(container.querySelector('.gt-outro')).not.toBeNull()
+    expect(container.querySelectorAll('a.gt-cta')).toHaveLength(2)
 
     await assertNoAxeViolations(container)
   })

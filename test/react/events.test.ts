@@ -107,6 +107,17 @@ describe('createTracker: payload passthrough', () => {
     expect(events.map((e) => e.type)).toEqual(['element_clicked'])
   })
 
+  test('ctaClicked passes its fields through unchanged and does not auto-start', () => {
+    const {events, handler} = collector()
+    const tracker = createTracker(handler, 'tour-1')
+
+    tracker.ctaClicked({label: 'Book a demo', href: 'https://example.com/demo'})
+
+    expect(events).toEqual([
+      {type: 'cta_clicked', label: 'Book a demo', href: 'https://example.com/demo'},
+    ])
+  })
+
   test('cta_clicked and lead_submitted satisfy the event union and reach the handler verbatim', () => {
     const {events, handler} = collector()
 
@@ -255,6 +266,7 @@ describe('createTracker: undefined handler', () => {
       tracker.start()
       tracker.stepViewed({stepIndex: 0, stepKey: 'step-1', chapterIndex: 0})
       tracker.elementClicked({elementType: 'hotspot', elementKey: 'el-1'})
+      tracker.ctaClicked({label: 'Book a demo', href: 'https://example.com/demo'})
       tracker.scheduleAbandon(0)
       tracker.cancelScheduledAbandon()
       tracker.complete(1)

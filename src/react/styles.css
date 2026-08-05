@@ -280,6 +280,61 @@
   margin-bottom: 0;
 }
 
+/* Outro: the screen shown after the last step of a tour with `outro` set */
+
+.gt-outro {
+  border-radius: var(--gt-radius);
+}
+
+.gt-outro:focus {
+  outline: 2px solid var(--gt-accent);
+  outline-offset: 2px;
+}
+
+.gt-outro-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.gt-outro-heading {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.gt-outro-ctas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.gt-cta {
+  display: inline-block;
+  padding: 8px 16px;
+  border-radius: var(--gt-radius);
+  font: inherit;
+  text-decoration: none;
+  cursor: pointer;
+  transition: opacity 150ms ease;
+}
+
+.gt-cta:hover,
+.gt-cta:focus-visible {
+  opacity: 0.9;
+}
+
+.gt-cta--primary {
+  background: var(--gt-accent);
+  color: var(--gt-surface);
+}
+
+.gt-cta--secondary {
+  background: transparent;
+  color: var(--gt-accent);
+  border: 1px solid var(--gt-accent);
+}
+
 /* Controls: prev/next, counter, dots */
 
 .gt-controls {
@@ -358,7 +413,8 @@
   .gt-tooltip,
   .gt-prev,
   .gt-next,
-  .gt-dot {
+  .gt-dot,
+  .gt-cta {
     transition: none;
   }
 }

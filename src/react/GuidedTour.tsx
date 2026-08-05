@@ -17,6 +17,7 @@ import type {GuidedTourEventHandler} from './events'
 import {isNavigationExempt} from './helpers'
 import {defaultLabels, formatLabel, type GuidedTourLabels} from './labels'
 import {clampStep, firstStepOfChapter, flattenTour, nextStep, prevStep} from './navigation'
+import {Outro} from './Outro'
 import {missingRequired, personalizeText, resolveTokens} from './personalize'
 import {createTracker} from './session'
 import {Step} from './Step'
@@ -106,6 +107,19 @@ export function GuidedTour({
   const isControlled = typeof controlledStep === 'number'
 
   const [internalStep, setInternalStep] = useState(0)
+
+  // Whether the outro screen (M4, `Outro.tsx`) is showing in place of
+  // `.gt-stage`. Deliberately not part of `flat`/`currentIndex` — the
+  // outro isn't a step (no `step_viewed`, no dot, no progress movement:
+  // progress freezes at 100% and the dots stay put on the last step,
+  // design doc's "simplest" pick). Always uncontrolled: `GuidedTourProps`
+  // has no `outro`-position prop, so this never needs to sync against an
+  // external value the way `internalStep` does above. Set `true` only by
+  // `handleNext` completing the last step of a tour that has an `outro`;
+  // reset `false` by `goTo` (every other navigation — Prev, Home/End, a
+  // dot, a chapter jump — exits the outro back into the ordinary step
+  // flow).
+  const [showOutro, setShowOutro] = useState(false)
 
   // Keep `internalStep` mirroring the controlled value for as long as the
   // component is controlled, so that a later transition to uncontrolled
@@ -240,6 +254,11 @@ export function GuidedTour({
   const goTo = useCallback(
     (index: number): void => {
       const clamped = clampStep(flat, index)
+      // Any explicit navigation to a step index exits the outro — Prev
+      // (below, `prevStep` on the last index resolves to that same last
+      // index, so this is what actually returns the viewer to it), Home/
+      // End, a dot, or a chapter jump.
+      setShowOutro(false)
       if (isControlled) {
         onStepChange?.(clamped)
         return
@@ -249,13 +268,25 @@ export function GuidedTour({
     [flat, isControlled, onStepChange],
   )
 
+  // Next on the last step of a tour with an `outro` completes AND
+  // advances to it (plan M4 Task 2, reconciling with the complete-and-stay
+  // rule below); a tour with no `outro` keeps M2's original behavior —
+  // `complete()` fires (once, via the tracker's own terminal guard) and
+  // Next stays a harmless no-op on the last step forever after. Once
+  // `showOutro` is `true`, Next/→ is itself a no-op (checked first) rather
+  // than relying solely on the tracker's terminal guard, so a second press
+  // never even attempts to re-trigger the transition.
   const handleNext = useCallback((): void => {
+    if (showOutro) return
     if (currentIndex === flat.length - 1) {
       trackerRef.current?.complete(viewedStepsRef.current.size)
+      if (tour.outro) {
+        setShowOutro(true)
+      }
       return
     }
     goTo(nextStep(flat, currentIndex))
-  }, [currentIndex, flat, goTo])
+  }, [currentIndex, flat, goTo, showOutro, tour.outro])
 
   // advance:'auto' steps advance themselves after `duration` seconds.
   // `duration` is nullable — only Studio validation makes it "required",
@@ -284,8 +315,14 @@ export function GuidedTour({
     return () => clearTimeout(timer)
   }, [currentIndex, flat, handleNext])
 
+  // On an ordinary step, Prev steps back one index as usual. From the
+  // outro, `currentIndex` is still the last step's index (entering the
+  // outro never touched it — see `showOutro`'s doc comment) — decrementing
+  // it here would overshoot past the last step, so Prev instead re-targets
+  // that same index. `goTo` resolves both cases identically: clamp, exit
+  // the outro, commit.
   function handlePrev(): void {
-    goTo(prevStep(flat, currentIndex))
+    goTo(showOutro ? currentIndex : prevStep(flat, currentIndex))
   }
 
   function handleChapterJump(chapterIndex: number): void {
@@ -418,11 +455,23 @@ export function GuidedTour({
     current: currentIndex + 1,
     total: flat.length,
   })
-  const announcement = formatLabel(labels.stepAnnouncement, {
-    current: currentIndex + 1,
-    total: flat.length,
-    title: flatStep.step.title ?? flatStep.chapterTitle,
-  })
+  // The outro isn't a step, so it gets its own announcement template
+  // (`labels.outroAnnouncement`) rather than reusing `stepAnnouncement`'s
+  // "Step X of Y" phrasing, which would be misleading once past the last
+  // step. `tour.outro` is guaranteed non-null whenever `showOutro` is true
+  // (the only place that sets it true, `handleNext` above, checks
+  // `tour.outro` first) — the `?.`/`?? ''` here is defensive against the
+  // same reactive-prop-change edge case the render swap below guards, not
+  // a path this can reach in practice.
+  const announcement = showOutro
+    ? formatLabel(labels.outroAnnouncement, {
+        heading: tour.outro?.heading ? personalizeText(tour.outro.heading, resolvedTokens) : '',
+      })
+    : formatLabel(labels.stepAnnouncement, {
+        current: currentIndex + 1,
+        total: flat.length,
+        title: flatStep.step.title ?? flatStep.chapterTitle,
+      })
   // The fill itself (`.gt-progress::after`'s `width`, styles.css) reads
   // `--gt-progress-percent`, set here rather than defaulted in CSS —
   // unlike the theme custom properties on `.gt-tour`, this one has no
@@ -500,17 +549,32 @@ export function GuidedTour({
           </nav>
         )}
       </div>
-      <div className="gt-stage" tabIndex={-1} ref={stageRef}>
-        <GuidedTourContext.Provider value={contextValue}>
-          <Step
-            step={flatStep.step}
-            onAdvance={handleNext}
-            previousStep={flat[currentIndex - 1]?.step ?? null}
-            nextStep={flat[currentIndex + 1]?.step ?? null}
-            renderImage={renderImage}
-          />
-        </GuidedTourContext.Provider>
-      </div>
+      <GuidedTourContext.Provider value={contextValue}>
+        {showOutro && tour.outro ? (
+          // Replaces `.gt-stage` entirely (a sibling swap, not nested
+          // inside it) — same "own tabIndex={-1}, own ref" keyboard-focus
+          // idiom `.gt-stage` itself uses (plan Task 8), so the outro
+          // keeps working as the target `navigate()`'s post-navigation
+          // `stageRef.current?.focus()` expects. `tour.outro` is
+          // re-checked here (not just trusted from `showOutro`) purely to
+          // satisfy the type — `GuidedTourOutro | null` — without an `as`
+          // cast; `showOutro` can only be `true` when `handleNext` already
+          // saw a non-null `tour.outro`.
+          <div className="gt-outro" tabIndex={-1} ref={stageRef}>
+            <Outro outro={tour.outro} />
+          </div>
+        ) : (
+          <div className="gt-stage" tabIndex={-1} ref={stageRef}>
+            <Step
+              step={flatStep.step}
+              onAdvance={handleNext}
+              previousStep={flat[currentIndex - 1]?.step ?? null}
+              nextStep={flat[currentIndex + 1]?.step ?? null}
+              renderImage={renderImage}
+            />
+          </div>
+        )}
+      </GuidedTourContext.Provider>
       <div className="gt-controls">
         <button type="button" className="gt-prev" onClick={handlePrev}>
           {labels.previous}
