@@ -27,6 +27,7 @@ const COMPONENT_FILES = [
   'index.ts',
   'GuidedTour.tsx',
   'Outro.tsx',
+  'LeadForm.tsx',
   'Step.tsx',
   'Hotspot.tsx',
   'Tooltip.tsx',

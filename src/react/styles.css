@@ -335,6 +335,108 @@
   border: 1px solid var(--gt-accent);
 }
 
+/* Lead capture: the interstitial shown at the configured trigger point (M4 Task 3) */
+
+.gt-lead {
+  border-radius: var(--gt-radius);
+  background: var(--gt-surface);
+  color: var(--gt-text);
+  padding: 16px;
+}
+
+.gt-lead:focus {
+  outline: 2px solid var(--gt-accent);
+  outline-offset: 2px;
+}
+
+.gt-lead-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.gt-lead-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.gt-lead-label {
+  font-weight: 600;
+}
+
+.gt-lead-required {
+  color: var(--gt-accent);
+}
+
+.gt-lead-input {
+  padding: 8px 12px;
+  border: 1px solid color-mix(in srgb, var(--gt-text) 25%, transparent);
+  border-radius: var(--gt-radius);
+  background: var(--gt-surface);
+  color: var(--gt-text);
+  font: inherit;
+}
+
+.gt-lead-input[aria-invalid='true'] {
+  border-color: #d92d20;
+}
+
+.gt-lead-error {
+  margin: 0;
+  color: #d92d20;
+  font-size: 0.875rem;
+}
+
+.gt-lead-consent {
+  margin: 0;
+  font-size: 0.875rem;
+  color: color-mix(in srgb, var(--gt-text) 75%, transparent);
+}
+
+.gt-lead-submit-error {
+  margin: 0;
+  color: #d92d20;
+}
+
+.gt-lead-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.gt-lead-submit {
+  padding: 8px 16px;
+  border: none;
+  border-radius: var(--gt-radius);
+  background: var(--gt-accent);
+  color: var(--gt-surface);
+  font: inherit;
+  cursor: pointer;
+  transition: opacity 150ms ease;
+}
+
+.gt-lead-submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.gt-lead-skip {
+  padding: 8px 16px;
+  border: 1px solid color-mix(in srgb, var(--gt-text) 20%, transparent);
+  border-radius: var(--gt-radius);
+  background: transparent;
+  color: var(--gt-text);
+  font: inherit;
+  cursor: pointer;
+  transition: opacity 150ms ease;
+}
+
+.gt-lead-skip:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* Controls: prev/next, counter, dots */
 
 .gt-controls {
@@ -414,7 +516,9 @@
   .gt-prev,
   .gt-next,
   .gt-dot,
-  .gt-cta {
+  .gt-cta,
+  .gt-lead-submit,
+  .gt-lead-skip {
     transition: none;
   }
 }

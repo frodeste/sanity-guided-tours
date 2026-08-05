@@ -16,6 +16,7 @@ import {GuidedTourContext} from './context'
 import type {GuidedTourEventHandler} from './events'
 import {isNavigationExempt} from './helpers'
 import {defaultLabels, formatLabel, type GuidedTourLabels} from './labels'
+import {LeadForm} from './LeadForm'
 import {clampStep, firstStepOfChapter, flattenTour, nextStep, prevStep} from './navigation'
 import {Outro} from './Outro'
 import {missingRequired, personalizeText, resolveTokens} from './personalize'
@@ -32,6 +33,16 @@ export interface GuidedTourProps {
   tokens?: Record<string, string | string[] | undefined>
   labels?: Partial<GuidedTourLabels>
   onEvent?: GuidedTourEventHandler
+  /**
+   * Called when the viewer submits the lead-capture interstitial
+   * (`tour.leadCapture?.enabled`, M4) — receives the field values keyed by
+   * each field's `name`. May return a `Promise`; the form disables its
+   * submit button while it's pending and shows a generic error (staying
+   * open) if it rejects. The plugin itself never sends this anywhere —
+   * `LeadForm.tsx` makes no `fetch`/`XHR` call of its own (design spec
+   * §8.5) — delivery is entirely this callback's responsibility.
+   */
+  onLeadSubmit?: (lead: Record<string, string>) => void | Promise<void>
   /**
    * Optional image renderer override, e.g. to substitute `next/image`.
    * Replaces the default `<Image>` renderer entirely (Task 7) for every
@@ -107,6 +118,7 @@ export function GuidedTour({
   tokens: providedTokens,
   labels: labelOverrides,
   onEvent,
+  onLeadSubmit,
   renderImage,
   step: controlledStep,
   onStepChange,
@@ -134,6 +146,26 @@ export function GuidedTour({
   // the outro back into the ordinary step flow) and, while controlled, by
   // the sync block below whenever `step` itself changes externally.
   const [showOutro, setShowOutro] = useState(false)
+
+  // M4 Task 3 (lead capture): whether this mount has already dismissed the
+  // lead-capture interstitial — by submitting or by Skip. Once true, the
+  // interstitial never shows again for the rest of the component's
+  // lifetime, regardless of trigger (plan: "once per mount — dismissed
+  // stays dismissed"). Deliberately a single flag rather than per-trigger
+  // state: `tour.leadCapture.trigger` is one fixed value for a given tour,
+  // so only one of the two trigger paths below is ever live at once.
+  const [leadDismissed, setLeadDismissed] = useState(false)
+
+  // Whether the `atEnd`-triggered interstitial is showing in place of the
+  // outro/completion, between the last step's Next and `complete()` firing
+  // (see `handleNext`/`handleLeadDismiss` below for the exact ordering).
+  // Unlike the `afterStep` trigger — which is derived below purely from
+  // `currentIndex` (entering a specific step index) — `atEnd` has no step
+  // index of its own to derive from: it fires from the last step's Next,
+  // which doesn't move `currentIndex` (same reason `showOutro` isn't
+  // derived either). Reset by `goTo`, mirroring `showOutro`, so Prev/Home/
+  // End/dots/chapter-jumps all leave it the same way they leave the outro.
+  const [showAtEndLead, setShowAtEndLead] = useState(false)
 
   // Keep `internalStep` mirroring the controlled value for as long as the
   // component is controlled, so that a later transition to uncontrolled
@@ -171,6 +203,36 @@ export function GuidedTour({
   }
 
   const currentIndex = clampStep(flat, isControlled ? controlledStep : internalStep)
+
+  // `tour.leadCapture` is projected even when disabled (Studio authors can
+  // configure it and flip `enabled` off without losing the rest) — `null`
+  // here means "don't show it", collapsing the disabled and absent cases
+  // into one check every consumer below can rely on. TS narrows
+  // `tour.leadCapture` to non-null in the true branch of `?.enabled`'s
+  // truthiness check.
+  const leadCapture = tour.leadCapture?.enabled ? tour.leadCapture : null
+
+  // The `afterStep` trigger: entering the step at `afterStepIndex + 1` — a
+  // flat (whole-tour) index, the same indexing `currentIndex` itself uses —
+  // shows the form INSTEAD of that step, for as long as it hasn't been
+  // dismissed. Deliberately derived from `currentIndex` rather than tracked
+  // as its own state: navigating away (Prev, a dot, Home/End, a chapter
+  // jump) hides it for free the moment `currentIndex` no longer matches,
+  // and — since it stays undismissed — landing back on that same index
+  // later shows it again, matching "shows the form INSTEAD of the step
+  // until submitted or skipped". A misconfigured `afterStepIndex` of `null`
+  // (Studio allows saving the trigger without it) never matches any index,
+  // so the trigger silently never fires rather than crashing.
+  const showAfterStepLead =
+    leadCapture !== null &&
+    leadCapture.trigger === 'afterStep' &&
+    leadCapture.afterStepIndex !== null &&
+    !leadDismissed &&
+    currentIndex === leadCapture.afterStepIndex + 1
+
+  // Either trigger being live replaces `.gt-stage` with `.gt-lead` — see
+  // the render swap below and `handleNext`'s guard against it.
+  const showLeadForm = showAfterStepLead || showAtEndLead
 
   const labels = useMemo<GuidedTourLabels>(
     () => ({...defaultLabels, ...labelOverrides}),
@@ -290,8 +352,14 @@ export function GuidedTour({
       // Any explicit navigation to a step index exits the outro — Prev
       // (below, `prevStep` on the last index resolves to that same last
       // index, so this is what actually returns the viewer to it), Home/
-      // End, a dot, or a chapter jump.
+      // End, a dot, or a chapter jump. Same for the `atEnd` lead
+      // interstitial (M4 Task 3) — it isn't dismissed (Skip/submit didn't
+      // happen, so it can still reappear on a later Next), just navigated
+      // away from, mirroring the outro exactly. The `afterStep`
+      // interstitial needs no equivalent reset here: it's derived from
+      // `currentIndex` (above), which this function is about to change.
       setShowOutro(false)
+      setShowAtEndLead(false)
       if (isControlled) {
         onStepChange?.(clamped)
         return
@@ -309,9 +377,23 @@ export function GuidedTour({
   // `showOutro` is `true`, Next/→ is itself a no-op (checked first) rather
   // than relying solely on the tracker's terminal guard, so a second press
   // never even attempts to re-trigger the transition.
+  //
+  // M4 Task 3: an `atEnd` lead-capture interstitial that hasn't been
+  // dismissed yet intercepts this same last-step Next — it shows the form
+  // INSTEAD of completing, and `complete()`/the outro transition are
+  // deferred to `handleLeadDismiss` below (fired by that form's submit or
+  // Skip). Ordering, as documented there: `complete()` fires AFTER the
+  // interstitial is dismissed, still BEFORE the outro. `showLeadForm` is
+  // also checked alongside `showOutro` at the top — both the `afterStep`
+  // and (once shown) the `atEnd` interstitial make Next a no-op, the same
+  // "don't re-trigger the transition" reasoning as `showOutro` itself.
   const handleNext = useCallback((): void => {
-    if (showOutro) return
+    if (showOutro || showLeadForm) return
     if (currentIndex === flat.length - 1) {
+      if (leadCapture?.trigger === 'atEnd' && !leadDismissed) {
+        setShowAtEndLead(true)
+        return
+      }
       trackerRef.current?.complete(viewedStepsRef.current.size)
       if (tour.outro) {
         setShowOutro(true)
@@ -319,7 +401,28 @@ export function GuidedTour({
       return
     }
     goTo(nextStep(flat, currentIndex))
-  }, [currentIndex, flat, goTo, showOutro, tour.outro])
+  }, [currentIndex, flat, goTo, leadCapture, leadDismissed, showLeadForm, showOutro, tour.outro])
+
+  // Closes whichever lead-capture interstitial is currently showing —
+  // called by `LeadForm`'s Skip button and, after a successful submit, by
+  // its own submit handler (see `LeadForm.tsx`'s `onDismiss` doc comment
+  // for why one callback serves both triggers and both dismissal paths).
+  // `afterStep` needs nothing further: `showAfterStepLead` is derived from
+  // `currentIndex`/`leadDismissed` above, so setting `leadDismissed` alone
+  // makes it fall through to the ordinary step render on the very next
+  // render. `atEnd` does need the deferred transition run here — mirrors
+  // `handleNext`'s own last-step branch above, minus the interstitial
+  // check it would otherwise re-trigger.
+  function handleLeadDismiss(): void {
+    setLeadDismissed(true)
+    if (showAtEndLead) {
+      setShowAtEndLead(false)
+      trackerRef.current?.complete(viewedStepsRef.current.size)
+      if (tour.outro) {
+        setShowOutro(true)
+      }
+    }
+  }
 
   // advance:'auto' steps advance themselves after `duration` seconds.
   // `duration` is nullable — only Studio validation makes it "required",
@@ -355,7 +458,7 @@ export function GuidedTour({
   // that same index. `goTo` resolves both cases identically: clamp, exit
   // the outro, commit.
   function handlePrev(): void {
-    goTo(showOutro ? currentIndex : prevStep(flat, currentIndex))
+    goTo(showOutro || showAtEndLead ? currentIndex : prevStep(flat, currentIndex))
   }
 
   function handleChapterJump(chapterIndex: number): void {
@@ -595,6 +698,19 @@ export function GuidedTour({
           // saw a non-null `tour.outro`.
           <div className="gt-outro" tabIndex={-1} ref={stageRef}>
             <Outro outro={tour.outro} />
+          </div>
+        ) : showLeadForm && leadCapture ? (
+          // Same "own tabIndex={-1}, own ref" idiom as `.gt-outro`/
+          // `.gt-stage` above (M4 Task 3). `leadCapture` is re-checked here
+          // (not just trusted from `showLeadForm`) purely to satisfy the
+          // type without an `as` cast — `showLeadForm` can only be `true`
+          // when `leadCapture` was already non-null above.
+          <div className="gt-lead" tabIndex={-1} ref={stageRef}>
+            <LeadForm
+              leadCapture={leadCapture}
+              onLeadSubmit={onLeadSubmit}
+              onDismiss={handleLeadDismiss}
+            />
           </div>
         ) : (
           <div className="gt-stage" tabIndex={-1} ref={stageRef}>

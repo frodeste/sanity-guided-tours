@@ -24,6 +24,16 @@ export interface GuidedTourLabels {
   hotspotLink: string
   /** Template: `"Tour complete: {heading}"` — announced via the live region when the outro screen appears (M4). */
   outroAnnouncement: string
+  /** The lead-capture form's submit button, when `leadCapture.submitLabel` is unset (M4). */
+  leadSubmit: string
+  /** The lead-capture form's Skip button — controller ruling: the interstitial is always skippable (M4). */
+  leadSkip: string
+  /** Template: `"{label} is required."` — a required lead-capture field left empty (M4). */
+  leadRequired: string
+  /** A `type: 'email'` lead-capture field whose value doesn't match the simple email pattern (M4). */
+  leadInvalidEmail: string
+  /** Shown, in place of the form, when `onLeadSubmit` rejects — generic by design, never the rejection's own message (M4). */
+  leadSubmitError: string
 }
 
 /**
@@ -41,6 +51,11 @@ export const defaultLabels: GuidedTourLabels = {
   hotspotReveal: 'Show information',
   hotspotLink: 'Open link',
   outroAnnouncement: 'Tour complete: {heading}',
+  leadSubmit: 'Submit',
+  leadSkip: 'Skip',
+  leadRequired: '{label} is required.',
+  leadInvalidEmail: 'Enter a valid email address.',
+  leadSubmitError: 'Something went wrong. Please try again.',
 }
 
 /**
