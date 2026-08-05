@@ -22,6 +22,8 @@ export interface GuidedTourLabels {
   hotspotAdvance: string
   hotspotReveal: string
   hotspotLink: string
+  /** Template: `"Tour complete: {heading}"` — announced via the live region when the outro screen appears (M4). */
+  outroAnnouncement: string
 }
 
 /**
@@ -38,6 +40,7 @@ export const defaultLabels: GuidedTourLabels = {
   hotspotAdvance: 'Continue',
   hotspotReveal: 'Show information',
   hotspotLink: 'Open link',
+  outroAnnouncement: 'Tour complete: {heading}',
 }
 
 /**
