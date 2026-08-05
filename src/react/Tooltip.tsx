@@ -38,12 +38,25 @@ function resolvePlacement(tooltip: GuidedTourTooltip): 'top' | 'bottom' | 'left'
  * from panel width: it doesn't need to be exact, only to catch the points
  * closest to either edge, where centering is guaranteed to overflow
  * regardless of how wide the panel is.
+ *
+ * Takes the already-*resolved* `placement` (not the tooltip's raw
+ * `placement` field) and gates on it: only `top`/`bottom` get an edge
+ * class (`auto` always resolves to one of those — see `resolvePlacement`
+ * — so it's covered too). Explicit `left`/`right` placements already
+ * anchor to one side of the trigger without horizontal centering
+ * (`.gt-tooltip--left`/`--right`: `right: 100%`/`left: 100%`, no
+ * `translateX`), so there is no `.gt-tooltip--edge-left.gt-tooltip--left`
+ * (etc.) CSS rule for them to match — an edge class there would be inert,
+ * present in the DOM but doing nothing. Gating here keeps the class list
+ * an accurate reflection of what's actually affecting layout.
  */
 function resolveEdgeClass(
-  tooltip: GuidedTourTooltip,
+  placement: 'top' | 'bottom' | 'left' | 'right',
+  x: number,
 ): 'gt-tooltip--edge-left' | 'gt-tooltip--edge-right' | null {
-  if (tooltip.x <= 15) return 'gt-tooltip--edge-left'
-  if (tooltip.x >= 85) return 'gt-tooltip--edge-right'
+  if (placement !== 'top' && placement !== 'bottom') return null
+  if (x <= 15) return 'gt-tooltip--edge-left'
+  if (x >= 85) return 'gt-tooltip--edge-right'
   return null
 }
 
@@ -103,7 +116,7 @@ export function Tooltip({tooltip, isOpen, onOpen, onClose}: TooltipProps): React
   const {_key, x, y, width, trigger, content} = tooltip
   const panelId = `gt-tooltip-${_key}`
   const placement = resolvePlacement(tooltip)
-  const edgeClass = resolveEdgeClass(tooltip)
+  const edgeClass = resolveEdgeClass(placement, x)
   const anchorRef = useRef<HTMLSpanElement>(null)
 
   function emitClicked(): void {

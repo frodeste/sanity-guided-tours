@@ -215,8 +215,9 @@
 
 .gt-tooltip {
   /* No `max-width` here — `Tooltip.tsx`'s inline `style` sets a
-     viewport-relative one (`min(width px, calc(100vw - 2rem))`). A
-     percentage here would repeat the bug this file used to have: this
+     container-relative one (`min(width px, calc(100cqw - 2rem))`,
+     resolved against `.gt-stage`'s `container-type: inline-size` below).
+     A percentage here would repeat the bug this file used to have: this
      panel's CSS containing block is `.gt-tooltip-anchor` below, which is
      point-sized (it only wraps the trigger button), so any `%` max-width
      resolves against ~`--gt-hotspot-size`, not the stage — crushing the

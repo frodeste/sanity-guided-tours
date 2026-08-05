@@ -585,6 +585,24 @@ describe('Tooltip: edge containment', () => {
     expect(classList.contains('gt-tooltip--edge-left')).toBe(false)
     expect(classList.contains('gt-tooltip--edge-right')).toBe(false)
   })
+
+  test('an explicit left/right placement never gets an edge class, even near the edge', () => {
+    // `.gt-tooltip--left`/`--right` don't horizontally center (no
+    // `translateX`), so there's no `.gt-tooltip--edge-*.gt-tooltip--left`
+    // CSS rule for an edge class to match — resolveEdgeClass gates on the
+    // resolved placement precisely to avoid emitting one here.
+    const {container} = render(
+      <GuidedTour
+        tour={oneChapterTour([
+          step({_key: 's1', elements: [tooltip({_key: 't1', placement: 'left', x: 90})]}),
+        ])}
+      />,
+    )
+
+    const classList = query(container, '.gt-tooltip').classList
+    expect(classList.contains('gt-tooltip--edge-left')).toBe(false)
+    expect(classList.contains('gt-tooltip--edge-right')).toBe(false)
+  })
 })
 
 describe('Tooltip: step change', () => {
