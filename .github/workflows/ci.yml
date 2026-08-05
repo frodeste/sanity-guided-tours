@@ -7,7 +7,7 @@ on:
 
 jobs:
   ci:
-    name: lint · typecheck · test · build · verify
+    name: lint · typecheck · build · test · verify
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -17,8 +17,15 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run lint
       - run: bun run typecheck
-      - run: bun test
       - run: bun run build
+      # Must run AFTER `bun run build` above, not before: three tests in
+      # test/react/useClient.test.ts read the real dist/react|index|queries
+      # output (the "use client" directive guard) and self-skip when dist/
+      # doesn't exist yet — with the old lint/typecheck/test/build order,
+      # those tests never actually ran in CI, only locally after a manual
+      # `bun run build`. Moving the build step first makes CI exercise the
+      # same guard a local `rm -rf dist && bun run build && bun test` does.
+      - run: bun test
       - name: build example app
         # env vars intentionally unset — this is the no-env build guard
         # (examples/web must build without NEXT_PUBLIC_SANITY_* configured).

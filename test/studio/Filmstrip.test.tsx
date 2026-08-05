@@ -10,7 +10,7 @@ import {afterEach, describe, expect, mock, test} from 'bun:test'
 // `smoke.test.tsx`'s job).
 import {LayerProvider, ThemeProvider} from '@sanity/ui'
 import {buildTheme} from '@sanity/ui/theme'
-import {cleanup, fireEvent, render, screen, waitFor, within} from '@testing-library/react'
+import {act, cleanup, fireEvent, render, screen, waitFor, within} from '@testing-library/react'
 import type {ReactNode} from 'react'
 
 import type {UploadedAsset} from '../../src/studio/bulkUpload'
@@ -524,14 +524,19 @@ function pngFile(name: string): File {
   return new File(['fake-image-bytes'], name, {type: 'image/png'})
 }
 
+interface PendingUpload {
+  resolve: (asset: UploadedAsset) => void
+  reject: (error: unknown) => void
+}
+
 /** A controllable fake uploader: each call is logged (by filename, in call order — the sequential-order proof) and returns a promise that stays pending until its matching entry in `pending` is resolved/rejected by the test. */
 function makeControllableUploader(): {
   uploader: (file: File) => Promise<UploadedAsset>
   calls: string[]
-  pending: {resolve: (asset: UploadedAsset) => void; reject: (error: unknown) => void}[]
+  pending: PendingUpload[]
 } {
   const calls: string[] = []
-  const pending: {resolve: (asset: UploadedAsset) => void; reject: (error: unknown) => void}[] = []
+  const pending: PendingUpload[] = []
   const uploader = (file: File): Promise<UploadedAsset> => {
     calls.push(file.name)
     return new Promise((resolve, reject) => {
@@ -539,6 +544,44 @@ function makeControllableUploader(): {
     })
   }
   return {uploader, calls, pending}
+}
+
+// CI flakiness fix: "progress text shows n/m…" (originally below) timed out
+// at `waitFor`'s default 1000ms in CI — it passed locally, so this was a
+// scheduling-speed gap under CI's slower/shared runners, not a real
+// behavior bug, but the fix is to make the test itself deterministic
+// rather than just widen a timeout and hope. Two changes apply throughout
+// this describe block and the "ignores a second drop/pick" block below:
+//
+// 1. Every assertion that follows directly from `fireEvent.change`/
+//    `fireEvent.drop` alone (no `pending[i].resolve()` involved) reads
+//    state that `runUpload` sets SYNCHRONOUSLY, before its first `await` —
+//    `calls.push(...)` (inside the fake uploader) and the first
+//    `setUploadProgress(...)` both happen in the same tick `fireEvent.*`
+//    itself is act-wrapped in. Those were WRAPPED IN `waitFor` before, for
+//    no reason — polling for something already true adds nothing but a
+//    chance to time out under load. They're now plain, synchronous
+//    `expect`s.
+// 2. Every assertion that follows a `pending[i].resolve(...)` call
+//    genuinely needs to wait: resolving an externally-held promise only
+//    SCHEDULES a microtask (the `.then` inside `runUpload`'s `await
+//    uploader(file)`, which pushes a result, calls `setUploadProgress`,
+//    and — mid-batch — starts the next file's upload). `resolveUpload`
+//    below wraps the `resolve()` call in `act(async () => ...)`, which
+//    drains that microtask chain and flushes the resulting React update
+//    deterministically, rather than leaving the assertion to rely purely
+//    on `waitFor`'s POLLING CADENCE to eventually catch up. A `waitFor`
+//    with a generous-but-bounded timeout (`ASYNC_TIMEOUT`, well above the
+//    default 1000ms) still follows as a safety net — `act`'s flush isn't
+//    a substitute for handling genuine async work, just a way to not
+//    depend on the polling interval alone for the common case.
+const ASYNC_TIMEOUT = {timeout: 3000}
+
+/** Resolves a controllable upload's promise and flushes the resulting `runUpload` continuation (and any React update it causes) deterministically — see the module comment above this constant. */
+async function resolveUpload(entry: PendingUpload, asset: UploadedAsset): Promise<void> {
+  await act(async () => {
+    entry.resolve(asset)
+  })
 }
 
 describe('Filmstrip: bulk upload — strictly sequential', () => {
@@ -550,12 +593,14 @@ describe('Filmstrip: bulk upload — strictly sequential', () => {
     const files = [pngFile('b.png'), pngFile('a.png')]
     fireEvent.change(screen.getByTestId('filmstrip-upload-input-c1'), {target: {files}})
 
-    await waitFor(() => expect(calls).toEqual(['a.png']))
+    // Synchronous — the first `uploader()` call happens before `runUpload`'s
+    // first `await` (see this section's module comment).
+    expect(calls).toEqual(['a.png'])
     expect(pending).toHaveLength(1)
 
-    pending[0].resolve({fileName: 'a.png', assetId: 'asset-a'})
+    await resolveUpload(pending[0], {fileName: 'a.png', assetId: 'asset-a'})
 
-    await waitFor(() => expect(calls).toEqual(['a.png', 'b.png']))
+    await waitFor(() => expect(calls).toEqual(['a.png', 'b.png']), ASYNC_TIMEOUT)
   })
 
   test('progress text shows n/m, incrementing once per settled upload, then disappears', async () => {
@@ -566,17 +611,25 @@ describe('Filmstrip: bulk upload — strictly sequential', () => {
       target: {files: [pngFile('a.png'), pngFile('b.png')]},
     })
 
-    await waitFor(() =>
-      expect(screen.getByTestId('filmstrip-upload-progress-c1').textContent).toBe('0/2'),
+    // Synchronous — `runUpload`'s first `setUploadProgress` call happens
+    // before its first `await` (see this section's module comment).
+    expect(screen.getByTestId('filmstrip-upload-progress-c1').textContent).toBe('0/2')
+
+    await resolveUpload(pending[0], {fileName: 'a.png', assetId: 'asset-a'})
+    await waitFor(
+      () => expect(screen.getByTestId('filmstrip-upload-progress-c1').textContent).toBe('1/2'),
+      ASYNC_TIMEOUT,
     )
 
-    pending[0].resolve({fileName: 'a.png', assetId: 'asset-a'})
-    await waitFor(() =>
-      expect(screen.getByTestId('filmstrip-upload-progress-c1').textContent).toBe('1/2'),
+    await resolveUpload(pending[1], {fileName: 'b.png', assetId: 'asset-b'})
+    // The progress element's own removal is the thing under test — not any
+    // toast (this component never shows one; `CanvasInput.tsx` is the only
+    // toast-firer, untested here) and not a timer of any kind, so there's
+    // no lifecycle beyond this one re-render to wait out.
+    await waitFor(
+      () => expect(screen.queryByTestId('filmstrip-upload-progress-c1')).toBeNull(),
+      ASYNC_TIMEOUT,
     )
-
-    pending[1].resolve({fileName: 'b.png', assetId: 'asset-b'})
-    await waitFor(() => expect(screen.queryByTestId('filmstrip-upload-progress-c1')).toBeNull())
   })
 })
 
@@ -594,11 +647,13 @@ describe('Filmstrip: bulk upload — ignores a second drop/pick mid-batch (CI re
     const onUploadBatch = mock((_c: string, _ok: UploadedAsset[], _failed: number) => {})
     renderWithTheme(<Filmstrip {...baseProps({onUploadBatch, uploader})} />)
 
-    // c1's batch starts — 'a.png' is uploading, still pending.
+    // c1's batch starts — 'a.png' is uploading, still pending. Both of
+    // these follow from `fireEvent.change` alone, synchronously (see the
+    // "strictly sequential" describe block's module comment) — no wait.
     fireEvent.change(screen.getByTestId('filmstrip-upload-input-c1'), {
       target: {files: [pngFile('a.png')]},
     })
-    await waitFor(() => expect(calls).toEqual(['a.png']))
+    expect(calls).toEqual(['a.png'])
     expect(screen.getByTestId('filmstrip-upload-progress-c1').textContent).toBe('0/1')
 
     // A second drop arrives on c2 — a DIFFERENT chapter — while c1's batch
@@ -619,8 +674,8 @@ describe('Filmstrip: bulk upload — ignores a second drop/pick mid-batch (CI re
 
     // The in-flight c1 batch completes exactly as if the second drop had
     // never happened — one call, reporting only 'a.png'.
-    pending[0].resolve({fileName: 'a.png', assetId: 'asset-a'})
-    await waitFor(() => expect(onUploadBatch).toHaveBeenCalledTimes(1))
+    await resolveUpload(pending[0], {fileName: 'a.png', assetId: 'asset-a'})
+    await waitFor(() => expect(onUploadBatch).toHaveBeenCalledTimes(1), ASYNC_TIMEOUT)
     expect(onUploadBatch).toHaveBeenCalledWith('c1', [{fileName: 'a.png', assetId: 'asset-a'}], 0)
     expect(calls).toEqual(['a.png'])
   })
@@ -632,7 +687,7 @@ describe('Filmstrip: bulk upload — ignores a second drop/pick mid-batch (CI re
     fireEvent.change(screen.getByTestId('filmstrip-upload-input-c1'), {
       target: {files: [pngFile('a.png')]},
     })
-    await waitFor(() => expect(calls).toEqual(['a.png']))
+    expect(calls).toEqual(['a.png'])
 
     fireEvent.change(screen.getByTestId('filmstrip-upload-input-c1'), {
       target: {files: [pngFile('b.png')]},
@@ -641,8 +696,11 @@ describe('Filmstrip: bulk upload — ignores a second drop/pick mid-batch (CI re
     // Still just the one in-flight call — 'b.png' was never started.
     expect(calls).toEqual(['a.png'])
 
-    pending[0].resolve({fileName: 'a.png', assetId: 'asset-a'})
-    await waitFor(() => expect(screen.queryByTestId('filmstrip-upload-progress-c1')).toBeNull())
+    await resolveUpload(pending[0], {fileName: 'a.png', assetId: 'asset-a'})
+    await waitFor(
+      () => expect(screen.queryByTestId('filmstrip-upload-progress-c1')).toBeNull(),
+      ASYNC_TIMEOUT,
+    )
     expect(calls).toEqual(['a.png'])
   })
 
@@ -653,7 +711,7 @@ describe('Filmstrip: bulk upload — ignores a second drop/pick mid-batch (CI re
     fireEvent.change(screen.getByTestId('filmstrip-upload-input-c1'), {
       target: {files: [pngFile('a.png')]},
     })
-    await waitFor(() => expect(calls).toEqual(['a.png']))
+    expect(calls).toEqual(['a.png'])
 
     const dropzone = screen.getByTestId('filmstrip-dropzone-c2')
     fireEvent.dragOver(dropzone, {dataTransfer: {types: ['Files']}})
@@ -678,7 +736,7 @@ describe('Filmstrip: bulk upload — partition and reporting', () => {
       target: {files: [pngFile('c.png'), pngFile('a.png'), pngFile('b.png')]},
     })
 
-    await waitFor(() => expect(onUploadBatch).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(onUploadBatch).toHaveBeenCalledTimes(1), ASYNC_TIMEOUT)
     expect(onUploadBatch).toHaveBeenCalledWith(
       'c1',
       [
@@ -702,7 +760,7 @@ describe('Filmstrip: bulk upload — partition and reporting', () => {
       target: {files: [pngFile('a.png'), pngFile('b.png')]},
     })
 
-    await waitFor(() => expect(onUploadBatch).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(onUploadBatch).toHaveBeenCalledTimes(1), ASYNC_TIMEOUT)
     expect(onUploadBatch).toHaveBeenCalledWith('c1', [], 2)
   })
 })
@@ -719,7 +777,7 @@ describe('Filmstrip: bulk upload — drag and drop', () => {
     const dropzone = screen.getByTestId('filmstrip-dropzone-c2')
     fireEvent.drop(dropzone, {dataTransfer: {files: [pngFile('z.png')]}})
 
-    await waitFor(() => expect(onUploadBatch).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(onUploadBatch).toHaveBeenCalledTimes(1), ASYNC_TIMEOUT)
     expect(onUploadBatch).toHaveBeenCalledWith(
       'c2',
       [{fileName: 'z.png', assetId: 'asset-z.png'}],
@@ -739,7 +797,7 @@ describe('Filmstrip: bulk upload — drag and drop', () => {
     const dropzone = screen.getByTestId('filmstrip-dropzone-c1')
     fireEvent.drop(dropzone, {dataTransfer: {files: [pngFile('a.png'), textFile]}})
 
-    await waitFor(() => expect(onUploadBatch).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(onUploadBatch).toHaveBeenCalledTimes(1), ASYNC_TIMEOUT)
     expect(onUploadBatch).toHaveBeenCalledWith(
       'c1',
       [{fileName: 'a.png', assetId: 'asset-a.png'}],
