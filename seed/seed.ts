@@ -1,9 +1,11 @@
 #!/usr/bin/env bun
 // IO layer for `bun run seed` — see README's "Seeding your own dataset"
 // section for the documented, user-facing contract this implements
-// exactly. Uploads the bundled screenshots (`seed/images/*.png`) to the
-// Sanity assets HTTP API, then `createOrReplace`s the sample tour document
-// built by the pure `seed/builders.ts` via the mutate HTTP API.
+// exactly. Writes the sample theme document, uploads the bundled
+// screenshots (`seed/images/*.png`) to the Sanity assets HTTP API, then
+// `createOrReplace`s the sample and meta tour documents built by the pure
+// `seed/builders.ts` via the mutate HTTP API — the theme first, so the
+// sample tour's reference to it always resolves.
 //
 // Dependency-free by design (task-2-brief.md): plain `fetch` against the
 // assets + mutate endpoints, the same pattern already proven seeding the
@@ -20,7 +22,13 @@ import {readFile} from 'node:fs/promises'
 import {dirname, join} from 'node:path'
 import {fileURLToPath} from 'node:url'
 
-import {buildMetaTourDocument, buildSampleTourDocument, type SampleTourDocument} from './builders'
+import {
+  buildMetaTourDocument,
+  buildSampleThemeDocument,
+  buildSampleTourDocument,
+  type SampleTourDocument,
+  type ThemeDoc,
+} from './builders'
 
 const API_VERSION = 'v2026-08-01'
 const REQUIRED_VARS = ['SANITY_PROJECT_ID', 'SANITY_DATASET', 'SANITY_TOKEN'] as const
@@ -112,8 +120,16 @@ async function uploadImage(env: SeedEnv, filePath: string, filename: string): Pr
   return assetId
 }
 
-/** `createOrReplace`s a single document via the Sanity mutate API — idempotent by design. */
-async function createOrReplaceDocument(env: SeedEnv, document: SampleTourDocument): Promise<void> {
+/**
+ * `createOrReplace`s a single document via the Sanity mutate API — idempotent
+ * by design. Accepts either document shape this script writes (`ThemeDoc`,
+ * used for the sample theme; `SampleTourDocument`, used for both tours) —
+ * both share `_id`/`_type`, which is all this function itself touches.
+ */
+async function createOrReplaceDocument(
+  env: SeedEnv,
+  document: SampleTourDocument | ThemeDoc,
+): Promise<void> {
   const url = `https://${env.projectId}.api.sanity.io/${API_VERSION}/data/mutate/${env.dataset}`
 
   const response = await fetch(url, {
@@ -125,7 +141,7 @@ async function createOrReplaceDocument(env: SeedEnv, document: SampleTourDocumen
   if (!response.ok) {
     const text = await readResponseText(response)
     throw new Error(
-      `Failed to write the sample tour document: ${response.status} ${response.statusText} — ${text}`,
+      `Failed to write document "${document._id}": ${response.status} ${response.statusText} — ${text}`,
     )
   }
 }
@@ -134,6 +150,18 @@ async function main(): Promise<void> {
   const env = validateEnv(process.env)
   const imagesDir = join(dirname(fileURLToPath(import.meta.url)), 'images')
   const metaImagesDir = join(imagesDir, 'meta')
+
+  // The sample theme (M7 theming v2) is written FIRST and needs no image
+  // upload of its own (it carries no `logo`) — the sample tour below
+  // references it by `_id`, so it must already exist in the dataset before
+  // that `createOrReplace` runs, for reference integrity on a genuinely
+  // fresh dataset.
+  console.error('Writing the sample theme document...')
+  const sampleTheme = buildSampleThemeDocument()
+  await createOrReplaceDocument(env, sampleTheme)
+  console.error(
+    `Seeded "${sampleTheme.name}" (_id: ${sampleTheme._id}) into ${env.projectId}/${env.dataset}.`,
+  )
 
   console.error('Uploading sample tour screenshots...')
   // Sequential, not Promise.all: keeps upload order deterministic and the

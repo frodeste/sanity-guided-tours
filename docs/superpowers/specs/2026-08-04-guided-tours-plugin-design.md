@@ -418,6 +418,12 @@ font picker: both were in the prior attempt, both are maintenance burdens, and
 both are better served by the consumer's own stylesheet overriding the custom
 properties.
 
+*(Amended by §15, 2026-08-05: an optional `googleFont` field was added on
+explicit owner request — a plain, pattern-validated text field, not a
+curated-list picker UI, so it doesn't reintroduce the maintenance burden this
+rejection was actually about. See §15 for the full theming v2 API, including
+why this doesn't contradict the reasoning above.)*
+
 ## 9. Repository layout
 
 ```
@@ -612,3 +618,95 @@ page-builder section — instead of (or in addition to) a dedicated route.
   `startTour` label) driving `<GuidedTourModal>`. Null tours render a
   neutral placeholder with visually-hidden text and a dev-only warning.
 - The README documents the `@portabletext/react` component-map wiring.
+
+## 15. Theming v2 (2026-08-05, owner request)
+
+The original theme model (§8.7) — hex-only colors, one custom property per
+field, no dark mode, no fonts — grows back-compatibly: every new field is
+optional, and an existing theme document (hex values, no `dark` object)
+keeps rendering exactly as before.
+
+- **Token-capable color values.** `accent`/`surface`/`text`/`overlay` (and
+  their `dark` counterparts, below) accept a 6-digit hex color OR a CSS
+  variable reference — `var(--token)` / `var(--token, <fallback>)` — via a
+  shared regex validator (`cssColorValue`, `src/schema/cssValue.ts`). A
+  theme can bind directly to a consumer's own design tokens instead of
+  duplicating a hex value into Sanity; the resolved custom property carries
+  the `var(...)` reference through unchanged, so the consumer's own
+  stylesheet resolves it. This is what makes a multi-brand setup practical:
+  one `guidedTourTheme` document per brand, each bound to that brand's own
+  token names, disambiguated in the Studio list by the new `brand` field
+  (organizational label, its own preview subtitle and ordering — issue
+  #117).
+- **Dark overrides.** A new optional `dark` object (collapsible in Studio)
+  carries the same four color fields, each INDEPENDENTLY optional — an
+  author can override `accent` and leave `surface`/`text`/`overlay` unset.
+  These are deliberately NOT coalesced to a default in the GROQ projection
+  (`dark: dark{accent, surface, text, overlay}`, explicit `null` per unset
+  member): the viewer's `themeToStyle` (`src/react/theme.ts`) resolves each
+  one individually against `THEME_DARK_DEFAULTS`
+  (`theme.dark?.accent ?? THEME_DARK_DEFAULTS.accent`, and so on) and emits
+  the FULL light+dark pair for every themed tour, even one with no `dark`
+  object at all — so dark mode works out of the box for every existing
+  theme, not only ones an author has gone back to configure. A query-side
+  coalesce would have collapsed "left empty" into "matches the default
+  value," which is the wrong signal for per-field fallback to work from.
+- **Scheme architecture.** `themeToStyle` no longer emits a scheme-resolved
+  `--gt-accent` directly; it emits paired `--gt-light-*`/`--gt-dark-*`
+  custom properties, always both, regardless of which scheme is active.
+  `styles.css` maps whichever pair member applies onto the `--gt-*` names
+  components actually consume, through two selector families kept
+  disjoint BY CONSTRUCTION so cascade order can never matter: a
+  `prefers-color-scheme: dark` media rule scoped to `:not([data-gt-scheme])`
+  (auto mode only) and a `[data-gt-scheme='dark']` attribute rule (forced
+  dark). Forced light needs no rule of its own — the base, unscoped mapping
+  IS the light one, and the auto rule explicitly excludes any node carrying
+  the attribute. `GuidedTour`'s new `colorScheme?: 'auto' | 'light' |
+  'dark'` prop (default `'auto'`) renders that attribute: `'auto'` renders
+  none (follows the OS/browser preference); `'light'`/`'dark'` force it,
+  the hook for a consumer with their own toggle. Because CSS custom
+  properties only inherit downward, `GuidedTourModal`'s backdrop and
+  `GuidedTourEmbed`'s wrapper — both ancestors/siblings of the `.gt-tour` a
+  nested `<GuidedTour>` renders, not descendants — carry their own copy of
+  both `themeToStyle`'s output and the scheme attribute directly, with
+  literal-value fallbacks on every `var(--gt-*)` reference as a second,
+  independent safety net (a review-caught gap, fixed post-Task-3: an
+  unfallback'd `var()` resolving to nothing invalidates the whole
+  declaration at computed-value time, not merely falling back sensibly).
+- **Google Fonts, validated at consumption time.** `googleFont` (optional
+  string, max 40 chars, `/^[A-Za-z0-9 ]+$/`) names a Google Font family;
+  `fontFamily` (a raw CSS `font-family` value) still takes precedence when
+  both are set. Studio validation doesn't bind a document written directly
+  through the Content API, so the viewer can't trust a `googleFont` value
+  just because the schema declares a pattern — `themeToStyle` and the new
+  `src/react/fontLoader.ts`'s `ensureGoogleFont` BOTH re-validate against
+  the identical pattern before the value is ever interpolated into a CSS
+  custom property or a stylesheet URL. A rejected value is a silent no-op
+  in production and a `console.warn` in development; nothing is appended to
+  `document.head` and no custom property is emitted. On a match,
+  `ensureGoogleFont` appends the two Google Fonts preconnect links once per
+  page and one `css2` stylesheet `<link>` per family (idempotent, SSR-safe)
+  — called from a `GuidedTour` effect gated on the new `loadGoogleFont?:
+  boolean` prop (default `true`), so a consumer self-hosting fonts, wiring
+  up their own pipeline, or avoiding the third-party request for
+  GDPR/privacy reasons can opt out while the `--gt-font-family` custom
+  property still names the family regardless.
+- **Modernized defaults.** Per the M7 design brief (Storylane-inspired,
+  owner-approved): light accent `#7c3aed`/surface `#ffffff`/text
+  `#0f172a`/overlay `#1e1b4b`; dark accent `#a78bfa`/surface `#0f172a`/text
+  `#f1f5f9`/overlay `#020617`; default font stack `'Inter', ui-sans-serif,
+  system-ui, -apple-system, 'Segoe UI', sans-serif`; pill-shaped CTA/Next/
+  Prev buttons regardless of `--gt-radius` (cards/tooltips still use it);
+  layered shadows and low-alpha borders instead of hard outlines; visible
+  `:focus-visible` rings throughout. All values single-sourced in
+  `src/queries/defaults.ts` (`THEME_DEFAULTS`, `THEME_DARK_DEFAULTS`,
+  `FONT_STACK`), with parity tests pinning `styles.css`'s literal fallbacks
+  to the same constants.
+- **Seed content.** `seed/builders.ts`'s `buildSampleThemeDocument` ("Acme
+  brand") exercises this API in the bundled dataset: token-free hex colors
+  chosen to be visibly distinct from the defaults above, a partial `dark`
+  override (accent/surface/text set, `overlay` deliberately left to
+  demonstrate the per-field fallback), and `googleFont: 'Manrope'`.
+  `sample-tour` references it; `how-to-build-tours` (the meta tour) stays
+  theme-less on purpose, so a freshly seeded dataset shows both a branded
+  tour and the viewer's own modern built-in defaults side by side.
