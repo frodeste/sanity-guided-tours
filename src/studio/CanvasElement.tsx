@@ -166,22 +166,26 @@ export function CanvasElement(props: CanvasElementProps): ReactNode {
           M
         </Badge>
       )}
-      {props.resizable && props.width !== undefined && (
-        <Box
-          aria-hidden
-          data-testid={`canvas-element-${props.elementKey}-resize`}
-          onPointerDown={handleResizePointerDown}
-          onPointerMove={handleResizePointerMove}
-          onPointerUp={handleResizePointerUp}
-          style={{
-            background: 'var(--card-border-color, #999)',
-            cursor: 'ew-resize',
-            height: 12,
-            marginLeft: 4,
-            width: 12,
-          }}
-        />
-      )}
+      {props.resizable &&
+        props.width !== undefined && (
+          // Pointer-only for now (`aria-hidden`, no keyboard handler) —
+          // there's no keyboard path to resize width yet; deferred, not
+          // forgotten.
+          <Box
+            aria-hidden
+            data-testid={`canvas-element-${props.elementKey}-resize`}
+            onPointerDown={handleResizePointerDown}
+            onPointerMove={handleResizePointerMove}
+            onPointerUp={handleResizePointerUp}
+            style={{
+              background: 'var(--card-border-color, #999)',
+              cursor: 'ew-resize',
+              height: 12,
+              marginLeft: 4,
+              width: 12,
+            }}
+          />
+        )}
     </Box>
   )
 }

@@ -315,14 +315,18 @@ export function Canvas(props: CanvasProps): ReactNode {
                   }
                   onResizeEnd={handleResizeEnd}
                   onResizeMove={handleResizeMove}
-                  onResizeStart={(clientX) =>
-                    handleResizeStart(
-                      elementKeyValue,
-                      kind,
-                      baseWidth ?? DEFAULT_WIDTH.tooltip,
-                      clientX,
-                    )
-                  }
+                  onResizeStart={(clientX) => {
+                    // `baseWidth` is only ever `undefined` when `!resizable`
+                    // (line ~293) — and `CanvasElement` only wires up the
+                    // resize handle that fires this callback when
+                    // `resizable && width !== undefined` — so this guard
+                    // never actually fires; it's here so this closure
+                    // doesn't need a placeholder default (the old
+                    // `DEFAULT_WIDTH.tooltip` fallback was always dead code,
+                    // and wrong for textOverlay besides).
+                    if (baseWidth === undefined) return
+                    handleResizeStart(elementKeyValue, kind, baseWidth, clientX)
+                  }}
                   onSelect={() => props.onSelectElement(elementKeyValue)}
                   resizable={resizable}
                   selected={props.selectedElementKey === elementKeyValue}

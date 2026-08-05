@@ -28,7 +28,7 @@ import {PatchEvent, setIfMissing} from 'sanity'
 import type {ArrayOfObjectsInputProps, FormInsertPatch, FormPatch} from 'sanity'
 
 import {CanvasInput} from '../../src/studio/CanvasInput'
-import {moveElementPatch, removeElementPatch} from '../../src/studio/patches'
+import {moveElementPatch, removeElementPatch, setElementWidthPatch} from '../../src/studio/patches'
 
 afterEach(() => {
   cleanup()
@@ -159,6 +159,16 @@ const fixtureChapters = [
         screenshot: image('image-aaa-800x600-png', 'Welcome screenshot'),
         elements: [
           {_type: 'guidedTourHotspot', _key: 'e1', x: 10, y: 10, action: 'advance', pulse: true},
+          {
+            _type: 'guidedTourTooltip',
+            _key: 'e2',
+            x: 20,
+            y: 20,
+            width: 300,
+            placement: 'auto',
+            trigger: 'click',
+            content: [],
+          },
         ],
       }),
       step({_key: 's2', title: 'Features', screenshot: image('image-bbb-800x600-png')}),
@@ -393,5 +403,40 @@ describe('Canvas interactions', () => {
     fireEvent.keyDown(screen.getByTestId('canvas-element-e1'), {key: 'Escape'})
 
     expect(onChange).not.toHaveBeenCalled()
+  })
+
+  test('resizing a tooltip in mobile device mode emits a mobile.width patch within the schema range', () => {
+    const onChange = mock((_patch: FormPatch | FormPatch[] | PatchEvent) => {})
+    renderWithTheme(
+      <CanvasInput {...baseInputProps()} onChange={onChange} value={fixtureChapters} />,
+    )
+
+    // Step s1's fixture tooltip `e2` starts at width 300 (desktop, no
+    // mobile override yet). Switching device to mobile before resizing is
+    // the regression this test guards: `position.ts`'s `mobile.width`
+    // field used to be validated `min(1).max(100)` (percent-shaped) even
+    // though a tooltip's own `width` is px 200-600 — a mobile resize
+    // landing above 100 would have failed real Studio validation despite
+    // `resizeWidth`'s clamp being correct. That schema field is now
+    // `min(1).max(600)` (position.ts); this test's resized width (350,
+    // comfortably inside [200, 600] and well past the old 100 ceiling)
+    // demonstrates the patch this produces is schema-valid.
+    fireEvent.click(screen.getByTestId('device-mobile'))
+
+    const resizeHandle = screen.getByTestId('canvas-element-e2-resize')
+    fireEvent.pointerDown(resizeHandle, {clientX: 100, pointerId: 1})
+    fireEvent.pointerMove(resizeHandle, {clientX: 150, pointerId: 1})
+    fireEvent.pointerUp(resizeHandle, {clientX: 150, pointerId: 1})
+
+    expect(onChange).toHaveBeenCalledTimes(1)
+    const call = onChange.mock.calls[0][0]
+    if (!isPatchEvent(call)) throw new Error('expected a PatchEvent')
+
+    // tooltip resize is 1:1 with the client-pixel delta (canvasHandlers.ts's
+    // `resizeWidth`): startWidth 300 + delta 50 = 350.
+    const expectedWidth = 350
+    expect(expectedWidth).toBeGreaterThanOrEqual(200)
+    expect(expectedWidth).toBeLessThanOrEqual(600)
+    expect(call.patches).toEqual(setElementWidthPatch('c1', 's1', 'e2', expectedWidth, 'mobile'))
   })
 })

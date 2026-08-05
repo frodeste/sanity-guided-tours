@@ -93,12 +93,17 @@ describe('positionFields', () => {
     expect(findCall(runValidation(fieldByName(subFields, 'y').validation), 'max')?.args).toEqual([
       100,
     ])
+    // mobile.width's range is the union of both element widths it can
+    // stand in for — px 200-600 for tooltip, percent 10-100 for
+    // textOverlay (`position.ts`'s doc comment) — not percent-shaped
+    // [1, 100]: a mobile tooltip override needs to reach real pixel
+    // widths.
     expect(
       findCall(runValidation(fieldByName(subFields, 'width').validation), 'min')?.args,
     ).toEqual([1])
     expect(
       findCall(runValidation(fieldByName(subFields, 'width').validation), 'max')?.args,
-    ).toEqual([100])
+    ).toEqual([600])
   })
 })
 
