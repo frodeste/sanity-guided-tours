@@ -48,7 +48,7 @@ TDD: outro renders after Next on last step + tour_completed emitted exactly once
 
 ### Task 3: Lead capture
 
-**Files:** Create `src/react/LeadForm.tsx`; Modify `src/react/GuidedTour.tsx` (interstitial gating), `src/react/types.ts` (+`onLeadSubmit?: (lead: Record<string, string>) => void | Promise<void>` on GuidedTourProps), `src/react/labels.ts` (leadSubmit default "Submit", leadSkip "Skip", validation message templates `leadRequired`, `leadInvalidEmail`); Test `test/react/leadForm.test.tsx`
+**Files:** Create `src/react/LeadForm.tsx`; Modify `src/react/GuidedTour.tsx` (interstitial gating AND the `GuidedTourProps` interface, which lives inline in GuidedTour.tsx:28 — add `onLeadSubmit?: (lead: Record<string, string>) => void | Promise<void>` there; `types.ts` holds only `GuidedTourImageProps`), `src/react/labels.ts` (leadSubmit default "Submit", leadSkip "Skip", validation message templates `leadRequired`, `leadInvalidEmail`); Test `test/react/leadForm.test.tsx`
 
 Behavior per spec §8.5 + schema: when `tour.leadCapture?.enabled`, an interstitial `.gt-lead` panel appears at the trigger point — `afterStep`: entering step index `afterStepIndex + 1` for the first time shows the form INSTEAD of the step until submitted or skipped (skip allowed — a form you can't pass is a wall; spec silent, controller ruling: skippable, `labels.leadSkip`); `atEnd`: between last step completion and the outro (or completion when no outro). Fields render from `leadCapture.fields[]` (text/email/tel→`<input type>`, textarea→`<textarea>`; label + required marker; `name` as the key). Validation on submit: required non-empty, email regex (simple RFC-lite `/^[^\s@]+@[^\s@]+\.[^\s@]+$/`); errors inline per field (`aria-describedby`, `aria-invalid`) using label templates. Submit → `onLeadSubmit(values)` (await if promise — disable submit while pending, re-enable + show a generic error on rejection), emit `lead_submitted`, dismiss interstitial, continue. Consent text rendered verbatim below the fields when present (plain text). Personalization applies to labels/consent/submitLabel text. NO network from the plugin (test spies on global fetch).
 
@@ -67,7 +67,8 @@ TDD: both triggers; field rendering per type; required + email validation with a
 export interface GuidedTourModalProps extends GuidedTourProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  closeLabel?: string   // via labels.modalClose default "Close tour"
+  // close-button label overrides ONLY via labels.modalClose (default "Close tour")
+  // — no standalone prop; labels is the codebase's single string-override channel.
 }
 export function GuidedTourModal(props: GuidedTourModalProps): ReactNode
 ```
