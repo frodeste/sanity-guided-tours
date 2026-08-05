@@ -15,7 +15,7 @@
 import {mkdtempSync} from 'node:fs'
 import {copyFile, mkdir, readFile, writeFile} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
-import {dirname, extname, join} from 'node:path'
+import {dirname, extname, join, resolve, sep} from 'node:path'
 import {fileURLToPath} from 'node:url'
 
 import type {BunPlugin} from 'bun'
@@ -129,6 +129,25 @@ export interface CaptureHarness {
 }
 
 /**
+ * Resolves a request's URL `pathname` (e.g. `/entry.js`, or a hostile
+ * `/../../../../etc/passwd`) against `outDir` and returns the resulting
+ * absolute file path — but ONLY if it actually stays inside `outDir`;
+ * `null` otherwise. Pure and I/O-free (string/path math only), so the
+ * static file handler below can stay a thin wrapper: resolve, bail to 404
+ * on `null`, else `readFile`. `resolve(outDir, '.' + pathname)` rather than
+ * a plain `join` is what actually collapses `..` segments — `join` alone
+ * would happily produce a path outside `outDir` for a traversal attempt,
+ * which is exactly the bug this replaces (CI review, PR 106: the previous
+ * handler `join(outDir, path)`'d the raw pathname straight through with no
+ * containment check at all).
+ */
+export function resolveWithinOutDir(outDir: string, pathname: string): string | null {
+  const root = resolve(outDir)
+  const candidate = resolve(root, `.${pathname}`)
+  return candidate === root || candidate.startsWith(root + sep) ? candidate : null
+}
+
+/**
  * Fetches the real demo asset refs, bundles `entry.tsx` (aliasing `sanity`
  * per `sanityShimPlugin` above) into a fresh temp directory, copies the
  * viewer stylesheet alongside it, and serves the result over plain HTTP on
@@ -160,15 +179,22 @@ export async function buildAndServe(): Promise<CaptureHarness> {
   await copyFile(join(REPO_ROOT, 'src', 'react', 'styles.css'), join(outDir, 'styles.css'))
 
   const server = Bun.serve({
+    // Loopback-only, not `Bun.serve`'s own 0.0.0.0-all-interfaces default
+    // (CI review, PR 106: the previous config bound every interface on a
+    // shared box, well past what "a `localhost`-only Playwright client"
+    // actually requires — this server has no business being reachable from
+    // anywhere but this same machine).
+    hostname: '127.0.0.1',
     port: 0,
     async fetch(request) {
       const url = new URL(request.url)
-      const path = url.pathname === '/' ? '/index.html' : url.pathname
-      const filePath = join(outDir, path)
-      // No path traversal risk worth guarding here: this server only ever
-      // serves `outDir`'s own build output to a `localhost`-only Playwright
-      // client this same process launches (`capture.ts`), never a
-      // network-reachable listener.
+      const pathname = url.pathname === '/' ? '/index.html' : url.pathname
+      // `resolveWithinOutDir` collapses `..` segments and rejects anything
+      // that resolves outside `outDir` — this handler no longer trusts the
+      // request's pathname to stay put on its own (see that function's doc
+      // comment for the traversal bug it replaces).
+      const filePath = resolveWithinOutDir(outDir, pathname)
+      if (!filePath) return new Response('Not found', {status: 404})
       try {
         const body = await readFile(filePath)
         const type = CONTENT_TYPES[extname(filePath)] ?? 'application/octet-stream'
@@ -180,7 +206,7 @@ export async function buildAndServe(): Promise<CaptureHarness> {
   })
 
   return {
-    url: `http://localhost:${server.port}`,
+    url: `http://127.0.0.1:${server.port}`,
     outDir,
     stop: () => server.stop(true),
   }
