@@ -35,7 +35,14 @@ export function Outro({outro}: OutroProps): ReactNode {
 
   return (
     <div className="gt-outro-content">
-      {heading !== null && <h3 className="gt-outro-heading">{personalizeText(heading, tokens)}</h3>}
+      {/* An empty string is treated the same as `null` — absent, no
+          heading element — matching `GuidedTour.tsx`'s live-region
+          announcement, which already falls back to `''` for exactly this
+          case (CI review, PR 101: the two must agree on what "no heading"
+          means). */}
+      {heading !== null && heading !== '' && (
+        <h3 className="gt-outro-heading">{personalizeText(heading, tokens)}</h3>
+      )}
       <PortableText value={body} />
       {ctas && ctas.length > 0 && (
         <div className="gt-outro-ctas">

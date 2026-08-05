@@ -212,6 +212,22 @@ describe('Outro: content rendering', () => {
     expect(container.querySelector('.gt-outro')).not.toBeNull()
   })
 
+  // CI review, PR 101: the live region already treated an empty-string
+  // heading as absent (falls back to `''`), but Outro.tsx only checked for
+  // `null` — an empty string rendered an empty `<h3>` there while the
+  // announcement skipped it. Harmonized: both now treat `''` the same as
+  // `null`.
+  test('treats an empty-string heading the same as null — no heading element, headingless announcement', () => {
+    const {container} = render(<GuidedTour tour={tour({outro: outro({heading: ''})})} />)
+
+    clickNext(container)
+    clickNext(container)
+
+    expect(container.querySelector('.gt-outro-heading')).toBeNull()
+    expect(container.querySelector('.gt-outro')).not.toBeNull()
+    expect(query(container, '.gt-live').textContent).toBe('Tour complete: ')
+  })
+
   test('renders each CTA as a real <a> with the correct style class and target/rel', () => {
     const {container} = render(
       <GuidedTour
