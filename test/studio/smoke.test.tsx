@@ -23,7 +23,7 @@ import {afterEach, describe, expect, mock, test} from 'bun:test'
 import {LayerProvider, ThemeProvider} from '@sanity/ui'
 import {buildTheme} from '@sanity/ui/theme'
 import {cleanup, fireEvent, render, screen, within} from '@testing-library/react'
-import type {ReactNode} from 'react'
+import {StrictMode, type ReactNode} from 'react'
 import {PatchEvent, setIfMissing} from 'sanity'
 import type {ArrayOfObjectsInputProps, FormInsertPatch, FormPatch} from 'sanity'
 
@@ -44,6 +44,26 @@ function renderWithTheme(ui: ReactNode) {
     <ThemeProvider theme={theme}>
       <LayerProvider>{ui}</LayerProvider>
     </ThemeProvider>,
+  )
+}
+
+// `<StrictMode>` makes React dev-mode double-invoke state updater
+// functions (`setX(current => ...)`), the same check that would have
+// caught `Canvas.tsx`'s old impure `handleResizeEnd` (it called
+// `props.onResizeElement` — which round-trips into `onChange` — from
+// inside a `setResizeState` updater). Confirmed empirically in this
+// harness: a deliberately-impure updater's side effect fires twice under
+// this wrap, once under `renderWithTheme`. Used only where a test's whole
+// point is guarding updater purity — not the default, since it doubles
+// every render (fine for these targeted assertions, unnecessary overhead
+// and noise elsewhere).
+function renderStrict(ui: ReactNode) {
+  return render(
+    <StrictMode>
+      <ThemeProvider theme={theme}>
+        <LayerProvider>{ui}</LayerProvider>
+      </ThemeProvider>
+    </StrictMode>,
   )
 }
 
@@ -438,5 +458,27 @@ describe('Canvas interactions', () => {
     expect(expectedWidth).toBeGreaterThanOrEqual(200)
     expect(expectedWidth).toBeLessThanOrEqual(600)
     expect(call.patches).toEqual(setElementWidthPatch('c1', 's1', 'e2', expectedWidth, 'mobile'))
+  })
+
+  // Canvas.tsx's handleResizeEnd used to call props.onResizeElement (->
+  // onChange -> a PatchEvent) from inside its setResizeState updater —
+  // impure, since a StrictMode-double-invoked updater would fire that
+  // side effect twice. Fixed by mirroring resize state into a ref and
+  // reading the ref from an ordinary (non-updater) handler instead;
+  // handleResizeMove's updater stayed pure throughout (it only computes
+  // and returns a value). Rendering under StrictMode is what actually
+  // exercises the double-invoke path renderWithTheme's ordinary render
+  // never would.
+  test('a resize gesture emits exactly one onChange even under StrictMode', () => {
+    const onChange = mock((_patch: FormPatch | FormPatch[] | PatchEvent) => {})
+    renderStrict(<CanvasInput {...baseInputProps()} onChange={onChange} value={fixtureChapters} />)
+
+    const resizeHandle = screen.getByTestId('canvas-element-e2-resize')
+    fireEvent.pointerDown(resizeHandle, {clientX: 100, pointerId: 1})
+    fireEvent.pointerMove(resizeHandle, {clientX: 120, pointerId: 1})
+    fireEvent.pointerMove(resizeHandle, {clientX: 150, pointerId: 1})
+    fireEvent.pointerUp(resizeHandle, {clientX: 150, pointerId: 1})
+
+    expect(onChange).toHaveBeenCalledTimes(1)
   })
 })

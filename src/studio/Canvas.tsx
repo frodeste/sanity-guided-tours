@@ -113,6 +113,25 @@ export function Canvas(props: CanvasProps): ReactNode {
   const [resizeState, setResizeState] = useState<ResizeState | null>(null)
   const wrapperRef = useRef<HTMLDivElement>(null)
 
+  // A ref mirror of `resizeState`, updated in lockstep by every setter
+  // below (`setResize`). React state updater callbacks must stay pure —
+  // StrictMode double-invokes them in dev to catch violations — so
+  // `handleResizeEnd` can't compute the final width AND call
+  // `props.onResizeElement` (which round-trips into a `PatchEvent` via
+  // `CanvasInput.tsx`'s `onChange`) from inside a `setResizeState(current
+  // => ...)` updater: doing that would fire the patch twice under
+  // StrictMode. Reading the ref instead — a plain, non-reactive value,
+  // safe to read from an ordinary (non-updater) event handler — lets
+  // `handleResizeEnd` compute the width and call the side effect as
+  // regular sequential code, with the state write (`setResizeState`,
+  // for re-rendering the live resize width) kept separate and pure.
+  const resizeStateRef = useRef<ResizeState | null>(null)
+
+  function setResize(next: ResizeState | null): void {
+    resizeStateRef.current = next
+    setResizeState(next)
+  }
+
   function measureRect(): Rect | null {
     const el = wrapperRef.current
     if (!el) return null
@@ -153,7 +172,7 @@ export function Canvas(props: CanvasProps): ReactNode {
     clientX: number,
   ): void {
     if (!isResizableKind(kind)) return
-    setResizeState({
+    setResize({
       key: elementKey,
       kind,
       startWidth,
@@ -163,34 +182,32 @@ export function Canvas(props: CanvasProps): ReactNode {
   }
 
   function handleResizeMove(clientX: number): void {
-    setResizeState((current) => {
-      if (!current) return current
-      const rect = measureRect()
-      const rectWidth = rect ? rect.width : 0
-      const currentWidth = resizeWidth(
-        current.kind,
-        current.startWidth,
-        clientX - current.startClientX,
-        rectWidth,
-      )
-      return {...current, currentWidth}
-    })
+    const current = resizeStateRef.current
+    if (!current) return
+    const rect = measureRect()
+    const rectWidth = rect ? rect.width : 0
+    const currentWidth = resizeWidth(
+      current.kind,
+      current.startWidth,
+      clientX - current.startClientX,
+      rectWidth,
+    )
+    setResize({...current, currentWidth})
   }
 
   function handleResizeEnd(clientX: number): void {
-    setResizeState((current) => {
-      if (!current) return null
-      const rect = measureRect()
-      const rectWidth = rect ? rect.width : 0
-      const width = resizeWidth(
-        current.kind,
-        current.startWidth,
-        clientX - current.startClientX,
-        rectWidth,
-      )
-      props.onResizeElement(current.key, width)
-      return null
-    })
+    const current = resizeStateRef.current
+    setResize(null)
+    if (!current) return
+    const rect = measureRect()
+    const rectWidth = rect ? rect.width : 0
+    const width = resizeWidth(
+      current.kind,
+      current.startWidth,
+      clientX - current.startClientX,
+      rectWidth,
+    )
+    props.onResizeElement(current.key, width)
   }
 
   function handleNudge(

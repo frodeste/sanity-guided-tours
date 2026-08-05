@@ -69,6 +69,26 @@ describe('useEditorState', () => {
     expect(result.current.selection).toEqual({chapterKey: null, stepKey: null, elementKey: null})
   })
 
+  // New-document flow: a tour document starts with an empty `chapters`
+  // field, so the hook mounts with nothing to select — `null`/`null`/
+  // `null`. `healSelection` deliberately never revisits an already-null
+  // selection (see its doc comment: it only confirms or heals an
+  // *existing* one), so without an explicit adoption step the selection
+  // would just stay all-null forever, even once the author adds their
+  // first step (bulk upload, or the add-step button) and one genuinely
+  // exists to select.
+  test('mounting with an empty chapters value auto-selects the first step once one exists', () => {
+    const {result, rerender} = renderHook(({chapters}) => useEditorState(chapters), {
+      initialProps: {chapters: [] as unknown[]},
+    })
+
+    expect(result.current.selection).toEqual({chapterKey: null, stepKey: null, elementKey: null})
+
+    rerender({chapters: [chapter('c1', [step('s1')])]})
+
+    expect(result.current.selection).toEqual({chapterKey: 'c1', stepKey: 's1', elementKey: null})
+  })
+
   test('deleting only the selected element clears elementKey but keeps the step selection', () => {
     const chapters = [chapter('c1', [step('s1', [{_key: 'e1'}, {_key: 'e2'}])])]
     const {result, rerender} = renderHook(({chapters}) => useEditorState(chapters), {

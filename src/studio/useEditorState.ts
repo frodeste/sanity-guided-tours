@@ -243,13 +243,35 @@ export function useEditorState(chapters: unknown[]): EditorState {
     setPreviousKeyPaths(currentKeyPaths)
   }
 
-  const healed = healSelection(chapters, selection, previousKeyPaths)
+  let nextSelection = healSelection(chapters, selection, previousKeyPaths)
+
+  // A `null` chapter/step selection is never a deliberate user state —
+  // there's no "deselect the step" affordance, only ever one step being
+  // selected instead of another, or (mount on a brand-new document, or
+  // every chapter deleted) nothing existing yet to select. So whenever
+  // nothing is selected and `chapters` now has a first step to offer —
+  // the new-document flow: add the first step via bulk upload or the
+  // add-step button after mounting empty — adopt it. This is the one case
+  // `healSelection` deliberately doesn't handle itself: it bails out
+  // early on an already-null selection without consulting `chapters` at
+  // all (see its doc comment), because from *its* vantage point (only
+  // ever asked to confirm or heal an *existing* selection) a null
+  // selection has nothing to confirm-delete. `elementKey` gets no such
+  // adoption — `null` there is a real, deliberate "nothing selected in
+  // the Inspector" state, not a placeholder waiting to be filled.
+  if (nextSelection.stepKey === null) {
+    const first = firstStep(chapters)
+    if (first !== null) {
+      nextSelection = {chapterKey: first.chapterKey, stepKey: first.stepKey, elementKey: null}
+    }
+  }
+
   if (
-    healed.chapterKey !== selection.chapterKey ||
-    healed.stepKey !== selection.stepKey ||
-    healed.elementKey !== selection.elementKey
+    nextSelection.chapterKey !== selection.chapterKey ||
+    nextSelection.stepKey !== selection.stepKey ||
+    nextSelection.elementKey !== selection.elementKey
   ) {
-    setSelection(healed)
+    setSelection(nextSelection)
   }
 
   function selectStep(chapterKey: string, stepKey: string): void {
