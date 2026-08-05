@@ -4,8 +4,10 @@ import {
   elementProjection,
   type GuidedTourDoc,
   type GuidedTourElement,
+  type GuidedTourEmbedValue,
   type GuidedTourOutroCta,
   guidedTourBySlugQuery,
+  guidedTourEmbedProjection,
   guidedTourSlugsQuery,
   imageProjection,
   tourProjection,
@@ -53,10 +55,11 @@ describe('guidedTourSlugsQuery', () => {
 // edit that stops interpolating one of them into the other — or re-exports
 // a stale copy — fails here.
 describe('projection fragments', () => {
-  test('imageProjection, elementProjection and tourProjection are exported', () => {
+  test('imageProjection, elementProjection, tourProjection and guidedTourEmbedProjection are exported', () => {
     expect(typeof imageProjection).toBe('string')
     expect(typeof elementProjection).toBe('string')
     expect(typeof tourProjection).toBe('string')
+    expect(typeof guidedTourEmbedProjection).toBe('string')
   })
 
   test('tourProjection is the exact fragment interpolated into guidedTourBySlugQuery', () => {
@@ -66,6 +69,35 @@ describe('projection fragments', () => {
   test('tourProjection composes imageProjection and elementProjection', () => {
     expect(tourProjection).toContain(imageProjection)
     expect(tourProjection).toContain(elementProjection)
+  })
+})
+
+// guidedTourEmbedProjection follows the same coalesce policy as every other
+// initialValue-bearing field in ./projections: displayMode has a schema
+// initialValue ('inline', from EMBED_DEFAULTS), so it's coalesced; tour
+// does not (a broken/unpublished/draft-only reference has no sensible
+// fallback), so it dereferences straight through without one.
+describe('guidedTourEmbedProjection', () => {
+  test('projects _key and _type', () => {
+    expect(guidedTourEmbedProjection).toContain('_key')
+    expect(guidedTourEmbedProjection).toContain('_type')
+  })
+
+  test('coalesces displayMode to the schema initialValue "inline"', () => {
+    expect(guidedTourEmbedProjection).toContain('coalesce(displayMode, "inline")')
+  })
+
+  test('projects buttonLabel without a coalesce', () => {
+    expect(guidedTourEmbedProjection).toContain('buttonLabel')
+    expect(guidedTourEmbedProjection).not.toContain('coalesce(buttonLabel')
+  })
+
+  test('dereferences tour through tourProjection', () => {
+    expect(guidedTourEmbedProjection).toContain(`"tour": tour->${tourProjection}`)
+  })
+
+  test('composes tourProjection', () => {
+    expect(guidedTourEmbedProjection).toContain(tourProjection)
   })
 })
 
@@ -263,5 +295,36 @@ describe('GuidedTourElement discriminated union', () => {
         pulse: false,
       }),
     ).toBe('hotspot:advance')
+  })
+})
+
+// Compile-time check: a hand-written fixture matching the shape
+// guidedTourEmbedProjection actually returns must satisfy
+// GuidedTourEmbedValue — including the null-tour case, which is legitimate
+// (a broken, unpublished, or draft-only reference) rather than an error
+// state the type needs to rule out.
+const embedFixtureWithTour = {
+  _key: 'embed-1',
+  _type: 'guidedTourEmbed',
+  displayMode: 'modal',
+  buttonLabel: 'Take the tour',
+  tour: fixture,
+} satisfies GuidedTourEmbedValue
+
+const embedFixtureWithNullTour = {
+  _key: 'embed-2',
+  _type: 'guidedTourEmbed',
+  displayMode: 'inline',
+  buttonLabel: null,
+  tour: null,
+} satisfies GuidedTourEmbedValue
+
+describe('GuidedTourEmbedValue fixture', () => {
+  test('a resolved tour satisfies the type', () => {
+    expect(embedFixtureWithTour.tour?.title).toBe('Product tour')
+  })
+
+  test('a null tour (broken/unpublished/draft-only reference) satisfies the type', () => {
+    expect(embedFixtureWithNullTour.tour).toBeNull()
   })
 })

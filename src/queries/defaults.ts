@@ -50,3 +50,6 @@ export const SETTINGS_DEFAULTS = {
   showChapterMenu: true,
   showStepDots: true,
 } as const
+
+/** `guidedTourEmbed.displayMode` (src/schema/embed.ts). */
+export const EMBED_DEFAULTS = {displayMode: 'inline'} as const

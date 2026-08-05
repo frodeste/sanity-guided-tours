@@ -598,6 +598,42 @@
   background: var(--gt-accent);
 }
 
+/* Embed: <GuidedTourEmbed> — a guidedTourEmbed object placed on a page (M6).
+   `.gt-embed` (inline mode) and `.gt-embed-start` (modal mode's trigger
+   button) are rendered as siblings/ancestors of `.gt-tour`, same as
+   `.gt-modal`/`.gt-modal-close` above — `--gt-*` here follows that same
+   established convention, not a new one. */
+
+.gt-embed {
+  display: block;
+}
+
+.gt-embed-start {
+  padding: 8px 16px;
+  border: none;
+  border-radius: var(--gt-radius);
+  background: var(--gt-accent);
+  color: var(--gt-surface);
+  font: inherit;
+  cursor: pointer;
+  transition: opacity 150ms ease;
+}
+
+.gt-embed-start:hover,
+.gt-embed-start:focus-visible {
+  opacity: 0.9;
+}
+
+/* `value.tour === null` (a broken, unpublished, or draft-only reference) —
+   a small neutral box; the reason it's empty lives in the visually-hidden
+   text a screen reader announces, not in visible copy a site visitor has
+   no use for. */
+.gt-embed-missing {
+  min-height: 48px;
+  border: 1px dashed #94a3b8;
+  border-radius: 8px;
+}
+
 /* Utilities */
 
 .gt-visually-hidden {
@@ -626,7 +662,8 @@
   .gt-cta,
   .gt-lead-submit,
   .gt-lead-skip,
-  .gt-modal-close {
+  .gt-modal-close,
+  .gt-embed-start {
     transition: none;
   }
 }

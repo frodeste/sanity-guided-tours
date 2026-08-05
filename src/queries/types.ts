@@ -286,3 +286,21 @@ export interface GuidedTourDoc {
   outro: GuidedTourOutro | null
   settings: GuidedTourSettings | null
 }
+
+/**
+ * The full result shape of `guidedTourEmbedProjection` — a `guidedTourEmbed`
+ * object (Portable Text block or page-builder section) with its `tour`
+ * reference dereferenced through `tourProjection`. `tour` is nullable: a
+ * broken, unpublished, or draft-only reference dereferences to `null`
+ * rather than failing the query, so a renderer must handle a missing tour
+ * (design spec §14).
+ *
+ * @public
+ */
+export interface GuidedTourEmbedValue {
+  _key: string
+  _type: 'guidedTourEmbed'
+  displayMode: 'inline' | 'modal'
+  buttonLabel: string | null
+  tour: GuidedTourDoc | null
+}

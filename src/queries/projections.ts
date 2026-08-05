@@ -3,6 +3,7 @@
 // test/exports.test.ts for the guard that enforces this.
 
 import {
+  EMBED_DEFAULTS,
   HOTSPOT_DEFAULTS,
   LEAD_CAPTURE_DEFAULTS,
   LEAD_CAPTURE_FIELD_DEFAULTS,
@@ -136,4 +137,22 @@ export const tourProjection = /* groq */ `{
     "showChapterMenu": coalesce(showChapterMenu, ${SETTINGS_DEFAULTS.showChapterMenu}),
     "showStepDots": coalesce(showStepDots, ${SETTINGS_DEFAULTS.showStepDots})
   }
+}`
+
+/**
+ * Projects a `guidedTourEmbed` object (Portable Text block or page-builder
+ * section), dereferencing its `tour` reference through `tourProjection` and
+ * coalescing `displayMode` to its schema default. `tour` is not coalesced —
+ * a broken, unpublished, or draft-only reference dereferences to `null`,
+ * and there is no sensible tour to fall back to. Re-exported from `./index`
+ * so a consumer mapping this type in their own PT/section renderer (design
+ * spec §14) can compose a query against these same fields.
+ *
+ * @public
+ */
+export const guidedTourEmbedProjection = /* groq */ `{
+  _key, _type,
+  "displayMode": coalesce(displayMode, "${EMBED_DEFAULTS.displayMode}"),
+  buttonLabel,
+  "tour": tour->${tourProjection}
 }`

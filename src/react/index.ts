@@ -2,6 +2,8 @@
 
 export {GuidedTour} from './GuidedTour'
 export type {GuidedTourProps} from './GuidedTour'
+export {GuidedTourEmbed} from './GuidedTourEmbed'
+export type {GuidedTourEmbedProps} from './GuidedTourEmbed'
 export {GuidedTourModal} from './GuidedTourModal'
 export type {GuidedTourModalProps} from './GuidedTourModal'
 export type {GuidedTourEvent, GuidedTourEventHandler} from './events'

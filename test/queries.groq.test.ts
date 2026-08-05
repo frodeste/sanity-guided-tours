@@ -2,7 +2,7 @@ import {describe, expect, test} from 'bun:test'
 
 import {evaluate, parse} from 'groq-js'
 
-import {guidedTourBySlugQuery} from '../src/queries'
+import {guidedTourBySlugQuery, guidedTourEmbedProjection} from '../src/queries'
 
 // This file is the repeatable version of the manual groq-js verification
 // the PR review did by hand. It runs the real `guidedTourBySlugQuery`
@@ -352,5 +352,100 @@ describe('guidedTourBySlugQuery evaluated with groq-js: populated document', () 
     expect(result.settings.showProgress).toBe(true)
     expect(result.settings.showChapterMenu).toBe(true)
     expect(result.settings.showStepDots).toBe(true)
+  })
+})
+
+describe('guidedTourEmbedProjection evaluated with groq-js', () => {
+  // A fixture page document with an `embeds` array — the same shape a
+  // consumer's own page-builder or Portable Text field holds a
+  // guidedTourEmbed object in. Reuses screenshotAsset/screenshotField from
+  // above so the referenced tour resolves through the real tourProjection,
+  // coalesces and all, not a hand-rolled stand-in.
+  const tourForEmbed = {
+    _id: 'tour-for-embed',
+    _type: 'guidedTour',
+    title: 'Embedded tour',
+    slug: {_type: 'slug', current: 'embedded-tour'},
+    chapters: [
+      {
+        _key: 'chapter-1',
+        _type: 'guidedTourChapter',
+        title: 'Chapter one',
+        steps: [
+          {
+            _key: 'step-1',
+            _type: 'guidedTourStep',
+            screenshot: screenshotField('Screenshot alt text'),
+          },
+        ],
+      },
+    ],
+  }
+
+  const page = {
+    _id: 'page',
+    _type: 'page',
+    embeds: [
+      {
+        _key: 'embed-full',
+        _type: 'guidedTourEmbed',
+        displayMode: 'modal',
+        buttonLabel: 'Take the tour',
+        tour: {_type: 'reference', _ref: tourForEmbed._id},
+      },
+      {
+        _key: 'embed-missing-displaymode',
+        _type: 'guidedTourEmbed',
+        buttonLabel: null,
+        tour: {_type: 'reference', _ref: tourForEmbed._id},
+      },
+      {
+        _key: 'embed-broken-ref',
+        _type: 'guidedTourEmbed',
+        displayMode: 'inline',
+        tour: {_type: 'reference', _ref: 'does-not-exist'},
+      },
+    ],
+  }
+
+  const dataset = [page, tourForEmbed, screenshotAsset]
+
+  async function runEmbedQuery() {
+    const query = `*[_id=="page"][0]{ "embeds": embeds[]${guidedTourEmbedProjection} }`
+    const tree = parse(query)
+    const value = await evaluate(tree, {dataset})
+    return value.get()
+  }
+
+  test('fully dereferences the tour through tourProjection, coalesces included', async () => {
+    const result = (await runEmbedQuery()) as any
+    const embed = result.embeds[0]
+    expect(embed.tour.title).toBe('Embedded tour')
+    // step.advance has no explicit value in tourForEmbed — this proves the
+    // dereferenced tour goes through the real tourProjection (with its own
+    // coalesce), not a shallow/partial projection of the reference.
+    expect(embed.tour.chapters[0].steps[0].advance).toBe('hotspot')
+    expect(embed.tour.chapters[0].steps[0].screenshot.url).toBe(screenshotAsset.url)
+  })
+
+  test('an explicit displayMode is preserved, not overridden by the coalesce', async () => {
+    const result = (await runEmbedQuery()) as any
+    expect(result.embeds[0].displayMode).toBe('modal')
+  })
+
+  test('a missing displayMode coalesces to "inline"', async () => {
+    const result = (await runEmbedQuery()) as any
+    expect(result.embeds[1].displayMode).toBe('inline')
+  })
+
+  test('buttonLabel projects as-is, without a coalesce', async () => {
+    const result = (await runEmbedQuery()) as any
+    expect(result.embeds[0].buttonLabel).toBe('Take the tour')
+    expect(result.embeds[1].buttonLabel).toBeNull()
+  })
+
+  test('a broken tour reference dereferences to null, not an error', async () => {
+    const result = (await runEmbedQuery()) as any
+    expect(result.embeds[2].tour).toBeNull()
   })
 })

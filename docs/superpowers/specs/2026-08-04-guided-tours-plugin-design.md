@@ -587,3 +587,28 @@ a migration script that inlines referenced chapters and steps into the tour, not
 a schema swap. If the dataset is empty of those types, adoption is a
 straightforward replacement. This check is cheap and should happen early, since
 its answer decides whether a migration is in scope at all.
+
+## 14. Embeds (added 2026-08-05, owner request)
+
+Editors can place a tour on an existing page — as a Portable Text block or a
+page-builder section — instead of (or in addition to) a dedicated route.
+
+- **Schema:** `guidedTourEmbed` object, registered unconditionally by
+  `guidedTours()` and inert until referenced. Fields: `tour` (reference →
+  `guidedTour`, required), `displayMode` (`'inline' | 'modal'`, initial
+  `inline` — the initial value lives in the shared defaults module and is
+  coalesced in the projection per the M2 policy), `buttonLabel` (string,
+  modal mode only). Consumers opt in by adding `{type: 'guidedTourEmbed'}`
+  (or the exported `guidedTourEmbedTypeName` constant) to their own Portable
+  Text `of:` arrays or section lists.
+- **Queries:** `guidedTourEmbedProjection` dereferences the tour through the
+  full `tourProjection`; `GuidedTourEmbedValue` types the result with
+  `tour: GuidedTourDoc | null` — a broken, unpublished or draft-only
+  reference dereferences to null and must not crash a renderer.
+- **Viewer:** `<GuidedTourEmbed value={…}>` in `/react`
+  (`GuidedTourEmbedProps` = `Omit<GuidedTourProps, 'tour'>` + `value`).
+  Inline mode renders `<GuidedTour>` in place; modal mode renders an
+  accent-themed start button (label: personalized `buttonLabel`, else the
+  `startTour` label) driving `<GuidedTourModal>`. Null tours render a
+  neutral placeholder with visually-hidden text and a dev-only warning.
+- The README documents the `@portabletext/react` component-map wiring.

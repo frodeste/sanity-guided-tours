@@ -6,6 +6,7 @@ import axe, {type Result} from 'axe-core'
 import type {
   GuidedTourChapter,
   GuidedTourDoc,
+  GuidedTourEmbedValue,
   GuidedTourHotspot,
   GuidedTourImage,
   GuidedTourLeadCapture,
@@ -19,6 +20,7 @@ import type {
   GuidedTourTooltip,
 } from '../../src/queries/types'
 import {GuidedTour} from '../../src/react/GuidedTour'
+import {GuidedTourEmbed} from '../../src/react/GuidedTourEmbed'
 import {GuidedTourModal} from '../../src/react/GuidedTourModal'
 
 afterEach(() => {
@@ -222,6 +224,18 @@ function fixtureTourWithLeadCapture(): GuidedTourDoc {
   return tour({...fixtureTour(), leadCapture: leadCapture()})
 }
 
+/** A `guidedTourEmbedProjection` result wrapping {@link fixtureTour} (M6). */
+function embedValue(overrides: Partial<GuidedTourEmbedValue> = {}): GuidedTourEmbedValue {
+  return {
+    _key: 'embed-1',
+    _type: 'guidedTourEmbed',
+    displayMode: 'inline',
+    buttonLabel: null,
+    tour: fixtureTour(),
+    ...overrides,
+  }
+}
+
 // Narrowing `Element | null` to `Element` with `as` is banned (oxlint);
 // throwing keeps every call site a plain assertion instead.
 function query(container: ParentNode, selector: string): Element {
@@ -370,6 +384,25 @@ describe('axe: accessibility states', () => {
       <GuidedTourModal tour={fixtureTour()} open onOpenChange={() => {}} />,
     )
     expect(container.querySelector('.gt-modal')).not.toBeNull()
+    expect(query(container, '.gt-modal').getAttribute('role')).toBe('dialog')
+
+    await assertNoAxeViolations(container)
+  })
+
+  // M6: GuidedTourEmbed's inline mode — just the .gt-embed wrapper around
+  // an ordinary tour, verifying the wrapper itself introduces no violation.
+  test('an inline embed has no violations', async () => {
+    const {container} = render(<GuidedTourEmbed value={embedValue({displayMode: 'inline'})} />)
+    expect(query(container, '.gt-embed').querySelector('.gt-tour')).not.toBeNull()
+
+    await assertNoAxeViolations(container)
+  })
+
+  // M6: GuidedTourEmbed's modal mode, opened from its own trigger button —
+  // the button, backdrop, dialog panel, and wrapped tour all together.
+  test('a modal opened from an embed trigger has no violations', async () => {
+    const {container} = render(<GuidedTourEmbed value={embedValue({displayMode: 'modal'})} />)
+    fireEvent.click(queryButton(container, '.gt-embed-start'))
     expect(query(container, '.gt-modal').getAttribute('role')).toBe('dialog')
 
     await assertNoAxeViolations(container)
