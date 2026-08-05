@@ -20,7 +20,7 @@ import {readFile} from 'node:fs/promises'
 import {dirname, join} from 'node:path'
 import {fileURLToPath} from 'node:url'
 
-import {buildSampleTourDocument, type SampleTourDocument} from './builders'
+import {buildMetaTourDocument, buildSampleTourDocument, type SampleTourDocument} from './builders'
 
 const API_VERSION = 'v2026-08-01'
 const REQUIRED_VARS = ['SANITY_PROJECT_ID', 'SANITY_DATASET', 'SANITY_TOKEN'] as const
@@ -133,8 +133,9 @@ async function createOrReplaceDocument(env: SeedEnv, document: SampleTourDocumen
 async function main(): Promise<void> {
   const env = validateEnv(process.env)
   const imagesDir = join(dirname(fileURLToPath(import.meta.url)), 'images')
+  const metaImagesDir = join(imagesDir, 'meta')
 
-  console.error('Uploading seed screenshots...')
+  console.error('Uploading sample tour screenshots...')
   // Sequential, not Promise.all: keeps upload order deterministic and the
   // console output easy to follow — this script runs once per dataset
   // setup, not on a hot path where parallelism would matter.
@@ -155,11 +156,49 @@ async function main(): Promise<void> {
   )
 
   console.error('Writing the sample tour document...')
-  const document = buildSampleTourDocument({step1, step2, step3})
-  await createOrReplaceDocument(env, document)
-
+  const sampleTour = buildSampleTourDocument({step1, step2, step3})
+  await createOrReplaceDocument(env, sampleTour)
   console.error(
-    `Seeded "${document.title}" (_id: ${document._id}, slug: ${document.slug.current}) into ${env.projectId}/${env.dataset}.`,
+    `Seeded "${sampleTour.title}" (_id: ${sampleTour._id}, slug: ${sampleTour.slug.current}) into ${env.projectId}/${env.dataset}.`,
+  )
+
+  // The meta tour (#104): real captures of the plugin's OWN Studio editor
+  // (`scripts/capture-editor-shots/`), narrating how to build a tour with
+  // this plugin. Same idempotent `createOrReplace` pattern as the sample
+  // tour above, uploaded as a second, independent document — a fresh
+  // dataset ends up with both.
+  console.error('Uploading meta tour screenshots...')
+  const canvas = await uploadImage(
+    env,
+    join(metaImagesDir, 'canvas.png'),
+    'guided-tours-meta-canvas.png',
+  )
+  const upload = await uploadImage(
+    env,
+    join(metaImagesDir, 'upload.png'),
+    'guided-tours-meta-upload.png',
+  )
+  const filmstrip = await uploadImage(
+    env,
+    join(metaImagesDir, 'filmstrip.png'),
+    'guided-tours-meta-filmstrip.png',
+  )
+  const inspector = await uploadImage(
+    env,
+    join(metaImagesDir, 'inspector.png'),
+    'guided-tours-meta-inspector.png',
+  )
+  const preview = await uploadImage(
+    env,
+    join(metaImagesDir, 'preview.png'),
+    'guided-tours-meta-preview.png',
+  )
+
+  console.error('Writing the meta tour document...')
+  const metaTour = buildMetaTourDocument({canvas, upload, filmstrip, inspector, preview})
+  await createOrReplaceDocument(env, metaTour)
+  console.error(
+    `Seeded "${metaTour.title}" (_id: ${metaTour._id}, slug: ${metaTour.slug.current}) into ${env.projectId}/${env.dataset}.`,
   )
 }
 

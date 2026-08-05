@@ -391,12 +391,22 @@ first step, mid-tour with an open tooltip, the lead form, and the outro.
 
 ## Seeding your own dataset
 
-Populate a dataset you control with a sample tour exercising every feature —
-three steps across two chapters, all three element types, all three
-step-advance modes, personalization tokens, an outro with CTAs, and lead
-capture configured (disabled by default so seeding doesn't gate anything).
+Populate a dataset you control with two tours:
+
+- **`sample-tour`** — exercises every feature: three steps across two
+  chapters, all three element types, all three step-advance modes,
+  personalization tokens, an outro with CTAs, and lead capture configured
+  (disabled by default so seeding doesn't gate anything).
+- **`how-to-build-tours`** — a meta tour that teaches the plugin using the
+  plugin: its screenshots are real captures of the Studio's own canvas
+  editor (filmstrip, canvas, inspector, bulk upload, live preview) rendered
+  with fixture data by `scripts/capture-editor-shots/`, narrating the exact
+  authoring loop below, with an outro linking back to this README and the
+  repo.
+
 The script is dependency-free (plain `fetch` against the Sanity assets and
-mutate APIs) and idempotent — re-running it updates the same tour in place.
+mutate APIs) and idempotent — re-running it updates the same two tours in
+place.
 
 ```bash
 export SANITY_PROJECT_ID=your-project-id

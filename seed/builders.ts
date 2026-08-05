@@ -446,3 +446,228 @@ export function buildSampleTourDocument(
     settings,
   }
 }
+
+// --- Meta tour: the plugin teaching itself (master plan M5 Task 3, #104) ---
+
+/** Deterministic document id/slug — same `createOrReplace` idempotency convention as `SAMPLE_TOUR_ID`/`SAMPLE_TOUR_SLUG` above. */
+export const META_TOUR_ID = 'guided-tours-meta-tour'
+export const META_TOUR_SLUG = 'how-to-build-tours'
+
+/**
+ * One already-uploaded image asset id per captured Studio state — see
+ * `scripts/capture-editor-shots/`'s own doc comment for how these five PNGs
+ * are produced (Playwright screenshots of the REAL `CanvasInput`/
+ * `GuidedTourPreviewView` components, rendered with fixture data, not
+ * mockups). Named after the `?state=` value `capture.ts` passed the harness
+ * to produce each one, so the mapping from asset to screen is legible at the
+ * call site (`seed/seed.ts`) without cross-referencing anything else.
+ */
+export interface MetaTourAssetIds {
+  canvas: string
+  upload: string
+  filmstrip: string
+  inspector: string
+  preview: string
+}
+
+/**
+ * Builds the meta tour: `how-to-build-tours`, 5 steps across 3 chapters,
+ * narrating how an author actually builds a tour with this plugin — using
+ * screenshots of the plugin's OWN Studio editor as the tour's content (see
+ * `MetaTourAssetIds`'s doc comment). Every hotspot/tooltip position below
+ * was chosen by inspecting the real captures (`seed/images/meta/*.png`) at
+ * their captured 1280x800 resolution and reading off approximate percent
+ * coordinates for the UI region each one narrates — filmstrip pane on the
+ * left, canvas pane in the middle, inspector pane on the right, matching
+ * `CanvasInput.tsx`'s three-pane layout.
+ *
+ * Unlike `buildSampleTourDocument`, this omits `tokens`/`leadCapture`: the
+ * meta tour is documentation, not a product demo with personalization or a
+ * lead-gen surface — nothing here needs either.
+ */
+export function buildMetaTourDocument(
+  assetIds: MetaTourAssetIds,
+  keyGen: KeyGen = createKeyGen(),
+): SampleTourDocument {
+  const canvasStep = buildStep(keyGen, {
+    title: 'Meet the canvas editor',
+    screenshot: imageField(
+      assetIds.canvas,
+      'The chapters field open in the three-pane canvas editor: filmstrip, canvas, and inspector',
+    ),
+    advance: 'button',
+    elements: [
+      buildTooltip(keyGen, {
+        x: 50,
+        y: 20,
+        width: 320,
+        placement: 'bottom',
+        trigger: 'auto',
+        content: plainTextBlock(
+          keyGen,
+          'This is the chapters field’s own input component: filmstrip on the left, the canvas in the middle, an inspector on the right — all real Studio UI, no separate app.',
+        ),
+      }),
+    ],
+  })
+
+  const uploadStep = buildStep(keyGen, {
+    title: 'Bulk-upload screenshots',
+    screenshot: imageField(
+      assetIds.upload,
+      'The filmstrip pane with a chapter’s bulk screenshot upload drop zone highlighted',
+    ),
+    advance: 'button',
+    elements: [
+      buildTooltip(keyGen, {
+        x: 13,
+        y: 26,
+        width: 260,
+        placement: 'right',
+        trigger: 'auto',
+        content: plainTextBlock(
+          keyGen,
+          'Drop image files on a chapter — or click "Upload screenshots…" — and each one becomes a new step, uploaded straight to your dataset.',
+        ),
+      }),
+    ],
+  })
+
+  const hotspotStep = buildStep(keyGen, {
+    title: 'Click to place a hotspot',
+    screenshot: imageField(
+      assetIds.filmstrip,
+      'The canvas pane with the Hotspot tool active and a placed hotspot selected',
+    ),
+    advance: 'hotspot',
+    elements: [
+      buildHotspot(keyGen, {
+        x: 51,
+        y: 49,
+        label: 'Continue',
+        action: 'advance',
+        pulse: true,
+      }),
+      buildTooltip(keyGen, {
+        x: 51,
+        y: 68,
+        width: 280,
+        placement: 'bottom',
+        trigger: 'auto',
+        content: plainTextBlock(
+          keyGen,
+          'Pick a tool, then click anywhere on the screenshot to place it. Selected, it’s draggable, arrow-key-nudgeable, and Delete removes it.',
+        ),
+      }),
+    ],
+  })
+
+  const inspectorStep = buildStep(keyGen, {
+    title: 'Edit it in the inspector',
+    screenshot: imageField(
+      assetIds.inspector,
+      'The inspector pane showing the selected element, with the device toggle switched to mobile',
+    ),
+    advance: 'button',
+    elements: [
+      buildTooltip(keyGen, {
+        x: 87,
+        y: 22,
+        width: 260,
+        placement: 'left',
+        trigger: 'auto',
+        content: plainTextBlock(
+          keyGen,
+          '"Edit fields" opens Sanity’s own item dialog for the selected element — full validation and presence, not a reimplementation.',
+        ),
+      }),
+      buildTooltip(keyGen, {
+        x: 8,
+        y: 16,
+        width: 240,
+        placement: 'bottom',
+        trigger: 'auto',
+        content: plainTextBlock(
+          keyGen,
+          'The Desktop/Mobile toggle at the top edits device-specific overrides — position, width — without touching the desktop values.',
+        ),
+      }),
+    ],
+  })
+
+  const previewStep = buildStep(keyGen, {
+    title: 'Preview, then publish',
+    screenshot: imageField(
+      assetIds.preview,
+      'The live GuidedTourPreviewView rendering the tour exactly as viewers will see it',
+    ),
+    advance: 'button',
+    elements: [
+      buildTextOverlay(keyGen, {
+        x: 50,
+        y: 90,
+        width: 60,
+        background: 'contrast',
+        opacity: 92,
+        content: plainTextBlock(
+          keyGen,
+          'This preview reads the draft document directly — no publish needed to see your changes. Publish when you’re happy; viewers see it instantly.',
+        ),
+      }),
+    ],
+  })
+
+  const chapters: ChapterDoc[] = [
+    buildChapter(keyGen, {
+      title: 'The three-pane editor',
+      description: 'What the chapters field looks like, and where the screenshots come from.',
+      steps: [canvasStep, uploadStep],
+    }),
+    buildChapter(keyGen, {
+      title: 'Placing and editing elements',
+      description: 'Adding a hotspot, then handing it off to the inspector to fill in.',
+      steps: [hotspotStep, inspectorStep],
+    }),
+    buildChapter(keyGen, {
+      title: 'Preview and publish',
+      description: 'Checking your work before it goes live.',
+      steps: [previewStep],
+    }),
+  ]
+
+  const outro = buildOutro({
+    heading: 'Build your own',
+    body: linkedTextBlock(
+      keyGen,
+      'That’s the whole authoring loop. For the full field reference, theming, and framework wiring, read the ',
+      'README',
+      'https://github.com/frodeste/sanity-guided-tours#readme',
+      ', or browse the source.',
+    ),
+    ctas: [
+      buildOutroCta(keyGen, {
+        label: 'Read the README',
+        href: 'https://github.com/frodeste/sanity-guided-tours#readme',
+      }),
+      buildOutroCta(keyGen, {
+        label: 'View the repo',
+        href: 'https://github.com/frodeste/sanity-guided-tours',
+        style: 'secondary',
+      }),
+    ],
+  })
+
+  const settings = buildSettings({showProgress: true, showChapterMenu: true, showStepDots: true})
+
+  return {
+    _id: META_TOUR_ID,
+    _type: 'guidedTour',
+    title: 'How to build a guided tour',
+    slug: {_type: 'slug', current: META_TOUR_SLUG},
+    description:
+      'A guided tour that teaches the plugin itself. Every screenshot here is a real capture of the Studio’s own canvas editor — filmstrip, canvas, inspector, bulk upload, and live preview — rendered with fixture data by scripts/capture-editor-shots/, not a mockup. The hotspots and tooltips layered on top are authored the exact same way yours would be.',
+    chapters,
+    outro,
+    settings,
+  }
+}
