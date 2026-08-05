@@ -222,7 +222,16 @@ export function GuidedTour({
   // later shows it again, matching "shows the form INSTEAD of the step
   // until submitted or skipped". A misconfigured `afterStepIndex` of `null`
   // (Studio allows saving the trigger without it) never matches any index,
-  // so the trigger silently never fires rather than crashing.
+  // so the trigger silently never fires rather than crashing. Ruling
+  // (code review): the same applies when `afterStepIndex` is IN range but
+  // `afterStepIndex + 1` is not — i.e. `afterStepIndex` is the last index
+  // or beyond — since no `currentIndex` the tour can ever hold equals a
+  // value past `flat.length - 1`, `===` here just never matches and the
+  // trigger silently never fires, exactly like the `null` case. This is
+  // deliberate, not a gap: predictable (no clamping to "show it on the
+  // last step instead" surprise), and an author who wants the interstitial
+  // after the tour's last step already has the `atEnd` trigger for that —
+  // documented on the schema field itself (`src/schema/leadCapture.ts`).
   const showAfterStepLead =
     leadCapture !== null &&
     leadCapture.trigger === 'afterStep' &&
@@ -319,6 +328,23 @@ export function GuidedTour({
   // navigation never spuriously abandons: the schedule (on cleanup) and
   // the cancel (at the top of the next run) happen synchronously in the
   // same commit, well before the deferred timer would fire.
+  //
+  // Code review fix (M4 Task 3): `showAfterStepLead` gates the
+  // `stepViewed`/`viewedStepsRef` write below — while it's `true`,
+  // `currentIndex` points at a step whose CONTENT is replaced by the lead
+  // form (`.gt-lead`, not `.gt-stage`), so the viewer hasn't actually seen
+  // it yet. `showAfterStepLead` is in the dependency array specifically so
+  // dismissing it (Skip or a successful submit, `leadDismissed` flips
+  // true, `currentIndex` unchanged) re-runs this effect and fires
+  // `step_viewed` at THAT point instead — the moment the step's real
+  // content becomes visible. Deliberately `showAfterStepLead`, not the
+  // broader `showLeadForm`: the `atEnd` interstitial (`showAtEndLead`)
+  // never changes `currentIndex` at all — that step was already viewed
+  // normally before its Next was intercepted — so it must NOT re-trigger
+  // this effect a second time on its own dismissal (that would double-count
+  // a step already in `viewedStepsRef`). Abandon scheduling is untouched:
+  // a viewer who abandons while looking at the interstitial was still, in
+  // a real sense, last positioned at this index.
   useEffect(() => {
     const tracker = trackerRef.current
     if (!tracker) return undefined
@@ -327,17 +353,19 @@ export function GuidedTour({
     tracker.cancelScheduledAbandon()
     if (!flatStep) return undefined
 
-    tracker.stepViewed({
-      stepIndex: flatStep.stepIndex,
-      stepKey: flatStep.step._key,
-      chapterIndex: flatStep.chapterIndex,
-    })
-    viewedStepsRef.current.add(flatStep.stepIndex)
+    if (!showAfterStepLead) {
+      tracker.stepViewed({
+        stepIndex: flatStep.stepIndex,
+        stepKey: flatStep.step._key,
+        chapterIndex: flatStep.chapterIndex,
+      })
+      viewedStepsRef.current.add(flatStep.stepIndex)
+    }
 
     return () => {
       tracker.scheduleAbandon(flatStep.stepIndex)
     }
-  }, [currentIndex, flat])
+  }, [currentIndex, flat, showAfterStepLead])
 
   // Memoized (rather than a plain function like `handlePrev` below) so the
   // advance:'auto' timer effect right after it — and Step's hotspot-driven
@@ -599,15 +627,28 @@ export function GuidedTour({
   // `tour.outro` first) — the `?.`/`?? ''` here is defensive against the
   // same reactive-prop-change edge case the render swap below guards, not
   // a path this can reach in practice.
+  //
+  // Code review fix (M4 Task 3): the lead-capture interstitial gets the
+  // same treatment as the outro — `labels.leadFormAnnouncement`, checked
+  // right after `showOutro` (the two can never both be true at once: the
+  // `atEnd` interstitial's own dismissal is what lets `showOutro` become
+  // true in the first place, see `handleLeadDismiss`). This whole
+  // `announcement` value is plain render-time state, not something a key
+  // handler builds — exactly like `outroAnnouncement` already was — so it
+  // announces identically whether the interstitial was reached by mouse
+  // (Next/Skip/dot click) or keyboard (Arrow/Home/End navigation), with no
+  // separate wiring needed for either input method.
   const announcement = showOutro
     ? formatLabel(labels.outroAnnouncement, {
         heading: tour.outro?.heading ? personalizeText(tour.outro.heading, resolvedTokens) : '',
       })
-    : formatLabel(labels.stepAnnouncement, {
-        current: currentIndex + 1,
-        total: flat.length,
-        title: flatStep.step.title ?? flatStep.chapterTitle,
-      })
+    : showLeadForm
+      ? labels.leadFormAnnouncement
+      : formatLabel(labels.stepAnnouncement, {
+          current: currentIndex + 1,
+          total: flat.length,
+          title: flatStep.step.title ?? flatStep.chapterTitle,
+        })
   // The fill itself (`.gt-progress::after`'s `width`, styles.css) reads
   // `--gt-progress-percent`, set here rather than defaulted in CSS —
   // unlike the theme custom properties on `.gt-tour`, this one has no

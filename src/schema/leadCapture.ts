@@ -35,7 +35,8 @@ export default defineType({
       name: 'afterStepIndex',
       title: 'After step',
       type: 'number',
-      description: 'Zero-based step index that triggers the form.',
+      description:
+        "Zero-based step index that triggers the form. The form shows in place of the step at index + 1. If the index is beyond the tour's steps (index + 1 has no step), the form is skipped — use the At end trigger instead.",
       hidden: ({parent}) => parentTrigger(parent) !== 'afterStep',
       validation: (rule) => rule.min(0),
     }),

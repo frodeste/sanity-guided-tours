@@ -210,6 +210,210 @@ describe('LeadForm: afterStep trigger', () => {
   })
 })
 
+// Code review fix (M4 Task 3, round 2): the gated step's content is
+// replaced by the interstitial — `step_viewed` used to fire for it anyway
+// (keyed only on `currentIndex`, which does change on entry) even though
+// the viewer never actually saw it. Fixed in `GuidedTour.tsx`'s view-
+// tracking effect by gating the emit (and the `viewedStepsRef` write feeding
+// `complete()`'s `stepsViewed`) on `!showAfterStepLead`.
+describe('LeadForm: step_viewed suppression while gated', () => {
+  test('entering the gated index emits no step_viewed; dismissing it then fires one', () => {
+    const {events, handler} = collector()
+    const {container} = render(
+      <GuidedTour
+        tour={tour({leadCapture: leadCapture({trigger: 'afterStep', afterStepIndex: 0})})}
+        onEvent={handler}
+      />,
+    )
+
+    clickNext(container) // step 0 -> gated index 1, form shows instead
+    expect(container.querySelector('.gt-lead')).not.toBeNull()
+    expect(
+      events.filter((event) => event.type === 'step_viewed').map((event) => event.stepIndex),
+    ).toEqual([0]) // only the real step 0 — nothing for the gated index yet
+
+    fireEvent.click(queryButton(container, '.gt-lead-skip')) // dismiss — the step is now visible
+    expect(container.querySelector('.gt-stage')).not.toBeNull()
+    expect(
+      events.filter((event) => event.type === 'step_viewed').map((event) => event.stepIndex),
+    ).toEqual([0, 1])
+  })
+
+  test('a submit-dismissal also fires step_viewed for the now-visible step', async () => {
+    const {events, handler} = collector()
+    const {container} = render(
+      <GuidedTour
+        tour={tour({
+          leadCapture: leadCapture({
+            trigger: 'afterStep',
+            afterStepIndex: 0,
+            fields: [],
+          }),
+        })}
+        onEvent={handler}
+      />,
+    )
+
+    clickNext(container) // -> gated index 1
+    fireEvent.submit(query(container, '.gt-lead-form'))
+
+    // Waiting on the DOM alone (`.gt-stage` appearing) isn't enough here:
+    // that reflects the synchronous state update in the promise's `.then`,
+    // but `step_viewed` for the now-visible step fires from a `useEffect`
+    // (keyed on `showAfterStepLead`) — a passive effect, which React may
+    // flush on a later tick than the commit `waitFor`'s DOM predicate would
+    // already be satisfied by. Poll the event itself instead.
+    await waitFor(() => {
+      expect(
+        events.filter((event) => event.type === 'step_viewed').map((event) => event.stepIndex),
+      ).toEqual([0, 1])
+    })
+    expect(container.querySelector('.gt-stage')).not.toBeNull()
+  })
+
+  test('a step only ever seen behind the still-undismissed interstitial is excluded from stepsViewed', () => {
+    const {events, handler} = collector()
+    const {container} = render(
+      <GuidedTour
+        tour={tour({
+          chapters: [
+            chapter([
+              step({_key: 's1'}),
+              step({_key: 's2'}), // gated, never dismissed below — must not count
+              step({_key: 's3'}),
+              step({_key: 's4'}),
+            ]),
+          ],
+          leadCapture: leadCapture({trigger: 'afterStep', afterStepIndex: 0}),
+        })}
+        onEvent={handler}
+      />,
+    )
+
+    clickNext(container) // -> gated index 1 (s2), form shows, undismissed
+    expect(container.querySelector('.gt-lead')).not.toBeNull()
+
+    // Bypass the gate entirely via a dot jump to index 3 (s4) — leaves the
+    // gated step's content unseen and the interstitial still undismissed.
+    const dots = container.querySelectorAll<HTMLButtonElement>('.gt-dot')
+    const fourthDot = dots[3]
+    if (!fourthDot) throw new Error('expected a fourth dot')
+    fireEvent.click(fourthDot)
+    expect(container.querySelector('.gt-lead')).toBeNull()
+    expect(query(container, '.gt-counter').textContent).toBe('4 / 4')
+
+    clickNext(container) // last step's Next -> complete (no outro, no atEnd gate)
+
+    const completedEvents = events.filter((event) => event.type === 'tour_completed')
+    expect(completedEvents).toHaveLength(1)
+    // Only index 0 (s1) and index 3 (s4) were ever actually seen — index 1
+    // (gated, bypassed) and index 2 (s3, never visited) are excluded.
+    expect(completedEvents[0]).toMatchObject({stepsViewed: 2})
+  })
+})
+
+describe('LeadForm: live region announcement', () => {
+  test('announces leadFormAnnouncement once the interstitial shows, via mouse (Next click)', () => {
+    const {container} = render(
+      <GuidedTour
+        tour={tour({leadCapture: leadCapture({trigger: 'afterStep', afterStepIndex: 0})})}
+      />,
+    )
+
+    expect(query(container, '.gt-live').textContent).not.toBe(
+      'Before you continue: please fill in the form',
+    )
+
+    clickNext(container) // -> gated, mouse-driven
+    expect(query(container, '.gt-live').textContent).toBe(
+      'Before you continue: please fill in the form',
+    )
+  })
+
+  test('announces leadFormAnnouncement once the interstitial shows, via keyboard (ArrowRight)', () => {
+    const {container} = render(
+      <GuidedTour
+        tour={tour({leadCapture: leadCapture({trigger: 'afterStep', afterStepIndex: 0})})}
+      />,
+    )
+
+    fireEvent.keyDown(query(container, '.gt-tour'), {key: 'ArrowRight'}) // -> gated, keyboard-driven
+    expect(query(container, '.gt-live').textContent).toBe(
+      'Before you continue: please fill in the form',
+    )
+  })
+
+  test('announces it for the atEnd trigger too, and reverts once dismissed', () => {
+    const {container} = render(
+      <GuidedTour tour={tour({leadCapture: leadCapture({trigger: 'atEnd'})})} />,
+    )
+
+    clickNext(container)
+    clickNext(container)
+    clickNext(container) // -> gated (atEnd)
+    expect(query(container, '.gt-live').textContent).toBe(
+      'Before you continue: please fill in the form',
+    )
+
+    fireEvent.click(queryButton(container, '.gt-lead-skip'))
+    expect(query(container, '.gt-live').textContent).not.toBe(
+      'Before you continue: please fill in the form',
+    )
+  })
+
+  test('a custom leadFormAnnouncement label override is honored', () => {
+    const {container} = render(
+      <GuidedTour
+        tour={tour({leadCapture: leadCapture({trigger: 'afterStep', afterStepIndex: 0})})}
+        labels={{leadFormAnnouncement: 'One more thing before you continue'}}
+      />,
+    )
+
+    clickNext(container)
+    expect(query(container, '.gt-live').textContent).toBe('One more thing before you continue')
+  })
+})
+
+describe('LeadForm: afterStepIndex out of range', () => {
+  test('afterStepIndex equal to the last index never shows the form — afterStepIndex + 1 is out of range (ruling: use atEnd instead)', () => {
+    const {events, handler} = collector()
+    const {container} = render(
+      // 3-step tour (indices 0-2); afterStepIndex: 2 (the last index) means
+      // the would-be gated index is 3, which doesn't exist. Per the
+      // documented ruling (schema field description + GuidedTour.tsx's
+      // showAfterStepLead comment) this silently never fires, exactly like
+      // a null afterStepIndex.
+      <GuidedTour
+        tour={tour({leadCapture: leadCapture({trigger: 'afterStep', afterStepIndex: 2})})}
+        onEvent={handler}
+      />,
+    )
+
+    clickNext(container)
+    clickNext(container) // -> last step (index 2); would-be gate is index 3
+    expect(container.querySelector('.gt-lead')).toBeNull()
+    expect(query(container, '.gt-counter').textContent).toBe('3 / 3')
+
+    clickNext(container) // last step's Next: completes normally, never gated
+    expect(container.querySelector('.gt-lead')).toBeNull()
+    expect(events.filter((event) => event.type === 'tour_completed')).toHaveLength(1)
+  })
+
+  test('an afterStepIndex further beyond the tour also never fires', () => {
+    const {container} = render(
+      <GuidedTour
+        tour={tour({leadCapture: leadCapture({trigger: 'afterStep', afterStepIndex: 10})})}
+      />,
+    )
+
+    clickNext(container)
+    clickNext(container)
+    clickNext(container)
+
+    expect(container.querySelector('.gt-lead')).toBeNull()
+  })
+})
+
 describe('LeadForm: atEnd trigger and complete()/outro ordering', () => {
   test('Next on the last step shows the form INSTEAD of completing — complete() has not fired yet', () => {
     const {events, handler} = collector()

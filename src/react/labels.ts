@@ -24,6 +24,8 @@ export interface GuidedTourLabels {
   hotspotLink: string
   /** Template: `"Tour complete: {heading}"` — announced via the live region when the outro screen appears (M4). */
   outroAnnouncement: string
+  /** Announced via the live region when the lead-capture interstitial replaces the step — either trigger, and regardless of whether it was reached by keyboard or mouse (the announcement, like `outroAnnouncement`, is recomputed from render state, not from the input event itself) (M4). */
+  leadFormAnnouncement: string
   /** The lead-capture form's submit button, when `leadCapture.submitLabel` is unset (M4). */
   leadSubmit: string
   /** The lead-capture form's Skip button — controller ruling: the interstitial is always skippable (M4). */
@@ -51,6 +53,7 @@ export const defaultLabels: GuidedTourLabels = {
   hotspotReveal: 'Show information',
   hotspotLink: 'Open link',
   outroAnnouncement: 'Tour complete: {heading}',
+  leadFormAnnouncement: 'Before you continue: please fill in the form',
   leadSubmit: 'Submit',
   leadSkip: 'Skip',
   leadRequired: '{label} is required.',
