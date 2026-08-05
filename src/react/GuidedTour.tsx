@@ -14,6 +14,7 @@ import {
 import type {GuidedTourDoc} from '../queries/types'
 import {GuidedTourContext} from './context'
 import type {GuidedTourEventHandler} from './events'
+import {ensureGoogleFont} from './fontLoader'
 import {isNavigationExempt} from './helpers'
 import {defaultLabels, formatLabel, type GuidedTourLabels} from './labels'
 import {LeadForm} from './LeadForm'
@@ -23,7 +24,7 @@ import {missingRequired, personalizeText, resolveTokens} from './personalize'
 import {createTracker} from './session'
 import {Step} from './Step'
 import {themeToStyle} from './theme'
-import type {GuidedTourImageProps} from './types'
+import type {GuidedTourColorScheme, GuidedTourImageProps} from './types'
 
 /**
  * @public
@@ -69,8 +70,43 @@ export interface GuidedTourProps {
    * custom-property overrides. Permanent public API, not an M2 stopgap:
    * M4's theme wiring composes with it (theme first, then this style
    * wins). Design spec §8.1.
+   *
+   * M7 amendment: `theme.ts` no longer emits a scheme-resolved `--gt-*`
+   * directly — it emits `--gt-light-*`/`--gt-dark-*` pairs, and
+   * `styles.css` maps whichever member is active onto `--gt-accent` etc.
+   * per `colorScheme`. Overriding e.g. `--gt-accent` here still wins (an
+   * inline custom property beats any stylesheet rule regardless of
+   * specificity) — but that override then applies identically in BOTH
+   * light and dark, since it bypasses the light/dark mapping entirely
+   * rather than participating in it. A consumer who wants their override
+   * to still vary by scheme should instead override `--gt-light-accent`/
+   * `--gt-dark-accent` here (or both), not `--gt-accent`.
    */
   style?: CSSProperties
+  /**
+   * Forces the tour's color scheme: `'light'`/`'dark'` render
+   * `data-gt-scheme` on the root, which `styles.css`'s scheme-mapping
+   * rules select on directly, ignoring `prefers-color-scheme` entirely.
+   * `'auto'` (the default) renders no `data-gt-scheme` attribute at all —
+   * the tour follows the host's OS/browser preference via `styles.css`'s
+   * `@media (prefers-color-scheme: dark)` rule. A consumer with their own
+   * light/dark toggle passes `'light'`/`'dark'` explicitly, driven by
+   * their own state, rather than relying on the OS preference.
+   */
+  colorScheme?: GuidedTourColorScheme
+  /**
+   * Whether a `tour.theme?.googleFont` should be loaded automatically via
+   * `./fontLoader.ts`'s `ensureGoogleFont` (appending a Google Fonts
+   * stylesheet `<link>` to `document.head`). Defaults to `true`. A
+   * consumer self-hosting fonts, avoiding the third-party request for
+   * privacy/GDPR reasons, or loading the family through their own pipeline
+   * sets this `false` — `theme.ts`'s `--gt-font-family` custom property
+   * still resolves to the same family regardless (the CSS custom property
+   * and the network request are independent; disabling the request just
+   * means the browser falls back to its default font until/unless the
+   * family is available some other way).
+   */
+  loadGoogleFont?: boolean
 }
 
 function joinClassNames(...classNames: (string | false | undefined)[]): string {
@@ -124,6 +160,8 @@ export function GuidedTour({
   onStepChange,
   className,
   style,
+  colorScheme = 'auto',
+  loadGoogleFont = true,
 }: GuidedTourProps): ReactNode {
   const flat = useMemo(() => flattenTour(tour), [tour])
   const isControlled = typeof controlledStep === 'number'
@@ -346,6 +384,26 @@ export function GuidedTour({
       console.warn(`[GuidedTour] missing required personalization token "${key}"`)
     }
   }, [tour.tokens, resolvedTokens])
+
+  // M7 theming: loads `tour.theme.googleFont` via `./fontLoader.ts` unless
+  // the consumer opted out (`loadGoogleFont={false}`) or the theme sets no
+  // Google Font at all. `ensureGoogleFont` does its own re-validation,
+  // idempotence, and SSR guarding — this effect is just the "when" (mount,
+  // and again whenever the family or the opt-out itself changes), not the
+  // "how". Deliberately independent of `themeToStyle`'s OWN gating for the
+  // same value (`./theme.ts`'s `resolveFontFamily`) — that one decides
+  // what `--gt-font-family` says; this one decides whether the network
+  // request that makes that family actually render happens at all. A
+  // rejected/invalid family fails both gates identically (same pattern),
+  // but a consumer could in principle set `loadGoogleFont={false}` while
+  // the custom property still names the family, expecting it to arrive via
+  // their own pipeline instead.
+  useEffect(() => {
+    if (!loadGoogleFont) return
+    const googleFont = tour.theme?.googleFont
+    if (!googleFont) return
+    ensureGoogleFont(googleFont)
+  }, [tour.theme?.googleFont, loadGoogleFont])
 
   // Strict-Mode-safe view/abandon tracking (design spec §8.4, plan Task 4
   // ruling): cleanup schedules an abandon for the step being left; the
@@ -686,12 +744,23 @@ export function GuidedTour({
   // already validly contained.
   const rootStyle: CSSProperties = {...themeToStyle(tour.theme), ...style}
 
+  // `'auto'` renders no attribute at all — `styles.css`'s
+  // `@media (prefers-color-scheme: dark)` rule targets
+  // `.gt-tour:not([data-gt-scheme])` specifically so that omission is what
+  // makes auto-mode eligible for it. `'light'`/`'dark'` render the
+  // attribute, which the forced-dark rule (`.gt-tour[data-gt-scheme='dark']`)
+  // or (for `'light'`) simply the base `.gt-tour` rule with no override
+  // selects on instead — the two are disjoint by construction (this
+  // module's `test/react/theme.test.ts` documents why).
+  const schemeAttr = colorScheme === 'auto' ? undefined : colorScheme
+
   if (flat.length === 0) {
     return (
       <div
         className={joinClassNames('gt-tour', 'gt-empty', className)}
         style={rootStyle}
         data-gt=""
+        data-gt-scheme={schemeAttr}
       >
         {personalizeText(tour.title, resolvedTokens)}
       </div>
@@ -761,6 +830,7 @@ export function GuidedTour({
       className={joinClassNames('gt-tour', className)}
       style={rootStyle}
       data-gt=""
+      data-gt-scheme={schemeAttr}
       onKeyDown={handleKeyDown}
     >
       <div className="gt-header">
