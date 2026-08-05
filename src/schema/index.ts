@@ -5,6 +5,7 @@ import chapter from './chapter'
 import hotspot from './elements/hotspot'
 import textOverlay from './elements/textOverlay'
 import tooltip from './elements/tooltip'
+import embed from './embed'
 import {guidedTourDocument} from './guidedTour'
 import leadCapture from './leadCapture'
 import outro from './outro'
@@ -28,6 +29,7 @@ export function schemaTypes(config: ResolvedGuidedToursConfig): SchemaTypeDefini
     chapter,
     settings,
     outro,
+    embed,
   ]
 
   if (config.theme) types.push(theme)

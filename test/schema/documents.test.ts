@@ -1,6 +1,7 @@
 import {describe, expect, test} from 'bun:test'
 
 import chapter from '../../src/schema/chapter'
+import embed from '../../src/schema/embed'
 import {guidedTourDocument} from '../../src/schema/guidedTour'
 import {schemaTypes} from '../../src/schema/index'
 import leadCapture from '../../src/schema/leadCapture'
@@ -82,6 +83,12 @@ function prop(value: unknown, key: string): unknown {
 function ofTypeNames(field: unknown): string[] {
   const of = prop(field, 'of')
   return Array.isArray(of) ? of.filter(isTypeLike).map((m) => m.type) : []
+}
+
+/** Extracts the `.to` target type names of a reference field, without an unsafe cast. */
+function toTypeNames(field: unknown): string[] {
+  const to = prop(field, 'to')
+  return Array.isArray(to) ? to.filter(isTypeLike).map((m) => m.type) : []
 }
 
 function callHidden(field: FieldLike, context: unknown): boolean {
@@ -514,6 +521,57 @@ describe('guidedTourSettings', () => {
   })
 })
 
+describe('guidedTourEmbed', () => {
+  test('type name and field set', () => {
+    expect(embed.name).toBe('guidedTourEmbed')
+    expect(embed.type).toBe('object')
+    const names = fields(embed).map((f) => f.name)
+    expect(names).toEqual(expect.arrayContaining(['tour', 'displayMode', 'buttonLabel']))
+  })
+
+  test('tour is a required reference to guidedTour', () => {
+    const tour = fieldByName(fields(embed), 'tour')
+    expect(tour.type).toBe('reference')
+    expect(isRequired(tour)).toBe(true)
+    expect(toTypeNames(tour)).toEqual(expect.arrayContaining(['guidedTour']))
+  })
+
+  test('displayMode is a radio list of inline/modal, initially inline', () => {
+    const displayMode = fieldByName(fields(embed), 'displayMode')
+    expect(displayMode.type).toBe('string')
+    expect(displayMode.initialValue).toBe('inline')
+    expect(displayMode.options?.layout).toBe('radio')
+    expect(listValues(displayMode)).toEqual(['inline', 'modal'])
+  })
+
+  test('buttonLabel is a string, max 60', () => {
+    const buttonLabel = fieldByName(fields(embed), 'buttonLabel')
+    expect(buttonLabel.type).toBe('string')
+    expect(findCall(runValidation(buttonLabel.validation), 'max')?.args).toEqual([60])
+  })
+
+  test('buttonLabel is hidden unless displayMode is "modal"', () => {
+    const buttonLabel = fieldByName(fields(embed), 'buttonLabel')
+    expect(callHidden(buttonLabel, {parent: {displayMode: 'modal'}})).toBe(false)
+    expect(callHidden(buttonLabel, {parent: {displayMode: 'inline'}})).toBe(true)
+    expect(callHidden(buttonLabel, {parent: undefined})).toBe(true)
+  })
+
+  test('preview selects tour.title and a displayMode subtitle', () => {
+    const inline = embed.preview?.prepare?.({title: 'Onboarding', displayMode: 'inline'})
+    expect(inline?.title).toBe('Onboarding')
+    expect(inline?.subtitle).toBe('Inline')
+
+    const modal = embed.preview?.prepare?.({title: 'Onboarding', displayMode: 'modal'})
+    expect(modal?.subtitle).toBe('Button + modal')
+  })
+
+  test('prepare is defensive against undefined selections', () => {
+    expect(() => embed.preview?.prepare?.({})).not.toThrow()
+    expect(embed.preview?.prepare?.({})?.title).toBe('Guided tour embed')
+  })
+})
+
 describe('guidedTourDocument factory', () => {
   test('type name and base field set', () => {
     const tour = guidedTourDocument({theme: true, leadCapture: true, extraFields: []})
@@ -648,6 +706,7 @@ describe('schemaTypes', () => {
     'guidedTourOutro',
     'guidedTourTheme',
     'guidedTourLeadCapture',
+    'guidedTourEmbed',
     'guidedTour',
   ]
 
@@ -655,6 +714,16 @@ describe('schemaTypes', () => {
     const types = schemaTypes({theme: true, leadCapture: true, extend: {tour: []}})
     const names = types.map((t) => t.name)
     expect(names).toEqual(expect.arrayContaining(allNames))
+  })
+
+  test('guidedTourEmbed is registered for every theme/leadCapture permutation', () => {
+    for (const theme of [true, false]) {
+      for (const leadCapture of [true, false]) {
+        const types = schemaTypes({theme, leadCapture, extend: {tour: []}})
+        const names = types.map((t) => t.name)
+        expect(names).toContain('guidedTourEmbed')
+      }
+    }
   })
 
   test('theme:false drops guidedTourTheme and the tour has no theme field', () => {
