@@ -23,7 +23,7 @@ import {Outro} from './Outro'
 import {missingRequired, personalizeText, resolveTokens} from './personalize'
 import {createTracker} from './session'
 import {Step} from './Step'
-import {themeToStyle} from './theme'
+import {schemeAttr, themeToStyle} from './theme'
 import type {GuidedTourColorScheme, GuidedTourImageProps} from './types'
 
 /**
@@ -744,23 +744,13 @@ export function GuidedTour({
   // already validly contained.
   const rootStyle: CSSProperties = {...themeToStyle(tour.theme), ...style}
 
-  // `'auto'` renders no attribute at all — `styles.css`'s
-  // `@media (prefers-color-scheme: dark)` rule targets
-  // `.gt-tour:not([data-gt-scheme])` specifically so that omission is what
-  // makes auto-mode eligible for it. `'light'`/`'dark'` render the
-  // attribute, which the forced-dark rule (`.gt-tour[data-gt-scheme='dark']`)
-  // or (for `'light'`) simply the base `.gt-tour` rule with no override
-  // selects on instead — the two are disjoint by construction (this
-  // module's `test/react/theme.test.ts` documents why).
-  const schemeAttr = colorScheme === 'auto' ? undefined : colorScheme
-
   if (flat.length === 0) {
     return (
       <div
         className={joinClassNames('gt-tour', 'gt-empty', className)}
         style={rootStyle}
         data-gt=""
-        data-gt-scheme={schemeAttr}
+        data-gt-scheme={schemeAttr(colorScheme)}
       >
         {personalizeText(tour.title, resolvedTokens)}
       </div>
@@ -830,7 +820,7 @@ export function GuidedTour({
       className={joinClassNames('gt-tour', className)}
       style={rootStyle}
       data-gt=""
-      data-gt-scheme={schemeAttr}
+      data-gt-scheme={schemeAttr(colorScheme)}
       onKeyDown={handleKeyDown}
     >
       <div className="gt-header">

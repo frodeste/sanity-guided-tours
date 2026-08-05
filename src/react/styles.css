@@ -19,21 +19,49 @@
  * writes paired `--gt-light-*`/`--gt-dark-*` custom properties inline
  * (never a scheme-resolved `--gt-accent` directly) — this file is the
  * ONLY place that maps one of each pair onto the actual `--gt-*` custom
- * property everything else below consumes. `.gt-tour`'s own base rule IS
- * the light mapping; the two rules further down apply the dark mapping,
- * gated on two DISJOINT selectors so cascade order between them can never
- * matter (see the comment just above them): the `prefers-color-scheme`
- * media rule ONLY for auto mode (`:not([data-gt-scheme])`), the attribute
- * selector ONLY for a consumer-forced dark scheme
- * (`[data-gt-scheme='dark']`, `GuidedTour.tsx`'s `colorScheme` prop).
- * Forced light needs no rule of its own — the base mapping already IS
- * light. The literal fallback values below (`var(--gt-light-accent,
- * #7c3aed)` etc.) must equal `THEME_DEFAULTS`/`THEME_DARK_DEFAULTS`
- * (`../queries/defaults`) — enforced by `test/react/theme.test.ts`'s
- * parity tests, since CSS can't import that TS module directly.
+ * property everything else below consumes. The shared rule right below
+ * this comment IS the light mapping; the two rules further down apply the
+ * dark mapping, gated on two DISJOINT selectors so cascade order between
+ * them can never matter (see the comment just above them): the
+ * `prefers-color-scheme` media rule ONLY for auto mode
+ * (`:not([data-gt-scheme])`), the attribute selector ONLY for a
+ * consumer-forced dark scheme (`[data-gt-scheme='dark']`,
+ * `GuidedTour.tsx`'s `colorScheme` prop). Forced light needs no rule of
+ * its own — the base mapping already IS light. The literal fallback
+ * values below (`var(--gt-light-accent, #7c3aed)` etc.) must equal
+ * `THEME_DEFAULTS`/`THEME_DARK_DEFAULTS` (`../queries/defaults`) —
+ * enforced by `test/react/theme.test.ts`'s parity tests, since CSS can't
+ * import that TS module directly.
+ *
+ * The mapping rule's selector is `.gt-tour, .gt-modal-backdrop, .gt-embed`
+ * — not `.gt-tour` alone (M7 review fix). `.gt-modal-backdrop`
+ * (`GuidedTourModal.tsx`) is an ANCESTOR of the `.gt-tour` it wraps, and
+ * `.gt-embed` (`GuidedTourEmbed.tsx`'s wrapper, both display modes) is
+ * that same tour's SIBLING in modal mode (`.gt-embed-start` opens a
+ * `<GuidedTourModal>` next to it, not inside it) — CSS custom properties
+ * only inherit downward, so neither can see a nested `.gt-tour`'s own
+ * resolved `--gt-accent` etc. Both components spread `themeToStyle` and
+ * `data-gt-scheme` (via `./theme.ts`'s `schemeAttr`) onto that root
+ * themselves, exactly like `GuidedTour.tsx` does for `.gt-tour` — so this
+ * rule (and the two scheme-override rules) resolves the SAME custom
+ * properties independently on each of the three, not just on `.gt-tour`.
+ * Every `var(--gt-accent)`/etc reference inside `.gt-modal-backdrop`'s,
+ * `.gt-modal`'s, `.gt-modal-close`'s, and `.gt-embed-start`'s own rules
+ * (further down) additionally carries its OWN literal fallback now too —
+ * a second, independent safety net: an unfallback'd `var()` that resolves
+ * to nothing is "invalid at computed-value time", which for a
+ * non-inherited property (`background-color`, `border-color`, ...)
+ * resets it to its INITIAL value (`transparent` for a color), not to
+ * some earlier declaration or a sensible default — silently invisible
+ * rather than merely unbranded. Belt-and-suspenders: the mapping rule
+ * makes these surfaces theme- and scheme-AWARE; the per-declaration
+ * literal fallback makes them fail safe even if that mapping is ever
+ * bypassed (e.g. hand-authored markup, an SSR frame before hydration).
  */
 
-.gt-tour {
+.gt-tour,
+.gt-modal-backdrop,
+.gt-embed {
   --gt-accent: var(--gt-light-accent, #7c3aed);
   --gt-surface: var(--gt-light-surface, #ffffff);
   --gt-text: var(--gt-light-text, #0f172a);
@@ -43,7 +71,9 @@
   --gt-font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --gt-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 10px 24px -8px rgb(0 0 0 / 0.18);
   --gt-border: color-mix(in srgb, var(--gt-text) 12%, transparent);
+}
 
+.gt-tour {
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -58,7 +88,9 @@
    so a specificity tie between overlapping selectors is structurally
    impossible, not just avoided by declaration order. */
 @media (prefers-color-scheme: dark) {
-  .gt-tour:not([data-gt-scheme]) {
+  .gt-tour:not([data-gt-scheme]),
+  .gt-modal-backdrop:not([data-gt-scheme]),
+  .gt-embed:not([data-gt-scheme]) {
     --gt-accent: var(--gt-dark-accent, #a78bfa);
     --gt-surface: var(--gt-dark-surface, #0f172a);
     --gt-text: var(--gt-dark-text, #f1f5f9);
@@ -66,7 +98,9 @@
   }
 }
 
-.gt-tour[data-gt-scheme='dark'] {
+.gt-tour[data-gt-scheme='dark'],
+.gt-modal-backdrop[data-gt-scheme='dark'],
+.gt-embed[data-gt-scheme='dark'] {
   --gt-accent: var(--gt-dark-accent, #a78bfa);
   --gt-surface: var(--gt-dark-surface, #0f172a);
   --gt-text: var(--gt-dark-text, #f1f5f9);
@@ -609,7 +643,14 @@
   cursor: not-allowed;
 }
 
-/* Modal: the fixed backdrop + centered dialog panel GuidedTourModal renders (M4 Task 4) */
+/* Modal: the fixed backdrop + centered dialog panel GuidedTourModal renders
+   (M4 Task 4). Every `var()` reference below carries its own literal
+   fallback (light defaults, matching the constants this file's top comment
+   and `test/react/theme.test.ts` keep in parity) — belt-and-suspenders
+   alongside the `.gt-modal-backdrop`-scoped mapping rule above: even if
+   that mapping is ever bypassed, none of these declarations can go
+   "invalid at computed-value time" and collapse to their initial value
+   (M7 review fix — see this file's top comment). */
 
 .gt-modal-backdrop {
   position: fixed;
@@ -621,9 +662,15 @@
   padding: 24px;
   /* Plain-color fallback for browsers without `color-mix()` — matches
      `--gt-overlay`'s own default (#1e1b4b) at 80% opacity, so a consumer
-     who never overrides the theme sees the identical color either way. */
+     who never overrides the theme sees the identical color either way.
+     Independent of the `var(--gt-overlay, ...)` fallback just below: this
+     line is a browser-support fallback (`@supports not (color:
+     color-mix(in srgb, red, red))` territory), that one's a custom-
+     property-resolution fallback — a browser new enough for `color-mix()`
+     always uses the second line, with its own fallback kicking in only if
+     `--gt-overlay` itself is unset. */
   background: rgba(30, 27, 75, 0.8);
-  background: color-mix(in srgb, var(--gt-overlay) 80%, transparent);
+  background: color-mix(in srgb, var(--gt-overlay, #1e1b4b) 80%, transparent);
 }
 
 .gt-modal {
@@ -632,15 +679,15 @@
   max-height: 90vh;
   overflow: auto;
   padding: 24px;
-  background: var(--gt-surface);
-  color: var(--gt-text);
-  border: 1px solid var(--gt-border);
-  border-radius: var(--gt-radius);
-  box-shadow: var(--gt-shadow);
+  background: var(--gt-surface, #ffffff);
+  color: var(--gt-text, #0f172a);
+  border: 1px solid var(--gt-border, color-mix(in srgb, #0f172a 12%, transparent));
+  border-radius: var(--gt-radius, 12px);
+  box-shadow: var(--gt-shadow, 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 10px 24px -8px rgb(0 0 0 / 0.18));
 }
 
 .gt-modal:focus-visible {
-  outline: 2px solid var(--gt-accent);
+  outline: 2px solid var(--gt-accent, #7c3aed);
   outline-offset: 2px;
 }
 
@@ -653,7 +700,7 @@
   border: none;
   border-radius: 50%;
   background: transparent;
-  color: var(--gt-text);
+  color: var(--gt-text, #0f172a);
   font-size: 1.25rem;
   line-height: 1;
   cursor: pointer;
@@ -661,11 +708,11 @@
 }
 
 .gt-modal-close:hover {
-  background: color-mix(in srgb, var(--gt-text) 12%, transparent);
+  background: color-mix(in srgb, var(--gt-text, #0f172a) 12%, transparent);
 }
 
 .gt-modal-close:focus-visible {
-  outline: 2px solid var(--gt-accent);
+  outline: 2px solid var(--gt-accent, #7c3aed);
   outline-offset: 2px;
 }
 
@@ -741,10 +788,14 @@
 }
 
 /* Embed: <GuidedTourEmbed> — a guidedTourEmbed object placed on a page (M6).
-   `.gt-embed` (inline mode) and `.gt-embed-start` (modal mode's trigger
-   button) are rendered as siblings/ancestors of `.gt-tour`, same as
-   `.gt-modal`/`.gt-modal-close` above — `--gt-*` here follows that same
-   established convention, not a new one. */
+   `.gt-embed` is the wrapper both display modes render (inline mode: wraps
+   `.gt-tour` directly; modal mode: wraps `.gt-embed-start` + the
+   `<GuidedTourModal>` it opens) — it's part of the shared theme-mapping
+   selector above precisely because `.gt-embed-start` is a SIBLING of that
+   modal, not a descendant of the `.gt-tour` inside it (M7 review fix, same
+   reasoning as `.gt-modal-backdrop` above). Every `var()` reference below
+   carries its own literal fallback for the same belt-and-suspenders reason
+   documented on the Modal section above. */
 
 .gt-embed {
   display: block;
@@ -754,8 +805,8 @@
   padding: 8px 20px;
   border: 1px solid transparent;
   border-radius: 999px;
-  background: var(--gt-accent);
-  color: var(--gt-surface);
+  background: var(--gt-accent, #7c3aed);
+  color: var(--gt-surface, #ffffff);
   font: inherit;
   font-weight: 600;
   cursor: pointer;
@@ -767,7 +818,7 @@
 }
 
 .gt-embed-start:focus-visible {
-  outline: 2px solid var(--gt-accent);
+  outline: 2px solid var(--gt-accent, #7c3aed);
   outline-offset: 2px;
 }
 

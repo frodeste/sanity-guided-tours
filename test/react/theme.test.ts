@@ -162,15 +162,23 @@ describe('styles.css / THEME_DEFAULTS + THEME_DARK_DEFAULTS parity', () => {
     return (declaration?.[1] ?? '').trim()
   }
 
-  // `.gt-tour {` opens the rule this file documents as the light/base
-  // defaults' home — it's the first rule declared in the file, so matching
-  // up to the first `}` is safe.
-  const lightBody = ruleBody(/\.gt-tour\s*\{([^}]*)\}/)
+  // The shared light-mapping rule's selector is `.gt-tour, .gt-modal-backdrop,
+  // .gt-embed` (M7 review fix — `.gt-modal-backdrop`/`.gt-embed` need the
+  // SAME mapping, not just `.gt-tour`, since they're an ancestor/sibling of
+  // a nested `.gt-tour` and custom properties only inherit downward — see
+  // styles.css's own top comment). `^\.gt-tour,` (multiline) anchors to
+  // that rule's own opening selector line specifically, not any of the
+  // many prose mentions of `.gt-tour` in the comment above it (none of
+  // which start a line with exactly `.gt-tour,`).
+  const lightBody = ruleBody(/^\.gt-tour,[\s\S]*?\.gt-embed\s*\{([^}]*)\}/m)
   // The forced-dark selector — disjoint from the `prefers-color-scheme`
   // media rule by construction (see styles.css's own comment), but either
   // one is an equally valid source for the dark fallback literals since
-  // both must carry the identical values.
-  const darkBody = ruleBody(/\.gt-tour\[data-gt-scheme=['"]dark['"]\]\s*\{([^}]*)\}/)
+  // both must carry the identical values. Same three-selector group as
+  // the light rule above.
+  const darkBody = ruleBody(
+    /^\.gt-tour\[data-gt-scheme=['"]dark['"]\],[\s\S]*?\.gt-embed\[data-gt-scheme=['"]dark['"]\]\s*\{([^}]*)\}/m,
+  )
 
   test('light color defaults match THEME_DEFAULTS', () => {
     expect(readVarFallback(lightBody, '--gt-accent', '--gt-light-accent')).toBe(
@@ -200,7 +208,7 @@ describe('styles.css / THEME_DEFAULTS + THEME_DARK_DEFAULTS parity', () => {
 
   test('the prefers-color-scheme media rule (auto mode) uses the identical dark fallback literals', () => {
     const mediaBody = ruleBody(
-      /@media \(prefers-color-scheme: dark\)[^{]*\{[^.]*\.gt-tour:not\(\[data-gt-scheme\]\)\s*\{([^}]*)\}/,
+      /@media \(prefers-color-scheme: dark\)[\s\S]*?^\s*\.gt-tour:not\(\[data-gt-scheme\]\),[\s\S]*?\.gt-embed:not\(\[data-gt-scheme\]\)\s*\{([^}]*)\}/m,
     )
     expect(readVarFallback(mediaBody, '--gt-accent', '--gt-dark-accent')).toBe(
       THEME_DARK_DEFAULTS.accent,
@@ -250,5 +258,60 @@ describe('styles.css: scheme selectors are disjoint', () => {
 
   test('there is no rule for .gt-tour[data-gt-scheme="light"] — forced light relies on the base rule alone', () => {
     expect(css).not.toMatch(/\.gt-tour\[data-gt-scheme=(['"])light\1\]/)
+  })
+
+  test('the same holds for .gt-modal-backdrop/.gt-embed — no forced-light rule for either', () => {
+    expect(css).not.toMatch(/\.gt-modal-backdrop\[data-gt-scheme=(['"])light\1\]/)
+    expect(css).not.toMatch(/\.gt-embed\[data-gt-scheme=(['"])light\1\]/)
+  })
+})
+
+// M7 review fix: `.gt-modal-backdrop` (GuidedTourModal.tsx) is an ANCESTOR
+// of the `.gt-tour` it wraps, and `.gt-embed-start` (GuidedTourEmbed.tsx)
+// is a SIBLING of the `<GuidedTourModal>` it opens — CSS custom properties
+// only inherit downward, so neither could ever see a nested `.gt-tour`'s
+// own resolved `--gt-accent` etc. Two independent fixes landed together:
+// (1) `.gt-modal-backdrop`/`.gt-embed` joined the shared mapping rule
+// above (covered by the parity describe block above, which now reads
+// through those same selectors), and (2) every `var(--gt-*)` reference
+// inside the Modal/Embed sections below ALSO carries its own literal
+// fallback — belt-and-suspenders, since an unfallback'd `var()` that
+// resolves to nothing is "invalid at computed-value time", which for a
+// non-inherited property (`background-color`, `border-color`, ...)
+// resets it to its INITIAL value (`transparent` for a color) rather than
+// merely an unbranded default — this describe block guards (2).
+describe('styles.css: modal + embed surfaces — every var(--gt-*) reference carries a literal fallback', () => {
+  const css = readFileSync(join('src', 'react', 'styles.css'), 'utf-8')
+  // The Modal and Embed comment-delimited sections aren't adjacent — the
+  // unrelated "Controls" section (`.gt-prev`/`.gt-next`/`.gt-dot`, which
+  // ARE genuine `.gt-tour` descendants and so don't need this fix at all)
+  // sits between them — so each is extracted up to whatever comment
+  // follows it, rather than spanning Modal-through-Utilities in one match.
+  const modalSection = css.match(/\/\* Modal:[\s\S]*?(?=\/\* Controls:)/)?.[0] ?? ''
+  const embedSection = css.match(/\/\* Embed:[\s\S]*?\/\* Utilities \*\//)?.[0] ?? ''
+  const section = modalSection + embedSection
+
+  test('sanity check: the Modal + Embed sections were actually located', () => {
+    expect(modalSection).toContain('.gt-modal-backdrop')
+    expect(embedSection).toContain('.gt-embed-start')
+  })
+
+  test('no var(--gt-*) reference in the Modal/Embed sections is missing a fallback', () => {
+    // A reference with NO fallback looks like `var(--gt-accent)` — name
+    // immediately followed by the closing paren, no comma. One WITH a
+    // fallback (`var(--gt-accent, #7c3aed)`) never matches this pattern
+    // since a comma intervenes before the paren.
+    const unfallbacked = section.match(/var\(--gt-[\w-]+\)/g) ?? []
+    expect(unfallbacked).toEqual([])
+  })
+
+  test('the backdrop background-color declaration carries a literal fallback matching THEME_DEFAULTS.overlay', () => {
+    expect(section).toContain(`var(--gt-overlay, ${THEME_DEFAULTS.overlay})`)
+  })
+
+  test('.gt-modal / .gt-modal-close / .gt-embed-start fallbacks match THEME_DEFAULTS', () => {
+    expect(section).toContain(`var(--gt-surface, ${THEME_DEFAULTS.surface})`)
+    expect(section).toContain(`var(--gt-text, ${THEME_DEFAULTS.text})`)
+    expect(section).toContain(`var(--gt-accent, ${THEME_DEFAULTS.accent})`)
   })
 })

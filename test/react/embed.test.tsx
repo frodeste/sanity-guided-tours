@@ -9,6 +9,7 @@ import type {
   GuidedTourImage,
   GuidedTourSettings,
   GuidedTourStep,
+  GuidedTourTheme,
   GuidedTourToken,
 } from '../../src/queries/types'
 import type {GuidedTourEvent} from '../../src/react/events'
@@ -62,6 +63,23 @@ function token(overrides: Partial<GuidedTourToken> & {key: string}): GuidedTourT
     label: overrides.label ?? overrides.key,
     defaultValue: overrides.defaultValue ?? null,
     required: overrides.required ?? false,
+  }
+}
+
+function theme(overrides: Partial<GuidedTourTheme> = {}): GuidedTourTheme {
+  return {
+    accent: '#ff0000',
+    surface: '#111111',
+    text: '#eeeeee',
+    overlay: '#000000',
+    dark: null,
+    radius: 12,
+    hotspotSize: 30,
+    fontFamily: null,
+    googleFont: null,
+    brand: null,
+    logo: null,
+    ...overrides,
   }
 }
 
@@ -258,5 +276,55 @@ describe('GuidedTourEmbed: missing tour (value.tour === null)', () => {
     } finally {
       warnSpy.mockRestore()
     }
+  })
+})
+
+// M7 review fix: `.gt-embed-start` (modal mode's trigger button) is a
+// SIBLING of the `<GuidedTourModal>` it opens, not a descendant of the
+// `.gt-tour` inside it — CSS custom properties only inherit downward, so
+// the `.gt-embed` wrapper around both needs its own copy of the theme's
+// `--gt-light-*`/`--gt-dark-*` pairs and `data-gt-scheme` attribute (see
+// src/react/GuidedTourEmbed.tsx and styles.css's top comment). Covers both
+// display modes since both now render through the same `.gt-embed`
+// wrapper.
+describe('GuidedTourEmbed: theme custom properties reach the wrapper', () => {
+  test('inline mode: .gt-embed carries the theme as inline --gt-light-*/--gt-dark-* custom properties', () => {
+    const {container} = render(
+      <GuidedTourEmbed value={embedValue({displayMode: 'inline', tour: tour({theme: theme()})})} />,
+    )
+    const wrapper = query(container, '.gt-embed')
+    const style = wrapper.getAttribute('style')
+    expect(style).toContain('--gt-light-accent: #ff0000')
+    expect(style).toMatch(/--gt-dark-accent: #[0-9a-f]{6}/)
+  })
+
+  test('modal mode: .gt-embed (wrapping the trigger button + modal) carries the same custom properties', () => {
+    const {container} = render(
+      <GuidedTourEmbed value={embedValue({displayMode: 'modal', tour: tour({theme: theme()})})} />,
+    )
+    const wrapper = query(container, '.gt-embed')
+    expect(wrapper.querySelector('.gt-embed-start')).not.toBeNull()
+    const style = wrapper.getAttribute('style')
+    expect(style).toContain('--gt-light-accent: #ff0000')
+  })
+
+  test('a null theme leaves the wrapper with no --gt-* inline overrides', () => {
+    const {container} = render(
+      <GuidedTourEmbed value={embedValue({displayMode: 'inline', tour: tour({theme: null})})} />,
+    )
+    const wrapper = query(container, '.gt-embed')
+    expect(wrapper.getAttribute('style') ?? '').not.toContain('--gt-')
+  })
+
+  test('colorScheme defaults to no data-gt-scheme attribute on the wrapper', () => {
+    const {container} = render(<GuidedTourEmbed value={embedValue({displayMode: 'modal'})} />)
+    expect(query(container, '.gt-embed').hasAttribute('data-gt-scheme')).toBe(false)
+  })
+
+  test('colorScheme="dark" sets data-gt-scheme="dark" on the wrapper', () => {
+    const {container} = render(
+      <GuidedTourEmbed value={embedValue({displayMode: 'modal'})} colorScheme="dark" />,
+    )
+    expect(query(container, '.gt-embed').getAttribute('data-gt-scheme')).toBe('dark')
   })
 })

@@ -1,5 +1,6 @@
 import {FONT_STACK, GOOGLE_FONT_NAME_PATTERN, THEME_DARK_DEFAULTS} from '../queries/defaults'
 import type {GuidedTourTheme} from '../queries/types'
+import type {GuidedTourColorScheme} from './types'
 
 /**
  * Resolves the `--gt-font-family` value a theme should emit, or `null` when
@@ -91,4 +92,32 @@ export function themeToStyle(theme: GuidedTourTheme | null): Record<string, stri
     '--gt-hotspot-size': `${theme.hotspotSize}px`,
     ...(fontFamily ? {'--gt-font-family': fontFamily} : {}),
   }
+}
+
+/**
+ * Resolves `colorScheme` to the `data-gt-scheme` attribute value a
+ * `--gt-*`-consuming root should render: `'auto'` (the default, covering a
+ * `colorScheme` an older/optional caller never passed) → `undefined`, i.e.
+ * no attribute at all — `styles.css`'s `prefers-color-scheme` media rule
+ * specifically targets THAT absence; `'light'`/`'dark'` pass straight
+ * through as the literal attribute value.
+ *
+ * Shared by every element `styles.css`'s scheme-mapping rules select on —
+ * not just `GuidedTour.tsx`'s own `.gt-tour` root. `GuidedTourModal.tsx`'s
+ * `.gt-modal-backdrop` and `GuidedTourEmbed.tsx`'s `.gt-embed` wrapper are
+ * an ANCESTOR and a SIBLING (respectively) of the `.gt-tour` a nested
+ * `<GuidedTour>` renders — CSS custom properties only inherit downward, so
+ * neither can see `.gt-tour`'s own resolved `--gt-accent` etc, and each
+ * needs this same `data-gt-scheme` attribute (plus `themeToStyle`'s
+ * `--gt-light-*`/`--gt-dark-*` pairs spread onto its own `style`) to
+ * resolve its OWN copy of the theme correctly instead of always falling
+ * back to the light defaults regardless of the tour's actual theme or the
+ * active scheme (M7 review fix — see those two files and
+ * `test/react/theme.test.ts`'s "reaches ancestor/sibling surfaces"
+ * coverage).
+ */
+export function schemeAttr(
+  colorScheme: GuidedTourColorScheme = 'auto',
+): 'light' | 'dark' | undefined {
+  return colorScheme === 'auto' ? undefined : colorScheme
 }

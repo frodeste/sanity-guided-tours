@@ -4,6 +4,7 @@ import {
   useEffect,
   useMemo,
   useRef,
+  type CSSProperties,
   type KeyboardEvent,
   type MouseEvent,
   type ReactNode,
@@ -12,6 +13,7 @@ import {
 import {GuidedTour, type GuidedTourProps} from './GuidedTour'
 import {defaultLabels, type GuidedTourLabels} from './labels'
 import {personalizeText, resolveTokens} from './personalize'
+import {schemeAttr, themeToStyle} from './theme'
 
 /**
  * @public
@@ -50,6 +52,19 @@ function queryFocusable(container: HTMLElement): HTMLElement[] {
  * browsers without it — `styles.css`'s `.gt-modal-backdrop`) behind a
  * centered `.gt-modal` panel, plus a close button (design spec, plan M4
  * Task 4).
+ *
+ * `.gt-modal-backdrop` carries `themeToStyle(tour.theme)` (the
+ * `--gt-light-*`/`--gt-dark-*` pairs) and `data-gt-scheme` itself (M7
+ * review fix), not just `<GuidedTour>`'s own `.gt-tour` further down: the
+ * backdrop and `.gt-modal`/`.gt-modal-close` it contains are ANCESTORS of
+ * `.gt-tour`, and CSS custom properties only inherit downward — without
+ * this, `var(--gt-accent)` etc in `styles.css`'s modal rules would never
+ * resolve to anything a nested `.gt-tour` set, and (absent a literal
+ * fallback on every such `var()`, which `styles.css` also now carries as a
+ * second, independent safety net) would compute as fully invalid,
+ * collapsing the property to its initial value — `background-color`'s
+ * `transparent`, making the backdrop invisible — rather than merely
+ * falling back to an unbranded default.
  *
  * Unmount-on-close: `open={false}` renders `null` outright — there is no
  * hidden, persistent tour kept alive off-screen — so `<GuidedTour>`'s own
@@ -203,6 +218,11 @@ export function GuidedTourModal({open, onOpenChange, ...rest}: GuidedTourModalPr
   if (!open) return null
 
   const title = personalizeText(tour.title, resolvedTokens)
+  // See this component's doc comment: the backdrop is an ANCESTOR of the
+  // `.gt-tour` `<GuidedTour>` renders below, so it needs its own copy of
+  // the theme's custom properties and scheme attribute rather than relying
+  // on inheriting `.gt-tour`'s (custom properties only inherit downward).
+  const backdropStyle: CSSProperties = themeToStyle(tour.theme)
 
   return (
     // The backdrop itself is never a keyboard target (it carries no
@@ -214,7 +234,12 @@ export function GuidedTourModal({open, onOpenChange, ...rest}: GuidedTourModalPr
     // an interactive role would be a false affordance for an element with no
     // keyboard-operable behavior of its own.
     // oxlint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events
-    <div className="gt-modal-backdrop" onClick={handleBackdropClick}>
+    <div
+      className="gt-modal-backdrop"
+      style={backdropStyle}
+      data-gt-scheme={schemeAttr(rest.colorScheme)}
+      onClick={handleBackdropClick}
+    >
       {/* `role="dialog"` has no native HTML element (prefer-tag-over-role)
           and, per oxlint's ruleset, isn't itself classed "interactive" —
           this is nonetheless the DOM contract's own choice (design spec):
