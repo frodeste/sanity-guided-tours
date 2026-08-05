@@ -1,29 +1,34 @@
-import {afterEach, describe, expect, test} from 'bun:test'
+import {afterEach, describe, expect, mock, test} from 'bun:test'
 
-// Render smoke tests for `CanvasInput` (master plan Task 4). Per the
+// Render smoke tests for `CanvasInput` (master plan Tasks 4-5). Per the
 // brief's Studio-test caveat, the first fallback tried was wrapping
 // fixtures in `@sanity/ui`'s `ThemeProvider`/`studioTheme` — that alone
 // wasn't enough (`@sanity/ui`'s `Dialog` also needs a `LayerProvider`
 // ancestor, or its internal `useLayer()` throws "missing context value";
-// everything else — `Card`/`Box`/`Button`/etc — only needed the theme).
-// With that wrap, no `sanity` mocking was ever required: `CanvasInput.tsx`
-// makes zero *runtime* imports from `sanity` (only the
-// `ArrayOfObjectsInputProps` type, erased at compile time — see its module
-// doc comment), so there was nothing for the form-builder's own context
-// providers to explode on. The fixture below still has to satisfy the
-// *type* `ArrayOfObjectsInputProps` in full, though — `CanvasInput` calls
-// `props.renderDefault(props)` for the "Plain editor" escape hatch, and
-// `renderDefault`'s declared signature takes the complete `InputProps`,
-// so the props object handed to the component has to be a fully valid one
-// (`baseInputProps()` below), not a hand-picked subset. Per-test, only
-// `value`/`onChange`/`renderDefault` actually vary.
+// everything else — `Card`/`Box`/`Button`/etc — only needed the theme). With
+// that wrap, no `sanity` *mocking* was ever required, even once Task 5 added
+// `CanvasInput.tsx`'s first runtime `sanity` imports (`PatchEvent` — a plain
+// data class with no context dependency — and `useProjectDataset`, which
+// wraps `useWorkspace()`): there's no `WorkspaceProvider` ancestor in this
+// render tree, so `useWorkspace()` throws and `useProjectDataset` catches
+// it, returning nulls — `Canvas` then renders the asset-ref placeholder
+// text instead of a real `<img>` (see `Canvas.tsx`'s and
+// `useProjectDataset.ts`'s module comments). The fixture below still has to
+// satisfy the *type* `ArrayOfObjectsInputProps` in full, though —
+// `CanvasInput` calls `props.renderDefault(props)` for the "Plain editor"
+// escape hatch, and `renderDefault`'s declared signature takes the complete
+// `InputProps`, so the props object handed to the component has to be a
+// fully valid one (`baseInputProps()` below), not a hand-picked subset.
+// Per-test, only `value`/`onChange`/`renderDefault` actually vary.
 import {LayerProvider, ThemeProvider} from '@sanity/ui'
 import {buildTheme} from '@sanity/ui/theme'
 import {cleanup, fireEvent, render, screen, within} from '@testing-library/react'
 import type {ReactNode} from 'react'
-import type {ArrayOfObjectsInputProps} from 'sanity'
+import {PatchEvent, setIfMissing} from 'sanity'
+import type {ArrayOfObjectsInputProps, FormInsertPatch, FormPatch} from 'sanity'
 
 import {CanvasInput} from '../../src/studio/CanvasInput'
+import {moveElementPatch, removeElementPatch} from '../../src/studio/patches'
 
 afterEach(() => {
   cleanup()
@@ -127,8 +132,10 @@ function step(overrides: {
   title: string
   screenshot?: FixtureImage
   screenshotMobile?: FixtureImage
+  elements?: unknown[]
 }): FixtureStep {
-  return {...overrides, elements: []}
+  const {elements, ...rest} = overrides
+  return {...rest, elements: elements ?? []}
 }
 
 interface FixtureChapter {
@@ -150,6 +157,9 @@ const fixtureChapters = [
         _key: 's1',
         title: 'Welcome',
         screenshot: image('image-aaa-800x600-png', 'Welcome screenshot'),
+        elements: [
+          {_type: 'guidedTourHotspot', _key: 'e1', x: 10, y: 10, action: 'advance', pulse: true},
+        ],
       }),
       step({_key: 's2', title: 'Features', screenshot: image('image-bbb-800x600-png')}),
     ],
@@ -179,28 +189,31 @@ describe('CanvasInput', () => {
       within(screen.getByTestId('filmstrip-step-c1-s1')).getByText('Intro — Welcome'),
     ).toBeTruthy()
 
-    const screenshot = screen.getByTestId('canvas-screenshot')
-    expect(screenshot.getAttribute('alt')).toBe('Welcome screenshot')
+    // No `WorkspaceProvider` ancestor in this render tree (see this file's
+    // module comment), so `useProjectDataset()` returns nulls and `Canvas`
+    // falls back to the asset-ref placeholder text instead of a real
+    // `<img>` — see `Canvas.tsx`'s module comment and
+    // `useProjectDataset.ts`'s for the full design note.
+    expect(screen.getByTestId('canvas-screenshot-placeholder').textContent).toContain(
+      'image-aaa-800x600-png',
+    )
   })
 
-  test('selecting a different step updates the canvas screenshot', () => {
+  test('selecting a different step updates which screenshot ref is shown', () => {
     renderWithTheme(<CanvasInput {...baseInputProps()} value={fixtureChapters} />)
 
     fireEvent.click(screen.getByTestId('filmstrip-step-c1-s2'))
 
-    const screenshot = screen.getByTestId('canvas-screenshot')
-    // Step s2's screenshot has no `alt` of its own, so CanvasPane falls
-    // back to the step title — still a distinct, assertable value from
-    // step s1's screenshot.
-    expect(screenshot.getAttribute('alt')).toBe('Features')
-    expect(screenshot.getAttribute('src')).toBe('image-bbb-800x600-png')
+    expect(screen.getByTestId('canvas-screenshot-placeholder').textContent).toContain(
+      'image-bbb-800x600-png',
+    )
   })
 
-  test('the device toggle flips which screenshot is shown', () => {
+  test('the device toggle flips which screenshot ref is shown', () => {
     renderWithTheme(<CanvasInput {...baseInputProps()} value={fixtureChapters} />)
 
     fireEvent.click(screen.getByTestId('filmstrip-step-c2-s3'))
-    expect(screen.getByTestId('canvas-screenshot').getAttribute('src')).toBe(
+    expect(screen.getByTestId('canvas-screenshot-placeholder').textContent).toContain(
       'image-ccc-desktop-800x600-png',
     )
 
@@ -213,7 +226,7 @@ describe('CanvasInput', () => {
 
     expect(mobileToggle.getAttribute('aria-pressed')).toBe('true')
     expect(desktopToggle.getAttribute('aria-pressed')).toBe('false')
-    expect(screen.getByTestId('canvas-screenshot').getAttribute('src')).toBe(
+    expect(screen.getByTestId('canvas-screenshot-placeholder').textContent).toContain(
       'image-ccc-mobile-400x800-png',
     )
   })
@@ -245,5 +258,140 @@ describe('CanvasInput', () => {
     expect(screen.getByText('No steps yet.')).toBeTruthy()
     expect(screen.getByText('Select a step to see its screenshot.')).toBeTruthy()
     expect(screen.getByText('Select an element to edit its fields.')).toBeTruthy()
+  })
+})
+
+function isInsertPatch(patch: unknown): patch is FormInsertPatch {
+  return (
+    typeof patch === 'object' &&
+    patch !== null &&
+    'type' in patch &&
+    patch.type === 'insert' &&
+    'items' in patch &&
+    Array.isArray(patch.items)
+  )
+}
+
+/** Narrows the `onChange` spy's `FormPatch | FormPatch[] | PatchEvent` argument without an `as` cast — `PatchEvent.from(...)` (CanvasInput.tsx's `emit`) always produces a real `PatchEvent` instance, so `instanceof` is exact here, not a heuristic. */
+function isPatchEvent(value: unknown): value is PatchEvent {
+  return value instanceof PatchEvent
+}
+
+// Master plan Task 5: "smoke: click-with-tool calls onChange with an insert
+// patch (assert patch shape via the spy); nudge on selected element
+// produces move patch; delete produces remove patch." Every element
+// mutation in `Canvas.tsx` is reported upward as a semantic callback
+// (`onInsertElement`/`onMoveElement`/`onRemoveElement`) that `CanvasInput`
+// turns into a `patches.ts` builder wrapped in `PatchEvent.from(...)` for
+// the top-level `props.onChange` — these tests spy on that top-level
+// `onChange`, the same seam the master plan's Global Constraints require
+// every document mutation to flow through.
+describe('Canvas interactions', () => {
+  test('clicking the canvas surface with a tool active inserts an element via onChange', () => {
+    const onChange = mock((_patch: FormPatch | FormPatch[] | PatchEvent) => {})
+    renderWithTheme(
+      <CanvasInput {...baseInputProps()} onChange={onChange} value={fixtureChapters} />,
+    )
+
+    // Step s1 (chapter c1) is selected by default (first step in reading
+    // order — `useEditorState`'s initial selection).
+    fireEvent.click(screen.getByTestId('canvas-tool-hotspot'))
+    fireEvent.click(screen.getByTestId('canvas-surface'))
+
+    expect(onChange).toHaveBeenCalledTimes(1)
+    const call = onChange.mock.calls[0][0]
+    if (!isPatchEvent(call)) throw new Error('expected a PatchEvent')
+    const event = call
+    expect(event.patches).toHaveLength(2)
+    expect(event.patches[0]).toEqual(
+      setIfMissing([], [{_key: 'c1'}, 'steps', {_key: 's1'}, 'elements']),
+    )
+
+    const insertPatch = event.patches[1]
+    if (!isInsertPatch(insertPatch)) throw new Error('expected an insert patch')
+    expect(insertPatch.items).toHaveLength(1)
+    // happy-dom's `getBoundingClientRect()` always returns an all-zero
+    // rect (no real layout engine), so `pointToPercent` — correctly, per
+    // its own documented zero-width/height fallback — places the click at
+    // (0, 0); the interesting assertion here is the type-specific default
+    // fields (`canvasHandlers.test.ts` already covers `elementDefaults`
+    // directly), not the exact coordinate.
+    expect(insertPatch.items[0]).toMatchObject({
+      _type: 'guidedTourHotspot',
+      action: 'advance',
+      pulse: true,
+      x: 0,
+      y: 0,
+    })
+
+    // Placing the element also resets the tool back to Select and selects
+    // the new element (design spec §7.2) — the tool palette reflects that.
+    expect(screen.getByTestId('canvas-tool-select').getAttribute('aria-pressed')).toBe('true')
+  })
+
+  test('nudging the selected element with an arrow key emits a move patch via onChange', () => {
+    const onChange = mock((_patch: FormPatch | FormPatch[] | PatchEvent) => {})
+    renderWithTheme(
+      <CanvasInput {...baseInputProps()} onChange={onChange} value={fixtureChapters} />,
+    )
+
+    // Step s1 carries fixture element `e1`; selecting it is a pointerdown
+    // on its chip (`CanvasElement`'s drag handle also selects on press).
+    fireEvent.pointerDown(screen.getByTestId('canvas-element-e1'), {pointerId: 1})
+    fireEvent.keyDown(screen.getByTestId('canvas-element-e1'), {key: 'ArrowRight'})
+
+    expect(onChange).toHaveBeenCalledTimes(1)
+    const call = onChange.mock.calls[0][0]
+    if (!isPatchEvent(call)) throw new Error('expected a PatchEvent')
+    const event = call
+    expect(event.patches).toEqual(moveElementPatch('c1', 's1', 'e1', {x: 10.5, y: 10}, 'desktop'))
+  })
+
+  test('Shift+arrow nudges the selected element by the big (5%) step', () => {
+    const onChange = mock((_patch: FormPatch | FormPatch[] | PatchEvent) => {})
+    renderWithTheme(
+      <CanvasInput {...baseInputProps()} onChange={onChange} value={fixtureChapters} />,
+    )
+
+    fireEvent.pointerDown(screen.getByTestId('canvas-element-e1'), {pointerId: 1})
+    fireEvent.keyDown(screen.getByTestId('canvas-element-e1'), {key: 'ArrowDown', shiftKey: true})
+
+    const call = onChange.mock.calls[0][0]
+    if (!isPatchEvent(call)) throw new Error('expected a PatchEvent')
+    const event = call
+    expect(event.patches).toEqual(moveElementPatch('c1', 's1', 'e1', {x: 10, y: 15}, 'desktop'))
+  })
+
+  test('Delete on the selected element emits a remove patch via onChange', () => {
+    const onChange = mock((_patch: FormPatch | FormPatch[] | PatchEvent) => {})
+    renderWithTheme(
+      <CanvasInput {...baseInputProps()} onChange={onChange} value={fixtureChapters} />,
+    )
+
+    fireEvent.pointerDown(screen.getByTestId('canvas-element-e1'), {pointerId: 1})
+    fireEvent.keyDown(screen.getByTestId('canvas-element-e1'), {key: 'Delete'})
+
+    expect(onChange).toHaveBeenCalledTimes(1)
+    const call = onChange.mock.calls[0][0]
+    if (!isPatchEvent(call)) throw new Error('expected a PatchEvent')
+    const event = call
+    // This bare test harness is a controlled component with a static
+    // `value` fixture — firing `onChange` doesn't feed a new `value` back
+    // in (that's the surrounding form-builder's job in the real Studio),
+    // so there's no "the chip is gone" DOM assertion to make here; the
+    // patch shape itself is the thing under test.
+    expect(event.patches).toEqual(removeElementPatch('c1', 's1', 'e1'))
+  })
+
+  test('Escape deselects the element without emitting a patch', () => {
+    const onChange = mock((_patch: FormPatch | FormPatch[] | PatchEvent) => {})
+    renderWithTheme(
+      <CanvasInput {...baseInputProps()} onChange={onChange} value={fixtureChapters} />,
+    )
+
+    fireEvent.pointerDown(screen.getByTestId('canvas-element-e1'), {pointerId: 1})
+    fireEvent.keyDown(screen.getByTestId('canvas-element-e1'), {key: 'Escape'})
+
+    expect(onChange).not.toHaveBeenCalled()
   })
 })

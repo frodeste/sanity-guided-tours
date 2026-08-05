@@ -1,30 +1,52 @@
 // The `chapters` field's input component (design spec §7.1, master plan
 // Task 4): a three-pane shell (Filmstrip | Canvas | Inspector) plus a
 // header toolbar and a full-screen `@sanity/ui` Dialog escape valve. Tasks
-// 5-7 replace the pane bodies below with the real Canvas/Filmstrip/
-// Inspector components (drag-and-drop placement, chapter grouping, real
-// member-input rendering); this task only wires the shell, the shared
-// selection/device/expanded state (`useEditorState`), and the "Plain
-// editor" fallback that keeps the default Sanity array input reachable
-// in-place.
+// 6-7 still owe the real Filmstrip/Inspector (chapter grouping, real
+// member-input rendering); Task 5 (this revision) wires the real `Canvas`
+// pane in place of the Task 4 placeholder — tool palette, click-to-place,
+// drag, keyboard nudge/delete/escape, width resize — and turns its semantic
+// callbacks (`onInsertElement`/`onMoveElement`/etc.) into `patches.ts`
+// builders wrapped in `PatchEvent.from(...)` for `props.onChange`.
 //
-// Deliberately zero *runtime* imports from `sanity` — only the
-// `ArrayOfObjectsInputProps` type (erased at compile time). Every field
-// this component reads off `props.value` is narrowed from `unknown`, the
-// same convention `src/schema/guidedTour.ts`'s `stepCountOf` and
-// `src/studio/patches.ts`'s `isRecord` use, rather than trusting the
-// field's own default generic (`{_key: string}`, since we don't
-// parametrize the type with a richer chapter shape — see the doc comment
-// on `CanvasInputProps` below for why). That keeps this file's only
-// Studio-context dependency `@sanity/ui`, so the smoke tests render it
-// with nothing more than a `ThemeProvider`/`LayerProvider` wrap and a
-// hand-built `ArrayOfObjectsInputProps` fixture — no mocking of `sanity`
-// itself was needed (see test/studio/smoke.test.tsx).
+// Task 4 kept this file's only Studio-context dependency `@sanity/ui`
+// (zero runtime `sanity` imports). Task 5 necessarily adds two: `PatchEvent`
+// (a plain data class — wraps the `FormPatch[]` arrays `patches.ts`'s
+// builders return; no context dependency, so nothing new for the smoke
+// tests to route around) and `useProjectDataset` (`./useProjectDataset`,
+// wrapping `sanity`'s `useWorkspace()`), for `Canvas`'s real `<img src>`
+// URLs (`assetRef.ts`, pulled forward from Task 8 — see `assetRef.ts`'s
+// module comment). `useWorkspace()` throws outside a `WorkspaceProvider`
+// ancestor — true of every smoke-test render in this suite, which wraps
+// fixtures in nothing more than `@sanity/ui`'s `ThemeProvider`/
+// `LayerProvider` — so `useProjectDataset` catches that and returns nulls;
+// `Canvas` then renders the "asset-ref placeholder text" path instead of a
+// real `<img>` (see `Canvas.tsx`'s screenshot rendering and
+// `useProjectDataset.ts`'s module comment for the full design note). This
+// is also why `Canvas`/`CanvasElement` take `projectId`/`dataset` as plain
+// props rather than calling the hook themselves: only this file — the one
+// Studio-context-aware caller — needs to tolerate the hook's no-provider
+// case, and threading resolved values down keeps the two child components
+// testable with plain `fireEvent`, no `sanity` mocking.
+//
+// Every field this component reads off `props.value` is narrowed from
+// `unknown`, the same convention `src/schema/guidedTour.ts`'s
+// `stepCountOf` and `src/studio/patches.ts`'s `isRecord` use, rather than
+// trusting the field's own default generic (`{_key: string}` — see the doc
+// comment on `CanvasInputProps` below for why it isn't parametrized).
 import {Box, Button, Card, Dialog, Flex, Inline, Stack, Text} from '@sanity/ui'
 import type {ReactNode} from 'react'
-import type {ArrayOfObjectsInputProps} from 'sanity'
+import {PatchEvent} from 'sanity'
+import type {ArrayOfObjectsInputProps, FormPatch} from 'sanity'
 
+import {Canvas} from './Canvas'
+import {
+  insertElementPatch,
+  moveElementPatch,
+  removeElementPatch,
+  setElementWidthPatch,
+} from './patches'
 import {useEditorState, type EditorSelection} from './useEditorState'
+import {useProjectDataset} from './useProjectDataset'
 
 /**
  * The prop type Sanity actually hands `components.input` for an array
@@ -103,29 +125,6 @@ function findStep(chapters: unknown[], chapterKey: string | null, stepKey: strin
   return null
 }
 
-/** `screenshotMobile ?? screenshot` when `device` is mobile (design spec §7.2's device-aware fallback), else `screenshot`. */
-function screenshotFor(step: unknown, device: 'desktop' | 'mobile'): unknown {
-  if (device === 'mobile') {
-    const mobile = isRecord(step) ? step.screenshotMobile : undefined
-    if (isRecord(mobile)) return mobile
-  }
-  return isRecord(step) ? step.screenshot : undefined
-}
-
-/**
- * The raw asset `_ref` off a Sanity image value (e.g.
- * `image-abc123-800x600-png`) — not a resolved CDN URL. Real URL
- * resolution (`assetRefToUrl`, parsing the ref's id/dimensions/format) is
- * Task 8's job; this placeholder canvas pane only needs *something*
- * per-step and distinguishable to render into `<img src>`, since Tasks 5-7
- * replace this pane's body outright.
- */
-function screenshotAssetRef(image: unknown): string | undefined {
-  if (!isRecord(image)) return undefined
-  const asset = image.asset
-  return isRecord(asset) && typeof asset._ref === 'string' ? asset._ref : undefined
-}
-
 function FilmstripPane({
   steps,
   selection,
@@ -170,41 +169,22 @@ function FilmstripPane({
   )
 }
 
-function CanvasPane({
-  chapters,
-  selection,
-  device,
-}: {
-  chapters: unknown[]
-  selection: EditorSelection
-  device: 'desktop' | 'mobile'
-}): ReactNode {
-  const step = findStep(chapters, selection.chapterKey, selection.stepKey)
-  const screenshot = screenshotFor(step, device)
-  const assetRef = screenshotAssetRef(screenshot)
-  const stepTitle = stringField(step, 'title') ?? ''
-  const alt = stringField(screenshot, 'alt') || stepTitle
-
-  return (
-    <Flex flex={1} align="center" justify="center" padding={4} style={{overflow: 'auto'}}>
-      {step === null ? (
-        <Text muted size={1}>
-          Select a step to see its screenshot.
-        </Text>
-      ) : assetRef ? (
-        <img
-          alt={alt}
-          data-testid="canvas-screenshot"
-          src={assetRef}
-          style={{maxWidth: '100%', maxHeight: '100%'}}
-        />
-      ) : (
-        <Text muted size={1}>
-          This step has no screenshot yet.
-        </Text>
-      )}
-    </Flex>
-  )
+/**
+ * The `chapters`-array-relative element mutation callbacks `Canvas.tsx`
+ * expects — each one turns a semantic event into a `patches.ts` builder
+ * call wrapped in `PatchEvent.from(...)` for `props.onChange`. Bundled into
+ * one object (rather than passed as five separate props threaded through
+ * `CanvasPanes`) so the `chapterKey`/`stepKey`/`device` closures only need
+ * building once per render, at the one call site (`CanvasInput`) that
+ * actually has `props.onChange` and the current selection in scope.
+ */
+interface ElementMutationCallbacks {
+  onInsertElement: (
+    element: {_type: string; _key: string; x: number; y: number} & Record<string, unknown>,
+  ) => void
+  onMoveElement: (elementKey: string, pos: {x: number; y: number}) => void
+  onResizeElement: (elementKey: string, width: number) => void
+  onRemoveElement: (elementKey: string) => void
 }
 
 function InspectorPane({selection}: {selection: EditorSelection}): ReactNode {
@@ -228,13 +208,23 @@ function CanvasPanes({
   chapters,
   selection,
   onSelectStep,
+  onSelectElement,
   device,
+  elementCallbacks,
+  projectId,
+  dataset,
 }: {
   chapters: unknown[]
   selection: EditorSelection
   onSelectStep: (chapterKey: string, stepKey: string) => void
+  onSelectElement: (elementKey: string | null) => void
   device: 'desktop' | 'mobile'
+  elementCallbacks: ElementMutationCallbacks
+  projectId: string | null
+  dataset: string | null
 }): ReactNode {
+  const step = findStep(chapters, selection.chapterKey, selection.stepKey)
+
   return (
     <Flex style={{height: '100%', minHeight: 0}}>
       <FilmstripPane
@@ -242,7 +232,18 @@ function CanvasPanes({
         selection={selection}
         onSelectStep={onSelectStep}
       />
-      <CanvasPane chapters={chapters} selection={selection} device={device} />
+      <Canvas
+        dataset={dataset}
+        device={device}
+        onInsertElement={elementCallbacks.onInsertElement}
+        onMoveElement={elementCallbacks.onMoveElement}
+        onRemoveElement={elementCallbacks.onRemoveElement}
+        onResizeElement={elementCallbacks.onResizeElement}
+        onSelectElement={onSelectElement}
+        projectId={projectId}
+        selectedElementKey={selection.elementKey}
+        step={step}
+      />
       <InspectorPane selection={selection} />
     </Flex>
   )
@@ -288,7 +289,39 @@ function Toolbar({
 /** The `chapters` array field's input component (`components: {input: CanvasInput}` in `schema/guidedTour.ts`). @internal */
 export function CanvasInput(props: CanvasInputProps): ReactNode {
   const chapters: unknown[] = props.value ?? []
-  const {selection, selectStep, device, setDevice, expanded, setExpanded} = useEditorState(chapters)
+  const {selection, selectStep, selectElement, device, setDevice, expanded, setExpanded} =
+    useEditorState(chapters)
+  const {projectId, dataset} = useProjectDataset()
+
+  function emit(patches: FormPatch[]): void {
+    props.onChange(PatchEvent.from(patches))
+  }
+
+  // Bundles the five element-mutation callbacks `Canvas.tsx` expects
+  // (see `ElementMutationCallbacks`'s doc comment) — each a no-op while no
+  // step is selected (`chapters` is empty, or the selection hasn't healed
+  // yet), which `Canvas` itself also guards against by only ever rendering
+  // elements/the click-to-place surface for a non-null `step`.
+  const elementCallbacks: ElementMutationCallbacks = {
+    onInsertElement(element) {
+      if (selection.chapterKey === null || selection.stepKey === null) return
+      emit(insertElementPatch(selection.chapterKey, selection.stepKey, element))
+      selectElement(element._key)
+    },
+    onMoveElement(elementKey, pos) {
+      if (selection.chapterKey === null || selection.stepKey === null) return
+      emit(moveElementPatch(selection.chapterKey, selection.stepKey, elementKey, pos, device))
+    },
+    onResizeElement(elementKey, width) {
+      if (selection.chapterKey === null || selection.stepKey === null) return
+      emit(setElementWidthPatch(selection.chapterKey, selection.stepKey, elementKey, width, device))
+    },
+    onRemoveElement(elementKey) {
+      if (selection.chapterKey === null || selection.stepKey === null) return
+      emit(removeElementPatch(selection.chapterKey, selection.stepKey, elementKey))
+      selectElement(null)
+    },
+  }
 
   // One JSX subtree — toolbar plus the three panes — reused verbatim
   // whether it's shown inline (collapsed) or inside the Dialog (expanded).
@@ -303,8 +336,12 @@ export function CanvasInput(props: CanvasInputProps): ReactNode {
       <Card borderTop style={{height: expanded ? undefined : 420, flex: expanded ? 1 : undefined}}>
         <CanvasPanes
           chapters={chapters}
+          dataset={dataset}
           device={device}
+          elementCallbacks={elementCallbacks}
+          onSelectElement={selectElement}
           onSelectStep={selectStep}
+          projectId={projectId}
           selection={selection}
         />
       </Card>
