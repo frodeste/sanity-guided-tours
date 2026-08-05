@@ -1,0 +1,64 @@
+# Release: computes the next version from conventional commits on `main`
+# and publishes to npm + GitHub Releases via semantic-release (spec §11).
+#
+# Prerequisite: an `NPM_TOKEN` repository secret with publish rights for
+# `sanity-plugin-guided-tours` (owner must create it — see npm's "Automation"
+# token type, which supports 2FA-protected accounts). Its absence is not
+# checked ahead of time; the job simply fails cleanly at the semantic-release
+# step. That's acceptable because this workflow only ever runs on manual
+# dispatch, so a failed run costs nothing but a red check.
+#
+# Trigger: workflow_dispatch ONLY. This is an INTENTIONAL deviation from spec
+# §11 ("semantic-release on main", i.e. push-triggered) — a temporary safety
+# gate until the owner signs off on 1.0.0 and flips this to the commented-out
+# push trigger below. Manual dispatch means merging this workflow, or any
+# later M5 PR, can never itself trigger a publish; someone has to
+# deliberately click "Run workflow" on `main`. See the M5 release plan's hard
+# gate (docs/superpowers/plans/2026-08-05-m5-release.md) and the SDD ledger
+# ruling recorded there.
+name: Release
+
+on:
+  workflow_dispatch: {}
+  # Enable after 1.0.0 sign-off — see spec §11.
+  # push:
+  #   branches: [main]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  release:
+    name: semantic-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: bun install --frozen-lockfile
+
+      - run: bun run build
+
+      - run: bun test
+
+      # Pinned to the current major (24) so a semantic-release major bump
+      # can't silently change release behavior on this gated-but-still-live
+      # workflow.
+      - name: Run semantic-release
+        run: npx --yes semantic-release@24
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
