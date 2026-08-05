@@ -10,8 +10,10 @@ import {
   insertStepPatch,
   moveElementPatch,
   moveStepPatch,
+  removeChapterPatch,
   removeElementPatch,
   removeStepPatch,
+  reorderStepPatch,
   setElementWidthPatch,
   setStepFieldPatch,
 } from '../../src/studio/patches'
@@ -331,5 +333,78 @@ describe('setStepFieldPatch', () => {
     const patches = setStepFieldPatch('ch1', 'st1', 'title', 'New title')
 
     expect(patches).toEqual([set('New title', [{_key: 'ch1'}, 'steps', {_key: 'st1'}, 'title'])])
+  })
+})
+
+// SDD ledger Parked C ruling: removing/moving the LAST step of a chapter
+// leaves it violating `steps`' `min(1)` (schema/chapter.ts) — Filmstrip.tsx
+// unsets the whole chapter instead in that case, which this builder exists
+// for.
+describe('removeChapterPatch', () => {
+  test('unsets the keyed chapter', () => {
+    const patches = removeChapterPatch('ch1')
+
+    expect(patches).toEqual([unset([{_key: 'ch1'}])])
+  })
+})
+
+describe('reorderStepPatch', () => {
+  const steps = [
+    {_type: 'guidedTourStep', _key: 'a', title: 'A'},
+    {_type: 'guidedTourStep', _key: 'b', title: 'B'},
+    {_type: 'guidedTourStep', _key: 'c', title: 'C'},
+  ]
+
+  test('moving up (earlier index) inserts before the step now occupying the target index', () => {
+    // [A, B, C] -> move C (index 2) to index 1 -> [A, C, B]
+    const patches = reorderStepPatch('ch1', steps, 'c', 1)
+
+    expect(patches).toEqual([
+      unset([{_key: 'ch1'}, 'steps', {_key: 'c'}]),
+      insert([steps[2]], 'before', [{_key: 'ch1'}, 'steps', {_key: 'b'}]),
+    ])
+  })
+
+  test('moving up to the very front inserts before the current first step', () => {
+    // [A, B, C] -> move C (index 2) to index 0 -> [C, A, B]
+    const patches = reorderStepPatch('ch1', steps, 'c', 0)
+
+    expect(patches).toEqual([
+      unset([{_key: 'ch1'}, 'steps', {_key: 'c'}]),
+      insert([steps[2]], 'before', [{_key: 'ch1'}, 'steps', {_key: 'a'}]),
+    ])
+  })
+
+  test('moving down (later index) inserts after the step now occupying the target index', () => {
+    // [A, B, C] -> move A (index 0) to index 1 -> [B, A, C]
+    const patches = reorderStepPatch('ch1', steps, 'a', 1)
+
+    expect(patches).toEqual([
+      unset([{_key: 'ch1'}, 'steps', {_key: 'a'}]),
+      insert([steps[0]], 'after', [{_key: 'ch1'}, 'steps', {_key: 'b'}]),
+    ])
+  })
+
+  test('moving down to the very end inserts after the current last step', () => {
+    // [A, B, C] -> move A (index 0) to index 2 -> [B, C, A]
+    const patches = reorderStepPatch('ch1', steps, 'a', 2)
+
+    expect(patches).toEqual([
+      unset([{_key: 'ch1'}, 'steps', {_key: 'a'}]),
+      insert([steps[0]], 'after', [{_key: 'ch1'}, 'steps', {_key: 'c'}]),
+    ])
+  })
+
+  test('no-op (empty array) when targetIndex equals the current index', () => {
+    expect(reorderStepPatch('ch1', steps, 'b', 1)).toEqual([])
+  })
+
+  test('no-op when targetIndex is out of range', () => {
+    expect(reorderStepPatch('ch1', steps, 'a', -1)).toEqual([])
+    expect(reorderStepPatch('ch1', steps, 'a', 3)).toEqual([])
+  })
+
+  test('no-op when stepKey is not found in steps', () => {
+    expect(reorderStepPatch('ch1', steps, 'missing', 0)).toEqual([])
   })
 })

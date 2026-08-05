@@ -1,12 +1,15 @@
 // The `chapters` field's input component (design spec §7.1, master plan
 // Task 4): a three-pane shell (Filmstrip | Canvas | Inspector) plus a
-// header toolbar and a full-screen `@sanity/ui` Dialog escape valve. Tasks
-// 6-7 still owe the real Filmstrip/Inspector (chapter grouping, real
-// member-input rendering); Task 5 (this revision) wires the real `Canvas`
-// pane in place of the Task 4 placeholder — tool palette, click-to-place,
-// drag, keyboard nudge/delete/escape, width resize — and turns its semantic
-// callbacks (`onInsertElement`/`onMoveElement`/etc.) into `patches.ts`
-// builders wrapped in `PatchEvent.from(...)` for `props.onChange`.
+// header toolbar and a full-screen `@sanity/ui` Dialog escape valve. Task 7
+// still owes the real Inspector (member-input rendering). Task 5 wired the
+// real `Canvas` pane — tool palette, click-to-place, drag, keyboard
+// nudge/delete/escape, width resize. Task 6 (this revision) wires the real
+// chapter-grouped `Filmstrip` pane in place of Task 4's flat placeholder
+// list, adding a second bundle of semantic callbacks
+// (`StepMutationCallbacks`) alongside Task 5's `ElementMutationCallbacks` —
+// same split: `Filmstrip.tsx`/`Canvas.tsx` only ever report intent upward,
+// this file turns each into a `patches.ts` builder wrapped in
+// `PatchEvent.from(...)` for `props.onChange`.
 //
 // Task 4 kept this file's only Studio-context dependency `@sanity/ui`
 // (zero runtime `sanity` imports). Task 5 necessarily adds two: `PatchEvent`
@@ -39,10 +42,19 @@ import {PatchEvent} from 'sanity'
 import type {ArrayOfObjectsInputProps, FormPatch} from 'sanity'
 
 import {Canvas} from './Canvas'
+import {Filmstrip, type StepMutationCallbacks} from './Filmstrip'
+import {randomKey} from './keys'
 import {
+  duplicateStepPatch,
+  insertChapterPatch,
   insertElementPatch,
+  insertStepPatch,
   moveElementPatch,
+  moveStepPatch,
+  removeChapterPatch,
   removeElementPatch,
+  removeStepPatch,
+  reorderStepPatch,
   setElementWidthPatch,
 } from './patches'
 import {useEditorState, type EditorSelection} from './useEditorState'
@@ -74,44 +86,8 @@ function keyOf(value: unknown): string | null {
   return isRecord(value) && typeof value._key === 'string' ? value._key : null
 }
 
-function stringField(value: unknown, field: string): string | undefined {
-  return isRecord(value) && typeof value[field] === 'string' ? value[field] : undefined
-}
-
 function stepsOf(chapter: unknown): unknown[] {
   return isRecord(chapter) && Array.isArray(chapter.steps) ? chapter.steps : []
-}
-
-interface FlatStep {
-  chapterKey: string
-  chapterTitle: string
-  stepKey: string
-  stepTitle: string
-  index: number
-}
-
-/** Flattens every chapter's steps into one reading-order list (filmstrip = flat step list, Task 4; chapter grouping arrives in Task 6's real Filmstrip). */
-function flattenSteps(chapters: unknown[]): FlatStep[] {
-  const flat: FlatStep[] = []
-  let index = 0
-  for (const chapter of chapters) {
-    const chapterKey = keyOf(chapter)
-    if (chapterKey === null) continue
-    const chapterTitle = stringField(chapter, 'title') ?? 'Chapter'
-    for (const step of stepsOf(chapter)) {
-      const stepKey = keyOf(step)
-      if (stepKey === null) continue
-      index += 1
-      flat.push({
-        chapterKey,
-        chapterTitle,
-        stepKey,
-        stepTitle: stringField(step, 'title') ?? `Step ${index}`,
-        index,
-      })
-    }
-  }
-  return flat
 }
 
 function findStep(chapters: unknown[], chapterKey: string | null, stepKey: string | null): unknown {
@@ -125,48 +101,11 @@ function findStep(chapters: unknown[], chapterKey: string | null, stepKey: strin
   return null
 }
 
-function FilmstripPane({
-  steps,
-  selection,
-  onSelectStep,
-}: {
-  steps: FlatStep[]
-  selection: EditorSelection
-  onSelectStep: (chapterKey: string, stepKey: string) => void
-}): ReactNode {
-  return (
-    <Card borderRight padding={2} style={{minWidth: 220, overflowY: 'auto'}}>
-      <Stack gap={1}>
-        {steps.length === 0 && (
-          <Text muted size={1}>
-            No steps yet.
-          </Text>
-        )}
-        {steps.map((step) => {
-          const selected =
-            step.chapterKey === selection.chapterKey && step.stepKey === selection.stepKey
-          return (
-            <Card
-              key={`${step.chapterKey}-${step.stepKey}`}
-              as="button"
-              type="button"
-              padding={2}
-              radius={2}
-              tone={selected ? 'primary' : 'default'}
-              aria-pressed={selected}
-              data-testid={`filmstrip-step-${step.chapterKey}-${step.stepKey}`}
-              onClick={() => onSelectStep(step.chapterKey, step.stepKey)}
-              style={{textAlign: 'left', width: '100%'}}
-            >
-              <Text size={1}>
-                {step.chapterTitle} — {step.stepTitle}
-              </Text>
-            </Card>
-          )
-        })}
-      </Stack>
-    </Card>
-  )
+function findChapter(chapters: unknown[], chapterKey: string): unknown {
+  for (const chapter of chapters) {
+    if (keyOf(chapter) === chapterKey) return chapter
+  }
+  return null
 }
 
 /**
@@ -211,6 +150,7 @@ function CanvasPanes({
   onSelectElement,
   device,
   elementCallbacks,
+  stepCallbacks,
   projectId,
   dataset,
 }: {
@@ -220,6 +160,7 @@ function CanvasPanes({
   onSelectElement: (elementKey: string | null) => void
   device: 'desktop' | 'mobile'
   elementCallbacks: ElementMutationCallbacks
+  stepCallbacks: StepMutationCallbacks
   projectId: string | null
   dataset: string | null
 }): ReactNode {
@@ -227,10 +168,13 @@ function CanvasPanes({
 
   return (
     <Flex style={{height: '100%', minHeight: 0}}>
-      <FilmstripPane
-        steps={flattenSteps(chapters)}
-        selection={selection}
+      <Filmstrip
+        callbacks={stepCallbacks}
+        chapters={chapters}
+        dataset={dataset}
         onSelectStep={onSelectStep}
+        projectId={projectId}
+        selection={selection}
       />
       <Canvas
         dataset={dataset}
@@ -323,6 +267,63 @@ export function CanvasInput(props: CanvasInputProps): ReactNode {
     },
   }
 
+  // The `Filmstrip.tsx` mutation callbacks — keyed by `chapterKey`/`stepKey`
+  // only (see `StepMutationCallbacks`'s doc comment); each re-derives
+  // whatever chapter/step record a `patches.ts` builder needs from this
+  // component's own `chapters`, the "each layer computes what it needs from
+  // the canonical value" split `elementCallbacks` above already uses.
+  //
+  // SDD ledger Parked C ruling (LAST-STEP handling): both `onDeleteStep`
+  // and `onMoveStepToChapter` check whether the step being removed/moved is
+  // its chapter's ONLY step — deleting/moving it away would otherwise leave
+  // that chapter violating `steps`' schema `min(1)` (schema/chapter.ts).
+  // `onDeleteStep` unsets the whole chapter (`removeChapterPatch`) instead
+  // of just the step in that case; `onMoveStepToChapter` appends
+  // `removeChapterPatch` after the move. `Filmstrip.tsx`'s confirm dialog
+  // surfaces this consequence in its text before either ever runs.
+  const stepCallbacks: StepMutationCallbacks = {
+    onAddStep(chapterKey) {
+      const newStep = {_type: 'guidedTourStep', _key: randomKey(), elements: []}
+      emit(insertStepPatch(chapterKey, newStep, null))
+      selectStep(chapterKey, newStep._key)
+    },
+    onAddChapter(afterChapterKey) {
+      const newChapter = {
+        _type: 'guidedTourChapter',
+        _key: randomKey(),
+        title: 'New chapter',
+        steps: [],
+      }
+      emit(insertChapterPatch(newChapter, afterChapterKey))
+    },
+    onDuplicateStep(chapterKey, stepKey) {
+      const step = findStep(chapters, chapterKey, stepKey)
+      if (!isRecord(step)) return
+      const newKey = randomKey()
+      emit(duplicateStepPatch(chapterKey, step, newKey, randomKey))
+      selectStep(chapterKey, newKey)
+    },
+    onDeleteStep(chapterKey, stepKey) {
+      const steps = stepsOf(findChapter(chapters, chapterKey))
+      const isLastStep = steps.length === 1 && keyOf(steps[0]) === stepKey
+      emit(isLastStep ? removeChapterPatch(chapterKey) : removeStepPatch(chapterKey, stepKey))
+    },
+    onReorderStep(chapterKey, stepKey, targetIndex) {
+      const steps = stepsOf(findChapter(chapters, chapterKey)).filter(isRecord)
+      emit(reorderStepPatch(chapterKey, steps, stepKey, targetIndex))
+    },
+    onMoveStepToChapter(fromChapterKey, stepKey, toChapterKey) {
+      const step = findStep(chapters, fromChapterKey, stepKey)
+      if (!isRecord(step)) return
+      const steps = stepsOf(findChapter(chapters, fromChapterKey))
+      const sourceBecomesEmpty = steps.length === 1 && keyOf(steps[0]) === stepKey
+      const movePatches = moveStepPatch(fromChapterKey, stepKey, step, toChapterKey, null)
+      emit(
+        sourceBecomesEmpty ? [...movePatches, ...removeChapterPatch(fromChapterKey)] : movePatches,
+      )
+    },
+  }
+
   // One JSX subtree — toolbar plus the three panes — reused verbatim
   // whether it's shown inline (collapsed) or inside the Dialog (expanded).
   // Only one of the two branches below is ever mounted at a time (they're
@@ -343,6 +344,7 @@ export function CanvasInput(props: CanvasInputProps): ReactNode {
           onSelectStep={selectStep}
           projectId={projectId}
           selection={selection}
+          stepCallbacks={stepCallbacks}
         />
       </Card>
     </Box>

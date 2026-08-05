@@ -215,9 +215,10 @@ describe('CanvasInput', () => {
     expect(screen.getByTestId('filmstrip-step-c1-s1')).toBeTruthy()
     expect(screen.getByTestId('filmstrip-step-c1-s2')).toBeTruthy()
     expect(screen.getByTestId('filmstrip-step-c2-s3')).toBeTruthy()
-    expect(
-      within(screen.getByTestId('filmstrip-step-c1-s1')).getByText('Intro — Welcome'),
-    ).toBeTruthy()
+    // Chapter-grouped rendering (Task 6): the chapter title lives once in
+    // its group header, not repeated on every one of its step rows.
+    expect(screen.getByTestId('filmstrip-chapter-c1').textContent).toContain('Intro')
+    expect(screen.getByTestId('filmstrip-step-c1-s1').textContent).toContain('Welcome')
 
     // No `WorkspaceProvider` ancestor in this render tree (see this file's
     // module comment), so `useProjectDataset()` returns nulls and `Canvas`
