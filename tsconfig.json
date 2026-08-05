@@ -15,5 +15,5 @@
     "allowJs": false,
     "types": ["bun"]
   },
-  "include": ["src", "test"]
+  "include": ["src", "test", "seed", "scripts"]
 }

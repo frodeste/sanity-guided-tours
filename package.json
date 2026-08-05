@@ -55,6 +55,7 @@
     "lint": "oxlint",
     "prebuild": "mkdir -p assets/react && cp src/react/styles.css assets/react/styles.css",
     "prepublishOnly": "npm run build",
+    "seed": "bun run seed/seed.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "verify": "plugin-kit verify-package",
