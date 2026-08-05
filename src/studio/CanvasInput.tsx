@@ -1,15 +1,21 @@
 // The `chapters` field's input component (design spec §7.1, master plan
 // Task 4): a three-pane shell (Filmstrip | Canvas | Inspector) plus a
-// header toolbar and a full-screen `@sanity/ui` Dialog escape valve. Task 7
-// still owes the real Inspector (member-input rendering). Task 5 wired the
-// real `Canvas` pane — tool palette, click-to-place, drag, keyboard
-// nudge/delete/escape, width resize. Task 6 (this revision) wires the real
+// header toolbar and a full-screen `@sanity/ui` Dialog escape valve. Task 5
+// wired the real `Canvas` pane — tool palette, click-to-place, drag,
+// keyboard nudge/delete/escape, width resize. Task 6 wired the real
 // chapter-grouped `Filmstrip` pane in place of Task 4's flat placeholder
 // list, adding a second bundle of semantic callbacks
 // (`StepMutationCallbacks`) alongside Task 5's `ElementMutationCallbacks` —
 // same split: `Filmstrip.tsx`/`Canvas.tsx` only ever report intent upward,
 // this file turns each into a `patches.ts` builder wrapped in
-// `PatchEvent.from(...)` for `props.onChange`.
+// `PatchEvent.from(...)` for `props.onChange`. Task 7 (this revision) wires
+// the real `Inspector` pane in place of Task 4's placeholder — unlike
+// `Canvas`/`Filmstrip`, `Inspector` needs this component's OWN `props`
+// (`Inspector.tsx`'s module comment: it reads `props.members`/
+// `props.onItemOpen` directly, the real member tree and the platform's own
+// item-editing entry point), not just `chapters`/`selection`, so it's
+// threaded through `CanvasPanes` as `arrayProps` rather than joining the
+// `chapters`/`selection` props the other two panes get.
 //
 // Task 4 kept this file's only Studio-context dependency `@sanity/ui`
 // (zero runtime `sanity` imports). Task 5 necessarily adds two: `PatchEvent`
@@ -36,13 +42,14 @@
 // `stepCountOf` and `src/studio/patches.ts`'s `isRecord` use, rather than
 // trusting the field's own default generic (`{_key: string}` — see the doc
 // comment on `CanvasInputProps` below for why it isn't parametrized).
-import {Box, Button, Card, Dialog, Flex, Inline, Stack, Text} from '@sanity/ui'
+import {Box, Button, Card, Dialog, Flex, Inline} from '@sanity/ui'
 import type {ReactNode} from 'react'
 import {PatchEvent} from 'sanity'
 import type {ArrayOfObjectsInputProps, FormPatch} from 'sanity'
 
 import {Canvas} from './Canvas'
 import {Filmstrip, type StepMutationCallbacks} from './Filmstrip'
+import {Inspector} from './Inspector'
 import {randomKey} from './keys'
 import {
   duplicateStepPatch,
@@ -126,23 +133,6 @@ interface ElementMutationCallbacks {
   onRemoveElement: (elementKey: string) => void
 }
 
-function InspectorPane({selection}: {selection: EditorSelection}): ReactNode {
-  return (
-    <Card borderLeft padding={3} style={{minWidth: 260}}>
-      <Stack gap={3}>
-        <Text size={1} weight="semibold">
-          Inspector
-        </Text>
-        <Text muted size={1}>
-          {selection.elementKey !== null
-            ? 'Selected element fields render here (Task 7).'
-            : 'Select an element to edit its fields.'}
-        </Text>
-      </Stack>
-    </Card>
-  )
-}
-
 function CanvasPanes({
   chapters,
   selection,
@@ -153,6 +143,7 @@ function CanvasPanes({
   stepCallbacks,
   projectId,
   dataset,
+  arrayProps,
 }: {
   chapters: unknown[]
   selection: EditorSelection
@@ -163,6 +154,7 @@ function CanvasPanes({
   stepCallbacks: StepMutationCallbacks
   projectId: string | null
   dataset: string | null
+  arrayProps: CanvasInputProps
 }): ReactNode {
   const step = findStep(chapters, selection.chapterKey, selection.stepKey)
 
@@ -188,7 +180,7 @@ function CanvasPanes({
         selectedElementKey={selection.elementKey}
         step={step}
       />
-      <InspectorPane selection={selection} />
+      <Inspector arrayProps={arrayProps} selection={selection} />
     </Flex>
   )
 }
@@ -336,6 +328,7 @@ export function CanvasInput(props: CanvasInputProps): ReactNode {
       <Toolbar device={device} onOpenFullEditor={() => setExpanded(true)} onSetDevice={setDevice} />
       <Card borderTop style={{height: expanded ? undefined : 420, flex: expanded ? 1 : undefined}}>
         <CanvasPanes
+          arrayProps={props}
           chapters={chapters}
           dataset={dataset}
           device={device}
