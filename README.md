@@ -209,6 +209,8 @@ Every member of `GuidedTourProps` (`src/react/GuidedTour.tsx`):
 | `onStepChange` | `(step: number) => void` | Called on navigation while `step` is controlled. |
 | `className` | `string` | Applied to the tour root. |
 | `style` | `CSSProperties` | Merged onto the tour root — the documented hook for `--gt-*` overrides (theme first, `style` wins). |
+| `colorScheme` | `'auto' \| 'light' \| 'dark'` (default `'auto'`) | `'auto'` follows the host's `prefers-color-scheme`; `'light'`/`'dark'` force the scheme regardless of it — see [Theming](#theming). |
+| `loadGoogleFont` | `boolean` (default `true`) | Whether a `tour.theme.googleFont` is fetched from Google Fonts automatically. `false` opts out (self-hosting, GDPR, your own pipeline) — see [Theming](#theming). |
 
 `<GuidedTour>` is uncontrolled by default (internal position state starting at
 step 0); pass `step`/`onStepChange` to drive the position externally, e.g. to
@@ -374,23 +376,39 @@ function Sections({sections}: {sections: Section[]}) {
 ## Theming
 
 The `guidedTourTheme` document (registered when `theme: true`, the default)
-compiles 1:1 into `--gt-*` CSS custom properties, set inline on the tour root
-by `themeToStyle` (`src/react/theme.ts`). A tour with no theme reference falls
-through entirely to the stylesheet's own defaults in `styles.css`.
+compiles into paired `--gt-light-*`/`--gt-dark-*` CSS custom properties, set
+inline on the tour root by `themeToStyle` (`src/react/theme.ts`). `styles.css`
+maps whichever pair member is active onto the `--gt-*` name components
+actually use (`--gt-accent`, `--gt-surface`, ...), per the active color
+scheme — see [Dark mode](#dark-mode) below. A tour with no theme reference
+falls through entirely to the stylesheet's own defaults.
 
-| Theme field | Type | Default | Custom property |
-|---|---|---|---|
-| `accent` | hex color | `#2276fc` | `--gt-accent` |
-| `surface` | hex color | `#ffffff` | `--gt-surface` |
-| `text` | hex color | `#1a1a1a` | `--gt-text` |
-| `overlay` | hex color | `#0f172a` | `--gt-overlay` |
-| `radius` | number (px) | `8` | `--gt-radius` (rendered as `${radius}px`) |
-| `hotspotSize` | number (px) | `24` | `--gt-hotspot-size` (rendered as `${hotspotSize}px`) |
-| `fontFamily` | string, optional | — (falls back to `inherit`) | `--gt-font-family`, only set when non-empty |
-| `logo` | image, optional | — | Not a custom property — rendered as `<img class="gt-logo">` in the header |
+### Defaults
 
-Override any of them from your own stylesheet, or via the `style` prop, which
-always wins over the theme's value for the same property:
+| Theme field | Type | Light default | Dark default | Custom property |
+|---|---|---|---|---|
+| `accent` | hex color or `var(--token)` | `#7c3aed` | `#a78bfa` | `--gt-light-accent` / `--gt-dark-accent` → `--gt-accent` |
+| `surface` | hex color or `var(--token)` | `#ffffff` | `#0f172a` | `--gt-light-surface` / `--gt-dark-surface` → `--gt-surface` |
+| `text` | hex color or `var(--token)` | `#0f172a` | `#f1f5f9` | `--gt-light-text` / `--gt-dark-text` → `--gt-text` |
+| `overlay` | hex color or `var(--token)` | `#1e1b4b` | `#020617` | `--gt-light-overlay` / `--gt-dark-overlay` → `--gt-overlay` |
+| `radius` | number (px) | `12` | *(same both schemes)* | `--gt-radius` (rendered as `${radius}px`) |
+| `hotspotSize` | number (px) | `24` | *(same both schemes)* | `--gt-hotspot-size` (rendered as `${hotspotSize}px`) |
+| `fontFamily` | string, optional | — | *(same both schemes)* | `--gt-font-family`, only set when non-empty — see [Google Fonts](#google-fonts) |
+| `googleFont` | string, optional | — | *(same both schemes)* | Feeds `--gt-font-family` (via `fontFamily` precedence below) and, unless opted out, loads the family itself |
+| `brand` | string, optional | — | — | Not a custom property — an organizational label shown in the Studio theme list's subtitle, with a "Brand" ordering |
+| `logo` | image, optional | — | — | Not a custom property — rendered as `<img class="gt-logo">` in the header |
+
+`radius`/`hotspotSize`/font are scheme-independent — shape and typography
+don't change between light and dark. When a theme has no `dark` object at
+all (or only some of its four fields filled in), the missing members fall
+back to the dark defaults above individually — `dark.accent` and
+`dark.surface` can be set while `dark.overlay` is left empty, and only
+`overlay` falls back. The dark pair is **always** emitted for every themed
+tour, even one authored before dark-mode support existed, so dark mode works
+out of the box without an author having to revisit every existing theme.
+
+Override any of these from your own stylesheet, or via the `style` prop,
+which always wins over the theme's value for the same property:
 
 ```tsx
 <GuidedTour
@@ -398,6 +416,102 @@ always wins over the theme's value for the same property:
   style={{'--gt-accent': '#ff6b00', '--gt-radius': '0px'} as React.CSSProperties}
 />
 ```
+
+An override on `--gt-accent` itself (as above) applies identically in both
+light and dark, since it bypasses the light/dark mapping rather than
+participating in it. To keep an override scheme-aware, override the pair
+instead:
+`style={{'--gt-light-accent': '#ff6b00', '--gt-dark-accent': '#ffb37a'}}`.
+
+### Binding to your own design tokens
+
+`accent`/`surface`/`text`/`overlay` accept either a 6-digit hex color or a
+CSS variable reference — `var(--token)` or `var(--token, <fallback>)` — so a
+theme can bind to your site's own custom properties instead of hard-coding a
+color:
+
+```ts
+// A guidedTourTheme document
+{
+  _type: 'guidedTourTheme',
+  name: 'Acme brand',
+  accent: 'var(--brand-primary, #7c3aed)',
+  surface: 'var(--brand-surface, #ffffff)',
+  text: 'var(--brand-text, #0f172a)',
+}
+```
+
+`themeToStyle` passes the value straight through —
+`--gt-light-accent: var(--brand-primary, #7c3aed)` — so the tour's accent
+tracks whatever your site's own `--brand-primary` resolves to, wherever the
+tour is rendered, without a redeploy of this plugin or a hex value
+duplicated into Sanity.
+
+**Multi-brand pattern:** if your dataset serves several sites or clients
+(each with its own design tokens), create one `guidedTourTheme` document per
+brand, each bound to that brand's own token names (`var(--brand-primary)` on
+one, `var(--client-b-accent)` on another), and set each brand's `brand`
+label so they're easy to tell apart in the theme list. Each site's tours
+reference their own brand's theme document; the actual colors then come from
+whichever site's stylesheet the tour happens to render inside.
+
+### Dark mode
+
+`GuidedTour`'s `colorScheme` prop (default `'auto'`) picks how the active
+scheme is decided:
+
+- **`'auto'`** (default) — no `data-gt-scheme` attribute is rendered; the
+  tour follows the host page's `prefers-color-scheme` via a `styles.css`
+  media query.
+- **`'light'` / `'dark'`** — forces that scheme via `data-gt-scheme` on the
+  tour root, ignoring `prefers-color-scheme` entirely. Use this if your site
+  has its own light/dark toggle and you want the tour to follow it:
+
+```tsx
+<GuidedTour tour={tour} colorScheme={siteTheme} /* 'light' | 'dark' */ />
+```
+
+`GuidedTourModal`'s backdrop and `GuidedTourEmbed`'s wrapper carry the same
+theme custom properties and `data-gt-scheme` attribute directly (not just
+the nested `<GuidedTour>`'s own root) — they're DOM ancestors/siblings of
+`.gt-tour`, not descendants, and CSS custom properties only inherit
+downward, so each needs its own copy to resolve the theme and scheme
+correctly.
+
+### Google Fonts
+
+Set `googleFont` to a Google Font family name (e.g. `"Manrope"`) to load it
+automatically — letters, digits and spaces only, up to 40 characters, the
+same pattern the Studio field validates against and the viewer itself
+re-checks before ever using the value (see below). `fontFamily` (a raw CSS
+`font-family` value) always takes precedence over `googleFont` when both are
+set on the same theme.
+
+When a valid `googleFont` is present, the viewer (`src/react/fontLoader.ts`)
+appends the two Google Fonts preconnect links once per page, then one `css2`
+stylesheet `<link>` for the family (weights 400/500/600/700, `display=swap`)
+— idempotent per family, SSR-safe. Because a document can be written
+directly through the Content API and bypass Studio's own validation, the
+viewer re-validates `googleFont` against the same pattern before it's ever
+interpolated into a URL or a CSS custom property; an invalid value is
+silently skipped in production and logged with `console.warn` in
+development.
+
+Pass `loadGoogleFont={false}` to opt out of the network request entirely —
+for self-hosting the font, loading it through your own pipeline, or for
+GDPR/privacy reasons (a Google Fonts request sends the visitor's IP to
+Google). The `--gt-font-family` custom property still resolves to the same
+family name either way; opting out only skips the fetch that makes the font
+actually available, so the browser renders with its fallback stack until the
+family arrives some other way:
+
+```tsx
+<GuidedTour tour={tour} loadGoogleFont={false} />
+```
+
+When neither `fontFamily` nor a valid `googleFont` is set, `--gt-font-family`
+falls back entirely to the stylesheet's own default stack: `'Inter',
+ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif`.
 
 ## Personalization
 
@@ -522,21 +636,30 @@ first step, mid-tour with an open tooltip, the lead form, and the outro.
 
 ## Seeding your own dataset
 
-Populate a dataset you control with two tours:
+Populate a dataset you control with two tours and a theme:
 
 - **`sample-tour`** — exercises every feature: three steps across two
   chapters, all three element types, all three step-advance modes,
-  personalization tokens, an outro with CTAs, and lead capture configured
-  (disabled by default so seeding doesn't gate anything).
+  personalization tokens, an outro with CTAs, lead capture configured
+  (disabled by default so seeding doesn't gate anything), and a reference to
+  the branded "Acme" theme below.
 - **`how-to-build-tours`** — a meta tour that teaches the plugin using the
   plugin: its screenshots are real captures of the Studio's own canvas
   editor (filmstrip, canvas, inspector, bulk upload, live preview) rendered
   with fixture data by `scripts/capture-editor-shots/`, narrating the exact
   authoring loop below, with an outro linking back to this README and the
-  repo.
+  repo. Deliberately theme-less, so it renders with the viewer's own modern
+  defaults — side by side with `sample-tour`'s branded look, a fresh dataset
+  demonstrates both.
+- **"Acme brand"** (`guidedTourTheme`) — a pink accent, warm light
+  surface/text, partial dark-mode overrides (accent/surface/text set,
+  `overlay` deliberately left to fall back to the built-in dark default), and
+  the `Manrope` Google Font. Written before `sample-tour` so its reference
+  always resolves. Not the dataset's default theme, so it never leaks onto
+  `how-to-build-tours`.
 
 The script is dependency-free (plain `fetch` against the Sanity assets and
-mutate APIs) and idempotent — re-running it updates the same two tours in
+mutate APIs) and idempotent — re-running it updates the same documents in
 place.
 
 ```bash

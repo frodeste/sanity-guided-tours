@@ -7,6 +7,7 @@ import {GuidedTour, type GuidedTourProps} from './GuidedTour'
 import {GuidedTourModal} from './GuidedTourModal'
 import {defaultLabels, type GuidedTourLabels} from './labels'
 import {personalizeText, resolveTokens} from './personalize'
+import {schemeAttr, themeToStyle} from './theme'
 
 /**
  * @public
@@ -43,6 +44,17 @@ export interface GuidedTourEmbedProps extends Omit<GuidedTourProps, 'tour'> {
  * `useState` — there is no equivalent of `GuidedTourProps.step` for this,
  * since a Portable Text embed has no URL of its own to sync to.
  *
+ * The `.gt-embed` wrapper (inline mode's existing div; modal mode gains one
+ * too, around the trigger button + `<GuidedTourModal>`) carries
+ * `themeToStyle(tour.theme)` and `data-gt-scheme` directly (M7 review fix):
+ * `.gt-embed-start` is a SIBLING of `<GuidedTourModal>`, not a descendant
+ * of the `.gt-tour` it opens, so it can't inherit that tour's resolved
+ * `--gt-accent` etc — CSS custom properties only inherit downward. Inline
+ * mode's wrapper doesn't strictly need this today (nothing on `.gt-embed`
+ * itself references a `--gt-*` custom property; the nested `.gt-tour`
+ * resolves its own), but carries it too for consistency with modal mode
+ * and so a future `.gt-embed`-scoped style doesn't silently regress.
+ *
  * @public
  */
 export function GuidedTourEmbed({value, ...rest}: GuidedTourEmbedProps): ReactNode {
@@ -65,9 +77,16 @@ export function GuidedTourEmbed({value, ...rest}: GuidedTourEmbedProps): ReactNo
     )
   }
 
+  // See the doc comment above: both modes' wrapper needs its own copy of
+  // the theme's custom properties and scheme attribute — `.gt-embed`
+  // isn't a descendant of the `.gt-tour` a nested `<GuidedTour>`/
+  // `<GuidedTourModal>` renders, so it can't inherit theirs.
+  const embedStyle = themeToStyle(tour.theme)
+  const embedScheme = schemeAttr(rest.colorScheme)
+
   if (displayMode === 'inline') {
     return (
-      <div className="gt-embed">
+      <div className="gt-embed" style={embedStyle} data-gt-scheme={embedScheme}>
         <GuidedTour tour={tour} {...rest} />
       </div>
     )
@@ -82,11 +101,11 @@ export function GuidedTourEmbed({value, ...rest}: GuidedTourEmbedProps): ReactNo
     : labels.startTour
 
   return (
-    <>
+    <div className="gt-embed" style={embedStyle} data-gt-scheme={embedScheme}>
       <button type="button" className="gt-embed-start" onClick={() => setOpen(true)}>
         {startLabel}
       </button>
       <GuidedTourModal tour={tour} {...rest} open={open} onOpenChange={setOpen} />
-    </>
+    </div>
   )
 }

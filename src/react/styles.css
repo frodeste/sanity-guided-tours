@@ -14,22 +14,97 @@
  * - No `!important` — the reduced-motion overrides below rely on cascade
  *   order (they're declared after the rules they override, at equal
  *   specificity) rather than importance to win.
+ *
+ * Light/dark architecture (M7 theming): `./theme.ts`'s `themeToStyle`
+ * writes paired `--gt-light-*`/`--gt-dark-*` custom properties inline
+ * (never a scheme-resolved `--gt-accent` directly) — this file is the
+ * ONLY place that maps one of each pair onto the actual `--gt-*` custom
+ * property everything else below consumes. The shared rule right below
+ * this comment IS the light mapping; the two rules further down apply the
+ * dark mapping, gated on two DISJOINT selectors so cascade order between
+ * them can never matter (see the comment just above them): the
+ * `prefers-color-scheme` media rule ONLY for auto mode
+ * (`:not([data-gt-scheme])`), the attribute selector ONLY for a
+ * consumer-forced dark scheme (`[data-gt-scheme='dark']`,
+ * `GuidedTour.tsx`'s `colorScheme` prop). Forced light needs no rule of
+ * its own — the base mapping already IS light. The literal fallback
+ * values below (`var(--gt-light-accent, #7c3aed)` etc.) must equal
+ * `THEME_DEFAULTS`/`THEME_DARK_DEFAULTS` (`../queries/defaults`) —
+ * enforced by `test/react/theme.test.ts`'s parity tests, since CSS can't
+ * import that TS module directly.
+ *
+ * The mapping rule's selector is `.gt-tour, .gt-modal-backdrop, .gt-embed`
+ * — not `.gt-tour` alone (M7 review fix). `.gt-modal-backdrop`
+ * (`GuidedTourModal.tsx`) is an ANCESTOR of the `.gt-tour` it wraps, and
+ * `.gt-embed` (`GuidedTourEmbed.tsx`'s wrapper, both display modes) is
+ * that same tour's SIBLING in modal mode (`.gt-embed-start` opens a
+ * `<GuidedTourModal>` next to it, not inside it) — CSS custom properties
+ * only inherit downward, so neither can see a nested `.gt-tour`'s own
+ * resolved `--gt-accent` etc. Both components spread `themeToStyle` and
+ * `data-gt-scheme` (via `./theme.ts`'s `schemeAttr`) onto that root
+ * themselves, exactly like `GuidedTour.tsx` does for `.gt-tour` — so this
+ * rule (and the two scheme-override rules) resolves the SAME custom
+ * properties independently on each of the three, not just on `.gt-tour`.
+ * Every `var(--gt-accent)`/etc reference inside `.gt-modal-backdrop`'s,
+ * `.gt-modal`'s, `.gt-modal-close`'s, and `.gt-embed-start`'s own rules
+ * (further down) additionally carries its OWN literal fallback now too —
+ * a second, independent safety net: an unfallback'd `var()` that resolves
+ * to nothing is "invalid at computed-value time", which for a
+ * non-inherited property (`background-color`, `border-color`, ...)
+ * resets it to its INITIAL value (`transparent` for a color), not to
+ * some earlier declaration or a sensible default — silently invisible
+ * rather than merely unbranded. Belt-and-suspenders: the mapping rule
+ * makes these surfaces theme- and scheme-AWARE; the per-declaration
+ * literal fallback makes them fail safe even if that mapping is ever
+ * bypassed (e.g. hand-authored markup, an SSR frame before hydration).
  */
 
-.gt-tour {
-  --gt-accent: #2276fc;
-  --gt-surface: #ffffff;
-  --gt-text: #1a1a1a;
-  --gt-overlay: #0f172a;
-  --gt-radius: 8px;
+.gt-tour,
+.gt-modal-backdrop,
+.gt-embed {
+  --gt-accent: var(--gt-light-accent, #7c3aed);
+  --gt-surface: var(--gt-light-surface, #ffffff);
+  --gt-text: var(--gt-light-text, #0f172a);
+  --gt-overlay: var(--gt-light-overlay, #1e1b4b);
+  --gt-radius: 12px;
   --gt-hotspot-size: 24px;
-  --gt-font-family: inherit;
+  --gt-font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --gt-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 10px 24px -8px rgb(0 0 0 / 0.18);
+  --gt-border: color-mix(in srgb, var(--gt-text) 12%, transparent);
+}
 
+.gt-tour {
   display: flex;
   flex-direction: column;
   gap: 16px;
   color: var(--gt-text);
   font-family: var(--gt-font-family);
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+/* Auto mode ONLY — mutually exclusive with the forced-dark rule below by
+   construction (`:not([data-gt-scheme])` vs. `[data-gt-scheme='dark']`),
+   so a specificity tie between overlapping selectors is structurally
+   impossible, not just avoided by declaration order. */
+@media (prefers-color-scheme: dark) {
+  .gt-tour:not([data-gt-scheme]),
+  .gt-modal-backdrop:not([data-gt-scheme]),
+  .gt-embed:not([data-gt-scheme]) {
+    --gt-accent: var(--gt-dark-accent, #a78bfa);
+    --gt-surface: var(--gt-dark-surface, #0f172a);
+    --gt-text: var(--gt-dark-text, #f1f5f9);
+    --gt-overlay: var(--gt-dark-overlay, #020617);
+  }
+}
+
+.gt-tour[data-gt-scheme='dark'],
+.gt-modal-backdrop[data-gt-scheme='dark'],
+.gt-embed[data-gt-scheme='dark'] {
+  --gt-accent: var(--gt-dark-accent, #a78bfa);
+  --gt-surface: var(--gt-dark-surface, #0f172a);
+  --gt-text: var(--gt-dark-text, #f1f5f9);
+  --gt-overlay: var(--gt-dark-overlay, #020617);
 }
 
 .gt-empty {
@@ -38,6 +113,7 @@
   color: var(--gt-text);
   background: var(--gt-surface);
   border-radius: var(--gt-radius);
+  border: 1px solid var(--gt-border);
 }
 
 /* Header: title, progress bar, chapter menu */
@@ -52,6 +128,7 @@
   margin: 0;
   font-size: 1.25rem;
   font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 .gt-logo {
@@ -63,7 +140,7 @@
 .gt-progress {
   height: 4px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--gt-text) 12%, transparent);
+  background: color-mix(in srgb, var(--gt-accent) 12%, transparent);
   overflow: hidden;
 }
 
@@ -74,6 +151,7 @@
   width: calc(var(--gt-progress-percent, 0) * 1%);
   background: var(--gt-accent);
   border-radius: inherit;
+  transition: width 200ms ease;
 }
 
 .gt-chapters {
@@ -84,7 +162,7 @@
 
 .gt-chapter {
   padding: 4px 12px;
-  border: 1px solid color-mix(in srgb, var(--gt-text) 20%, transparent);
+  border: 1px solid var(--gt-border);
   border-radius: var(--gt-radius);
   background: transparent;
   color: var(--gt-text);
@@ -92,7 +170,17 @@
   cursor: pointer;
   transition:
     background-color 150ms ease,
-    border-color 150ms ease;
+    border-color 150ms ease,
+    color 150ms ease;
+}
+
+.gt-chapter:hover {
+  border-color: color-mix(in srgb, var(--gt-accent) 35%, transparent);
+}
+
+.gt-chapter:focus-visible {
+  outline: 2px solid var(--gt-accent);
+  outline-offset: 2px;
 }
 
 .gt-chapter[aria-current='true'] {
@@ -120,7 +208,7 @@
   container-type: inline-size;
 }
 
-.gt-stage:focus {
+.gt-stage:focus-visible {
   outline: 2px solid var(--gt-accent);
   outline-offset: 2px;
 }
@@ -181,10 +269,17 @@
   transform: translate(-50%, -50%) scale(1.1);
 }
 
+.gt-hotspot:focus-visible {
+  outline: 2px solid var(--gt-accent);
+  outline-offset: 2px;
+}
+
+/* Softened pulse (M7 design brief): lower peak alpha, slower cycle — a
+   quieter "look here" than the original's brighter, faster ring. */
 @keyframes gt-pulse {
   0%,
   100% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--gt-accent) 55%, transparent);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--gt-accent) 35%, transparent);
   }
   50% {
     box-shadow: 0 0 0 8px color-mix(in srgb, var(--gt-accent) 0%, transparent);
@@ -192,7 +287,7 @@
 }
 
 .gt-hotspot--pulse {
-  animation: gt-pulse 2s ease-in-out infinite;
+  animation: gt-pulse 2.6s ease-in-out infinite;
 }
 
 /* Tooltip */
@@ -211,6 +306,12 @@
   color: var(--gt-text);
   cursor: pointer;
   padding: 0;
+  box-shadow: var(--gt-shadow);
+}
+
+.gt-tooltip-trigger:focus-visible {
+  outline: 2px solid var(--gt-accent);
+  outline-offset: 2px;
 }
 
 .gt-tooltip {
@@ -227,8 +328,9 @@
   padding: 12px;
   background: var(--gt-surface);
   color: var(--gt-text);
+  border: 1px solid var(--gt-border);
   border-radius: var(--gt-radius);
-  box-shadow: 0 4px 16px color-mix(in srgb, var(--gt-overlay) 25%, transparent);
+  box-shadow: var(--gt-shadow);
   transition: opacity 150ms ease;
 }
 
@@ -297,6 +399,7 @@
   padding: 12px;
   border-radius: var(--gt-radius);
   color: var(--gt-text);
+  box-shadow: var(--gt-shadow);
 }
 
 .gt-overlay--surface {
@@ -315,6 +418,7 @@
 
 .gt-overlay--none {
   background: transparent;
+  box-shadow: none;
 }
 
 /* `.gt-step` sets `line-height: 0` to collapse the whitespace gap under
@@ -339,7 +443,7 @@
   border-radius: var(--gt-radius);
 }
 
-.gt-outro:focus {
+.gt-outro:focus-visible {
   outline: 2px solid var(--gt-accent);
   outline-offset: 2px;
 }
@@ -354,6 +458,7 @@
   margin: 0;
   font-size: 1.5rem;
   font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 .gt-outro-ctas {
@@ -362,30 +467,49 @@
   gap: 12px;
 }
 
+/* CTA/start/Next buttons are always pill-shaped (M7 design brief),
+   independent of `--gt-radius` — that property is reserved for
+   cards/tooltips/panels (`.gt-stage`, `.gt-tooltip`, `.gt-lead`,
+   `.gt-modal`, `.gt-outro`, ...), never for a button. */
 .gt-cta {
   display: inline-block;
-  padding: 8px 16px;
-  border-radius: var(--gt-radius);
+  padding: 8px 20px;
+  border-radius: 999px;
   font: inherit;
+  font-weight: 600;
   text-decoration: none;
   cursor: pointer;
-  transition: opacity 150ms ease;
+  transition:
+    filter 150ms ease,
+    background-color 150ms ease,
+    border-color 150ms ease;
 }
 
-.gt-cta:hover,
 .gt-cta:focus-visible {
-  opacity: 0.9;
+  outline: 2px solid var(--gt-accent);
+  outline-offset: 2px;
 }
 
 .gt-cta--primary {
   background: var(--gt-accent);
   color: var(--gt-surface);
+  border: 1px solid transparent;
+}
+
+.gt-cta--primary:hover,
+.gt-cta--primary:focus-visible {
+  filter: brightness(1.08);
 }
 
 .gt-cta--secondary {
   background: transparent;
   color: var(--gt-accent);
-  border: 1px solid var(--gt-accent);
+  border: 1px solid color-mix(in srgb, var(--gt-accent) 35%, transparent);
+}
+
+.gt-cta--secondary:hover,
+.gt-cta--secondary:focus-visible {
+  background: color-mix(in srgb, var(--gt-accent) 8%, transparent);
 }
 
 /* Lead capture: the interstitial shown at the configured trigger point (M4 Task 3) */
@@ -394,10 +518,12 @@
   border-radius: var(--gt-radius);
   background: var(--gt-surface);
   color: var(--gt-text);
-  padding: 16px;
+  border: 1px solid var(--gt-border);
+  box-shadow: var(--gt-shadow);
+  padding: 20px;
 }
 
-.gt-lead:focus {
+.gt-lead:focus-visible {
   outline: 2px solid var(--gt-accent);
   outline-offset: 2px;
 }
@@ -429,6 +555,13 @@
   background: var(--gt-surface);
   color: var(--gt-text);
   font: inherit;
+  transition: border-color 150ms ease;
+}
+
+.gt-lead-input:focus-visible {
+  outline: 2px solid var(--gt-accent);
+  outline-offset: 2px;
+  border-color: var(--gt-accent);
 }
 
 .gt-lead-input[aria-invalid='true'] {
@@ -459,14 +592,25 @@
 }
 
 .gt-lead-submit {
-  padding: 8px 16px;
-  border: none;
-  border-radius: var(--gt-radius);
+  padding: 8px 20px;
+  border: 1px solid transparent;
+  border-radius: 999px;
   background: var(--gt-accent);
   color: var(--gt-surface);
   font: inherit;
+  font-weight: 600;
   cursor: pointer;
-  transition: opacity 150ms ease;
+  transition: filter 150ms ease;
+}
+
+.gt-lead-submit:hover:not(:disabled),
+.gt-lead-submit:focus-visible {
+  filter: brightness(1.08);
+}
+
+.gt-lead-submit:focus-visible {
+  outline: 2px solid var(--gt-accent);
+  outline-offset: 2px;
 }
 
 .gt-lead-submit:disabled {
@@ -475,14 +619,23 @@
 }
 
 .gt-lead-skip {
-  padding: 8px 16px;
-  border: 1px solid color-mix(in srgb, var(--gt-text) 20%, transparent);
-  border-radius: var(--gt-radius);
+  padding: 8px 20px;
+  border: 1px solid color-mix(in srgb, var(--gt-accent) 35%, transparent);
+  border-radius: 999px;
   background: transparent;
   color: var(--gt-text);
   font: inherit;
   cursor: pointer;
-  transition: opacity 150ms ease;
+  transition: background-color 150ms ease;
+}
+
+.gt-lead-skip:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--gt-accent) 8%, transparent);
+}
+
+.gt-lead-skip:focus-visible {
+  outline: 2px solid var(--gt-accent);
+  outline-offset: 2px;
 }
 
 .gt-lead-skip:disabled {
@@ -490,7 +643,14 @@
   cursor: not-allowed;
 }
 
-/* Modal: the fixed backdrop + centered dialog panel GuidedTourModal renders (M4 Task 4) */
+/* Modal: the fixed backdrop + centered dialog panel GuidedTourModal renders
+   (M4 Task 4). Every `var()` reference below carries its own literal
+   fallback (light defaults, matching the constants this file's top comment
+   and `test/react/theme.test.ts` keep in parity) — belt-and-suspenders
+   alongside the `.gt-modal-backdrop`-scoped mapping rule above: even if
+   that mapping is ever bypassed, none of these declarations can go
+   "invalid at computed-value time" and collapse to their initial value
+   (M7 review fix — see this file's top comment). */
 
 .gt-modal-backdrop {
   position: fixed;
@@ -501,10 +661,16 @@
   justify-content: center;
   padding: 24px;
   /* Plain-color fallback for browsers without `color-mix()` — matches
-     `--gt-overlay`'s own default (#0f172a) at 80% opacity, so a consumer
-     who never overrides the theme sees the identical color either way. */
-  background: rgba(15, 23, 42, 0.8);
-  background: color-mix(in srgb, var(--gt-overlay) 80%, transparent);
+     `--gt-overlay`'s own default (#1e1b4b) at 80% opacity, so a consumer
+     who never overrides the theme sees the identical color either way.
+     Independent of the `var(--gt-overlay, ...)` fallback just below: this
+     line is a browser-support fallback (`@supports not (color:
+     color-mix(in srgb, red, red))` territory), that one's a custom-
+     property-resolution fallback — a browser new enough for `color-mix()`
+     always uses the second line, with its own fallback kicking in only if
+     `--gt-overlay` itself is unset. */
+  background: rgba(30, 27, 75, 0.8);
+  background: color-mix(in srgb, var(--gt-overlay, #1e1b4b) 80%, transparent);
 }
 
 .gt-modal {
@@ -513,13 +679,15 @@
   max-height: 90vh;
   overflow: auto;
   padding: 24px;
-  background: var(--gt-surface);
-  color: var(--gt-text);
-  border-radius: var(--gt-radius);
+  background: var(--gt-surface, #ffffff);
+  color: var(--gt-text, #0f172a);
+  border: 1px solid var(--gt-border, color-mix(in srgb, #0f172a 12%, transparent));
+  border-radius: var(--gt-radius, 12px);
+  box-shadow: var(--gt-shadow, 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 10px 24px -8px rgb(0 0 0 / 0.18));
 }
 
-.gt-modal:focus {
-  outline: 2px solid var(--gt-accent);
+.gt-modal:focus-visible {
+  outline: 2px solid var(--gt-accent, #7c3aed);
   outline-offset: 2px;
 }
 
@@ -532,16 +700,20 @@
   border: none;
   border-radius: 50%;
   background: transparent;
-  color: var(--gt-text);
+  color: var(--gt-text, #0f172a);
   font-size: 1.25rem;
   line-height: 1;
   cursor: pointer;
   transition: background-color 150ms ease;
 }
 
-.gt-modal-close:hover,
+.gt-modal-close:hover {
+  background: color-mix(in srgb, var(--gt-text, #0f172a) 12%, transparent);
+}
+
 .gt-modal-close:focus-visible {
-  background: color-mix(in srgb, var(--gt-text) 12%, transparent);
+  outline: 2px solid var(--gt-accent, #7c3aed);
+  outline-offset: 2px;
 }
 
 /* Controls: prev/next, counter, dots */
@@ -554,14 +726,26 @@
 
 .gt-prev,
 .gt-next {
-  padding: 8px 16px;
-  border: none;
-  border-radius: var(--gt-radius);
+  padding: 8px 20px;
+  border: 1px solid transparent;
+  border-radius: 999px;
   background: var(--gt-accent);
   color: var(--gt-surface);
   font: inherit;
+  font-weight: 600;
   cursor: pointer;
-  transition: opacity 150ms ease;
+  transition: filter 150ms ease;
+}
+
+.gt-prev:hover:not(:disabled),
+.gt-next:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.gt-prev:focus-visible,
+.gt-next:focus-visible {
+  outline: 2px solid var(--gt-accent);
+  outline-offset: 2px;
 }
 
 .gt-prev:disabled,
@@ -594,34 +778,48 @@
   transition: background-color 150ms ease;
 }
 
+.gt-dot:focus-visible {
+  outline: 2px solid var(--gt-accent);
+  outline-offset: 2px;
+}
+
 .gt-dot[aria-current='true'] {
   background: var(--gt-accent);
 }
 
 /* Embed: <GuidedTourEmbed> — a guidedTourEmbed object placed on a page (M6).
-   `.gt-embed` (inline mode) and `.gt-embed-start` (modal mode's trigger
-   button) are rendered as siblings/ancestors of `.gt-tour`, same as
-   `.gt-modal`/`.gt-modal-close` above — `--gt-*` here follows that same
-   established convention, not a new one. */
+   `.gt-embed` is the wrapper both display modes render (inline mode: wraps
+   `.gt-tour` directly; modal mode: wraps `.gt-embed-start` + the
+   `<GuidedTourModal>` it opens) — it's part of the shared theme-mapping
+   selector above precisely because `.gt-embed-start` is a SIBLING of that
+   modal, not a descendant of the `.gt-tour` inside it (M7 review fix, same
+   reasoning as `.gt-modal-backdrop` above). Every `var()` reference below
+   carries its own literal fallback for the same belt-and-suspenders reason
+   documented on the Modal section above. */
 
 .gt-embed {
   display: block;
 }
 
 .gt-embed-start {
-  padding: 8px 16px;
-  border: none;
-  border-radius: var(--gt-radius);
-  background: var(--gt-accent);
-  color: var(--gt-surface);
+  padding: 8px 20px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--gt-accent, #7c3aed);
+  color: var(--gt-surface, #ffffff);
   font: inherit;
+  font-weight: 600;
   cursor: pointer;
-  transition: opacity 150ms ease;
+  transition: filter 150ms ease;
 }
 
-.gt-embed-start:hover,
+.gt-embed-start:hover {
+  filter: brightness(1.08);
+}
+
 .gt-embed-start:focus-visible {
-  opacity: 0.9;
+  outline: 2px solid var(--gt-accent, #7c3aed);
+  outline-offset: 2px;
 }
 
 /* `value.tour === null` (a broken, unpublished, or draft-only reference) —
@@ -656,12 +854,14 @@
   .gt-hotspot,
   .gt-chapter,
   .gt-tooltip,
+  .gt-progress::after,
+  .gt-cta,
   .gt-prev,
   .gt-next,
   .gt-dot,
-  .gt-cta,
   .gt-lead-submit,
   .gt-lead-skip,
+  .gt-lead-input,
   .gt-modal-close,
   .gt-embed-start {
     transition: none;

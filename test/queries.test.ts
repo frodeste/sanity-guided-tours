@@ -6,6 +6,8 @@ import {
   type GuidedTourElement,
   type GuidedTourEmbedValue,
   type GuidedTourOutroCta,
+  type GuidedTourTheme,
+  type GuidedTourThemeDark,
   guidedTourBySlugQuery,
   guidedTourEmbedProjection,
   guidedTourSlugsQuery,
@@ -116,9 +118,12 @@ const fixture = {
     surface: '#fff',
     text: '#111',
     overlay: 'rgba(0,0,0,.5)',
+    dark: null,
     radius: 8,
     hotspotSize: 24,
     fontFamily: 'Inter',
+    googleFont: null,
+    brand: null,
     logo: null,
   },
   tokens: null,
@@ -220,6 +225,36 @@ describe('GuidedTourDoc fixture with empty nested arrays', () => {
 
   test('outro can exist with no CTAs yet', () => {
     expect(fixtureWithEmptyNestedArrays.outro?.ctas).toBeNull()
+  })
+})
+
+// Compile-time check: dark's members are each independently optional (an
+// author can override only some of accent/surface/text/overlay), so a
+// partial dark override must satisfy GuidedTourThemeDark without every
+// member set, and both a populated and a null "dark" must satisfy
+// GuidedTourTheme — see ./defaults' THEME_DARK_DEFAULTS doc comment for why
+// these stay nullable rather than being coalesced like every other themed
+// field.
+const partialDarkOverride = {
+  accent: '#a78bfa',
+  surface: null,
+  text: null,
+  overlay: null,
+} satisfies GuidedTourThemeDark
+
+const themeWithDark = {
+  ...fixture.theme,
+  dark: partialDarkOverride,
+} satisfies GuidedTourTheme
+
+describe('GuidedTourThemeDark fixture', () => {
+  test('a partial override (accent set, the rest absent) is valid', () => {
+    expect(themeWithDark.dark?.accent).toBe('#a78bfa')
+    expect(themeWithDark.dark?.surface).toBeNull()
+  })
+
+  test('a theme with no dark overrides at all stays valid via fixture.theme', () => {
+    expect(fixture.theme.dark).toBeNull()
   })
 })
 

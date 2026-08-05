@@ -268,7 +268,89 @@ export function buildSettings(fields: Omit<SettingsDoc, '_type'>): SettingsDoc {
   return {_type: 'guidedTourSettings', ...fields}
 }
 
+// --- Theme (src/schema/theme.ts) --------------------------------------------
+
+/** `guidedTourTheme.dark`'s independently optional overrides — see that field's schema description. */
+export interface ThemeDarkDoc {
+  accent?: string
+  surface?: string
+  text?: string
+  overlay?: string
+}
+
+export interface ThemeDoc {
+  _id: string
+  _type: 'guidedTourTheme'
+  name: string
+  brand?: string
+  isDefault?: boolean
+  accent?: string
+  surface?: string
+  text?: string
+  overlay?: string
+  dark?: ThemeDarkDoc
+  radius?: number
+  hotspotSize?: number
+  fontFamily?: string
+  googleFont?: string
+}
+
+/** Deterministic document id — `createOrReplace` keys the script's idempotency on this, same convention as `SAMPLE_TOUR_ID`. */
+export const SAMPLE_THEME_ID = 'guided-tours-sample-theme'
+
+/**
+ * Builds the bundled sample theme: a fictional "Acme" brand exercising every
+ * M7 theming v2 field a real consumer would set — `brand` (organizational
+ * label), light `accent`/`surface`/`text`/`overlay` deliberately distinct
+ * from `THEME_DEFAULTS` (pink-600 `#db2777`, not the stylesheet's own
+ * violet, so a light-mode screenshot of the two tours side by side is
+ * visibly different rather than "did the theme apply at all?"), a `dark`
+ * override that is deliberately PARTIAL — `accent`/`surface`/`text` are set,
+ * `overlay` is left unset on purpose, so the seeded dataset itself
+ * demonstrates the per-field fallback to `THEME_DARK_DEFAULTS.overlay`
+ * (`src/queries/defaults.ts`'s doc comment on that constant) rather than
+ * only being provable in a unit test — and a Google Font (`googleFont:
+ * 'Manrope'`, loaded by the viewer via `src/react/fontLoader.ts` unless a
+ * consumer opts out) plus a `radius` distinct from the schema default (14,
+ * not 12).
+ *
+ * `isDefault` is explicitly `false` (not merely omitted) so this reads as a
+ * deliberate choice, not an oversight: setting it `true` would make
+ * `tourProjection`'s `coalesce(theme->, *[_type == "guidedTourTheme" &&
+ * isDefault == true][0])` fallback apply this theme to EVERY themeless tour
+ * in the dataset, including the meta tour below — which is built to stay
+ * theme-less on purpose, showing the viewer's own built-in modern defaults.
+ * Referenced by `buildSampleTourDocument`'s `theme` field via `SAMPLE_THEME_ID`.
+ * No `logo` — the seed script uploads no image asset for the theme document.
+ */
+export function buildSampleThemeDocument(): ThemeDoc {
+  return {
+    _id: SAMPLE_THEME_ID,
+    _type: 'guidedTourTheme',
+    name: 'Acme brand',
+    brand: 'Acme',
+    isDefault: false,
+    accent: '#db2777',
+    surface: '#fffbfa',
+    text: '#1c1917',
+    overlay: '#4c0519',
+    dark: {
+      accent: '#f472b6',
+      surface: '#1c1917',
+      text: '#fafaf9',
+      // overlay deliberately unset — see this function's doc comment.
+    },
+    radius: 14,
+    googleFont: 'Manrope',
+  }
+}
+
 // --- Full tour document (src/schema/guidedTour.ts) --------------------------
+
+interface ThemeReferenceField {
+  _type: 'reference'
+  _ref: string
+}
 
 export interface SampleTourDocument {
   _id: string
@@ -276,6 +358,7 @@ export interface SampleTourDocument {
   title: string
   slug: {_type: 'slug'; current: string}
   description?: string
+  theme?: ThemeReferenceField
   tokens?: TokenDoc[]
   chapters: ChapterDoc[]
   leadCapture?: LeadCaptureDoc
@@ -300,10 +383,14 @@ export interface SampleTourAssetIds {
  * but disabled (`enabled: false`) — see README's "Seeding your own
  * dataset" section, which this document is built to match exactly.
  *
- * No `theme` reference: the design spec's rejected-alternatives section and
- * the M5 task brief both call out theme as deliberately absent from the
- * seed, so a fresh dataset renders the tour with the viewer's own built-in
- * defaults rather than a theme document nothing else in the dataset uses.
+ * References `buildSampleThemeDocument`'s "Acme brand" theme by `_id`
+ * (`SAMPLE_THEME_ID`) — a fresh dataset renders this tour branded (pink
+ * accent, dark-mode overrides, Manrope) rather than the viewer's built-in
+ * defaults, so a seeded dataset demonstrates BOTH: this tour shows a
+ * themed tour, the meta tour below (`buildMetaTourDocument`) stays
+ * theme-less and shows the modern defaults themselves. `seed/seed.ts`
+ * writes the theme document before this one, so the reference always
+ * resolves (M7 theming v2 plan).
  */
 export function buildSampleTourDocument(
   assetIds: SampleTourAssetIds,
@@ -438,7 +525,8 @@ export function buildSampleTourDocument(
     title: 'Sample guided tour',
     slug: {_type: 'slug', current: SAMPLE_TOUR_SLUG},
     description:
-      'A sample tour bundled with sanity-plugin-guided-tours, exercising every feature: chapters, all three element types, every step-advance mode, a personalization token, an outro with CTAs, and lead capture (configured, disabled).',
+      'A sample tour bundled with sanity-plugin-guided-tours, exercising every feature: chapters, all three element types, every step-advance mode, a personalization token, an outro with CTAs, lead capture (configured, disabled), and a branded theme (light + dark).',
+    theme: {_type: 'reference', _ref: SAMPLE_THEME_ID},
     tokens,
     chapters,
     leadCapture,
@@ -483,7 +571,11 @@ export interface MetaTourAssetIds {
  *
  * Unlike `buildSampleTourDocument`, this omits `tokens`/`leadCapture`: the
  * meta tour is documentation, not a product demo with personalization or a
- * lead-gen surface — nothing here needs either.
+ * lead-gen surface — nothing here needs either. It also omits `theme`,
+ * deliberately: with the sample tour now referencing the branded "Acme"
+ * theme (`buildSampleThemeDocument`), leaving this one theme-less means a
+ * fresh dataset shows both — a themed tour and the viewer's own modern
+ * built-in defaults, side by side.
  */
 export function buildMetaTourDocument(
   assetIds: MetaTourAssetIds,

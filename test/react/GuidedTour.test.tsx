@@ -1,4 +1,4 @@
-import {afterEach, describe, expect, spyOn, test} from 'bun:test'
+import {afterEach, beforeEach, describe, expect, spyOn, test} from 'bun:test'
 
 import {cleanup, fireEvent, render} from '@testing-library/react'
 import type {CSSProperties} from 'react'
@@ -13,6 +13,7 @@ import type {
   GuidedTourToken,
 } from '../../src/queries/types'
 import type {GuidedTourEvent} from '../../src/react/events'
+import {__resetFontLoaderForTests} from '../../src/react/fontLoader'
 import {GuidedTour} from '../../src/react/GuidedTour'
 
 afterEach(() => {
@@ -52,9 +53,12 @@ function theme(overrides: Partial<GuidedTourTheme> = {}): GuidedTourTheme {
     surface: '#111111',
     text: '#eeeeee',
     overlay: '#000000',
+    dark: null,
     radius: 12,
     hotspotSize: 30,
     fontFamily: null,
+    googleFont: null,
+    brand: null,
     logo: null,
     ...overrides,
   }
@@ -486,21 +490,27 @@ describe('GuidedTour: labels', () => {
 })
 
 describe('GuidedTour: theme', () => {
-  test('theme colors land on the root as --gt-* inline custom properties', () => {
+  test('theme colors land on the root as paired --gt-light-*/--gt-dark-* inline custom properties', () => {
     const {container} = render(<GuidedTour tour={tour({theme: theme()})} />)
     const style = container.querySelector('.gt-tour')?.getAttribute('style')
-    expect(style).toContain('--gt-accent: #ff0000')
-    expect(style).toContain('--gt-surface: #111111')
-    expect(style).toContain('--gt-text: #eeeeee')
-    expect(style).toContain('--gt-overlay: #000000')
+    expect(style).toContain('--gt-light-accent: #ff0000')
+    expect(style).toContain('--gt-light-surface: #111111')
+    expect(style).toContain('--gt-light-text: #eeeeee')
+    expect(style).toContain('--gt-light-overlay: #000000')
+    // Dark set is always present (from THEME_DARK_DEFAULTS, this fixture's
+    // theme() has no `dark` object) — see src/react/theme.ts.
+    expect(style).toMatch(/--gt-dark-accent: #[0-9a-f]{6}/)
     expect(style).toContain('--gt-radius: 12px')
     expect(style).toContain('--gt-hotspot-size: 30px')
+    // The old scheme-resolved custom properties are no longer emitted
+    // directly by the component — styles.css derives them from the pairs.
+    expect(style).not.toContain('--gt-accent:')
   })
 
   test('a null theme leaves no --gt-* inline overrides — the stylesheet defaults apply', () => {
     const {container} = render(<GuidedTour tour={tour({theme: null})} />)
     const style = container.querySelector('.gt-tour')?.getAttribute('style')
-    expect(style ?? '').not.toContain('--gt-accent')
+    expect(style ?? '').not.toContain('--gt-')
   })
 
   test('the consumer style prop overrides a theme value for the same property', () => {
@@ -515,7 +525,10 @@ describe('GuidedTour: theme', () => {
     )
     const style = container.querySelector('.gt-tour')?.getAttribute('style')
     expect(style).toContain('--gt-accent: purple')
-    expect(style).not.toContain('#ff0000')
+    // The theme's light accent is still emitted (themeToStyle doesn't know
+    // about `style`) — it's just that `--gt-accent` itself, set directly by
+    // the consumer, wins in the cascade regardless.
+    expect(style).toContain('--gt-light-accent: #ff0000')
   })
 
   test('renders .gt-logo when the theme has a logo, omits it otherwise', () => {
@@ -536,6 +549,74 @@ describe('GuidedTour: theme', () => {
   test('omits .gt-logo when there is no theme at all', () => {
     const {container} = render(<GuidedTour tour={tour({theme: null})} />)
     expect(container.querySelector('.gt-logo')).toBeNull()
+  })
+})
+
+describe('GuidedTour: colorScheme prop', () => {
+  test('default (no prop, i.e. "auto") renders no data-gt-scheme attribute', () => {
+    const {container} = render(<GuidedTour tour={tour()} />)
+    expect(container.querySelector('.gt-tour')?.hasAttribute('data-gt-scheme')).toBe(false)
+  })
+
+  test('explicit "auto" also renders no data-gt-scheme attribute', () => {
+    const {container} = render(<GuidedTour tour={tour()} colorScheme="auto" />)
+    expect(container.querySelector('.gt-tour')?.hasAttribute('data-gt-scheme')).toBe(false)
+  })
+
+  test('"light" renders data-gt-scheme="light"', () => {
+    const {container} = render(<GuidedTour tour={tour()} colorScheme="light" />)
+    expect(container.querySelector('.gt-tour')?.getAttribute('data-gt-scheme')).toBe('light')
+  })
+
+  test('"dark" renders data-gt-scheme="dark"', () => {
+    const {container} = render(<GuidedTour tour={tour()} colorScheme="dark" />)
+    expect(container.querySelector('.gt-tour')?.getAttribute('data-gt-scheme')).toBe('dark')
+  })
+
+  test('the empty-tour root also carries the scheme attribute', () => {
+    const {container} = render(<GuidedTour tour={tour({chapters: []})} colorScheme="dark" />)
+    expect(container.querySelector('.gt-tour.gt-empty')?.getAttribute('data-gt-scheme')).toBe(
+      'dark',
+    )
+  })
+})
+
+describe('GuidedTour: loadGoogleFont prop', () => {
+  // `ensureGoogleFont` (./fontLoader) keeps module-level state (a
+  // loaded-families Set, a preconnect-once flag) that outlives any single
+  // test — reset it before each test here too, not just in
+  // fontLoader.test.ts's own suite, so this describe block's outcome never
+  // depends on whether some OTHER test file already loaded "Nunito Sans"
+  // (bun's file execution order isn't guaranteed to match between a local
+  // run and CI).
+  beforeEach(() => {
+    __resetFontLoaderForTests()
+  })
+
+  afterEach(() => {
+    document.head.innerHTML = ''
+  })
+
+  test('a theme with no googleFont never touches document.head, regardless of loadGoogleFont', () => {
+    render(<GuidedTour tour={tour({theme: theme({googleFont: null})})} />)
+    expect(document.head.querySelector('link[rel="stylesheet"]')).toBeNull()
+  })
+
+  test('default (loadGoogleFont unset): a theme.googleFont is loaded via a Google Fonts stylesheet link', () => {
+    render(<GuidedTour tour={tour({theme: theme({googleFont: 'Nunito Sans'})})} />)
+    const link = document.head.querySelector('link[rel="stylesheet"]')
+    expect(link).not.toBeNull()
+    expect(link?.getAttribute('href')).toContain('family=Nunito%20Sans')
+  })
+
+  test('loadGoogleFont={false} opts out: no stylesheet link is appended', () => {
+    render(
+      <GuidedTour
+        tour={tour({theme: theme({googleFont: 'Nunito Sans'})})}
+        loadGoogleFont={false}
+      />,
+    )
+    expect(document.head.querySelector('link[rel="stylesheet"]')).toBeNull()
   })
 })
 

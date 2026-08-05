@@ -2,10 +2,12 @@ import {describe, expect, test} from 'bun:test'
 
 import {
   buildMetaTourDocument,
+  buildSampleThemeDocument,
   buildSampleTourDocument,
   createKeyGen,
   META_TOUR_ID,
   META_TOUR_SLUG,
+  SAMPLE_THEME_ID,
   SAMPLE_TOUR_ID,
   SAMPLE_TOUR_SLUG,
   type ElementDoc,
@@ -159,9 +161,62 @@ describe('buildSampleTourDocument', () => {
     }
   })
 
-  test('does not reference a theme document (deliberately absent, per the design spec)', () => {
+  test('references the sample theme document by id (M7 theming v2)', () => {
     const doc = buildSampleTourDocument(ASSET_IDS, createKeyGen())
-    expect('theme' in doc).toBe(false)
+    expect(doc.theme).toEqual({_type: 'reference', _ref: SAMPLE_THEME_ID})
+  })
+})
+
+describe('buildSampleThemeDocument', () => {
+  test('is deterministic', () => {
+    expect(buildSampleThemeDocument()).toEqual(buildSampleThemeDocument())
+  })
+
+  test('uses a deterministic, stable document id', () => {
+    const doc = buildSampleThemeDocument()
+    expect(doc._id).toBe(SAMPLE_THEME_ID)
+    expect(doc._type).toBe('guidedTourTheme')
+  })
+
+  test('has a name and brand label', () => {
+    const doc = buildSampleThemeDocument()
+    expect(doc.name).toBe('Acme brand')
+    expect(doc.brand).toBe('Acme')
+  })
+
+  test('is NOT the dataset default theme, so it never leaks onto a theme-less tour', () => {
+    const doc = buildSampleThemeDocument()
+    expect(doc.isDefault).toBe(false)
+  })
+
+  test('light colors are distinct from THEME_DEFAULTS (visibly a different brand)', () => {
+    const doc = buildSampleThemeDocument()
+    expect(doc.accent).toBe('#db2777')
+    expect(doc.accent).not.toBe('#7c3aed')
+    expect(doc.surface).toMatch(/^#[0-9a-f]{6}$/)
+    expect(doc.text).toMatch(/^#[0-9a-f]{6}$/)
+    expect(doc.overlay).toMatch(/^#[0-9a-f]{6}$/)
+  })
+
+  test('dark overrides accent/surface/text but deliberately leaves overlay unset', () => {
+    const doc = buildSampleThemeDocument()
+    expect(doc.dark?.accent).toBe('#f472b6')
+    expect(doc.dark?.surface).toBe('#1c1917')
+    expect(doc.dark?.text).toBe('#fafaf9')
+    expect(doc.dark?.overlay).toBeUndefined()
+  })
+
+  test('sets a Google Font and a radius distinct from the schema default', () => {
+    const doc = buildSampleThemeDocument()
+    expect(doc.googleFont).toBe('Manrope')
+    expect(doc.radius).toBe(14)
+    expect(doc.radius).not.toBe(12)
+  })
+
+  test('sets no fontFamily (so googleFont actually applies) and no logo', () => {
+    const doc = buildSampleThemeDocument()
+    expect(doc.fontFamily).toBeUndefined()
+    expect('logo' in doc).toBe(false)
   })
 })
 
@@ -283,7 +338,7 @@ describe('buildMetaTourDocument', () => {
     expect(doc.leadCapture).toBeUndefined()
   })
 
-  test('does not reference a theme document (deliberately absent, per the design spec)', () => {
+  test('does not reference a theme document (deliberately theme-less, unlike the sample tour, to show the built-in defaults)', () => {
     const doc = buildMetaTourDocument(META_ASSET_IDS, createKeyGen())
     expect('theme' in doc).toBe(false)
   })

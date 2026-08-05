@@ -104,9 +104,20 @@ export const tourProjection = /* groq */ `{
     "surface": coalesce(surface, "${THEME_DEFAULTS.surface}"),
     "text": coalesce(text, "${THEME_DEFAULTS.text}"),
     "overlay": coalesce(overlay, "${THEME_DEFAULTS.overlay}"),
+    // dark's members are deliberately NOT coalesced (see THEME_DARK_DEFAULTS'
+    // doc comment in ./defaults) — an author who leaves one empty must
+    // reach the viewer as an explicit null, not the dark default, so the
+    // viewer's own per-field fallback can tell "left empty" apart from
+    // "set to this exact value". Projecting dark{...} instead of a bare
+    // "dark" also guarantees each member is an explicit null (not simply
+    // absent) when the whole "dark" object itself is unset, matching this
+    // file's "null, never undefined" invariant.
+    "dark": dark{accent, surface, text, overlay},
     "radius": coalesce(radius, ${THEME_DEFAULTS.radius}),
     "hotspotSize": coalesce(hotspotSize, ${THEME_DEFAULTS.hotspotSize}),
     fontFamily,
+    googleFont,
+    brand,
     "logo": logo${imageProjection}
   },
   tokens[]{_key, key, label, defaultValue, "required": coalesce(required, ${TOKEN_DEFAULTS.required})},

@@ -9,6 +9,7 @@ import type {
   GuidedTourPortableText,
   GuidedTourSettings,
   GuidedTourStep,
+  GuidedTourTheme,
   GuidedTourToken,
   GuidedTourTooltip,
 } from '../../src/queries/types'
@@ -88,6 +89,23 @@ function token(overrides: Partial<GuidedTourToken> & {key: string}): GuidedTourT
     label: overrides.label ?? overrides.key,
     defaultValue: overrides.defaultValue ?? null,
     required: overrides.required ?? false,
+  }
+}
+
+function theme(overrides: Partial<GuidedTourTheme> = {}): GuidedTourTheme {
+  return {
+    accent: '#ff0000',
+    surface: '#111111',
+    text: '#eeeeee',
+    overlay: '#000000',
+    dark: null,
+    radius: 12,
+    hotspotSize: 30,
+    fontFamily: null,
+    googleFont: null,
+    brand: null,
+    logo: null,
+    ...overrides,
   }
 }
 
@@ -406,5 +424,53 @@ describe('GuidedTourModal: close button', () => {
       />,
     )
     expect(queryButton(container, '.gt-modal-close').getAttribute('aria-label')).toBe('Dismiss')
+  })
+})
+
+// M7 review fix: `.gt-modal-backdrop` is an ANCESTOR of the `.gt-tour`
+// `<GuidedTour>` renders inside `.gt-modal` — CSS custom properties only
+// inherit downward, so the backdrop can't see a nested `.gt-tour`'s own
+// resolved `--gt-accent` etc. It needs its own copy of the theme's
+// `--gt-light-*`/`--gt-dark-*` pairs and `data-gt-scheme` attribute,
+// exactly like `.gt-tour` itself gets (see src/react/GuidedTourModal.tsx
+// and styles.css's top comment).
+describe('GuidedTourModal: theme custom properties reach the backdrop', () => {
+  test('the backdrop carries the theme as inline --gt-light-*/--gt-dark-* custom properties', () => {
+    const {container} = render(
+      <GuidedTourModal tour={tour({theme: theme()})} open onOpenChange={() => {}} />,
+    )
+    const backdrop = query(container, '.gt-modal-backdrop')
+    const style = backdrop.getAttribute('style')
+    expect(style).toContain('--gt-light-accent: #ff0000')
+    expect(style).toContain('--gt-light-surface: #111111')
+    expect(style).toMatch(/--gt-dark-accent: #[0-9a-f]{6}/)
+  })
+
+  test('a null theme leaves the backdrop with no --gt-* inline overrides', () => {
+    const {container} = render(
+      <GuidedTourModal tour={tour({theme: null})} open onOpenChange={() => {}} />,
+    )
+    const backdrop = query(container, '.gt-modal-backdrop')
+    expect(backdrop.getAttribute('style') ?? '').not.toContain('--gt-')
+  })
+
+  test('colorScheme defaults to no data-gt-scheme attribute on the backdrop', () => {
+    const {container} = render(<GuidedTourModal tour={tour()} open onOpenChange={() => {}} />)
+    expect(query(container, '.gt-modal-backdrop').hasAttribute('data-gt-scheme')).toBe(false)
+  })
+
+  test('colorScheme="dark" sets data-gt-scheme="dark" on the backdrop AND on the nested .gt-tour', () => {
+    const {container} = render(
+      <GuidedTourModal tour={tour()} open onOpenChange={() => {}} colorScheme="dark" />,
+    )
+    expect(query(container, '.gt-modal-backdrop').getAttribute('data-gt-scheme')).toBe('dark')
+    expect(query(container, '.gt-tour').getAttribute('data-gt-scheme')).toBe('dark')
+  })
+
+  test('colorScheme="light" sets data-gt-scheme="light" on the backdrop', () => {
+    const {container} = render(
+      <GuidedTourModal tour={tour()} open onOpenChange={() => {}} colorScheme="light" />,
+    )
+    expect(query(container, '.gt-modal-backdrop').getAttribute('data-gt-scheme')).toBe('light')
   })
 })
