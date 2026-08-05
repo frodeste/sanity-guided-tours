@@ -19,6 +19,7 @@ import type {
   GuidedTourTooltip,
 } from '../../src/queries/types'
 import {GuidedTour} from '../../src/react/GuidedTour'
+import {GuidedTourModal} from '../../src/react/GuidedTourModal'
 
 afterEach(() => {
   cleanup()
@@ -358,6 +359,18 @@ describe('axe: accessibility states', () => {
     clickNext(container) // -> gated step
     fireEvent.submit(query(container, '.gt-lead-form'))
     expect(container.querySelectorAll('.gt-lead-error')).toHaveLength(2) // the two required fields
+
+    await assertNoAxeViolations(container)
+  })
+
+  // M4 Task 4: GuidedTourModal's open state — backdrop, dialog panel, close
+  // button, and the wrapped tour all together.
+  test('the modal has no violations when open', async () => {
+    const {container} = render(
+      <GuidedTourModal tour={fixtureTour()} open onOpenChange={() => {}} />,
+    )
+    expect(container.querySelector('.gt-modal')).not.toBeNull()
+    expect(query(container, '.gt-modal').getAttribute('role')).toBe('dialog')
 
     await assertNoAxeViolations(container)
   })

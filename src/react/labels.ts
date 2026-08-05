@@ -36,6 +36,14 @@ export interface GuidedTourLabels {
   leadInvalidEmail: string
   /** Shown, in place of the form, when `onLeadSubmit` rejects — generic by design, never the rejection's own message (M4). */
   leadSubmitError: string
+  /**
+   * `GuidedTourModal`'s close button — the ONLY way to override that
+   * button's accessible name (M4 Task 4). Deliberately no standalone prop
+   * on `GuidedTourModalProps`: `labels` is this codebase's single
+   * string-override channel, and a second, parallel `closeLabel`-style prop
+   * would just be a second way to spell the same thing.
+   */
+  modalClose: string
 }
 
 /**
@@ -59,6 +67,7 @@ export const defaultLabels: GuidedTourLabels = {
   leadRequired: '{label} is required.',
   leadInvalidEmail: 'Enter a valid email address.',
   leadSubmitError: 'Something went wrong. Please try again.',
+  modalClose: 'Close tour',
 }
 
 /**

@@ -523,18 +523,28 @@ export function GuidedTour({
    *
    * Escape closes whatever tooltip `Step` currently has open, via
    * `closeOpenTooltipRef` (see its doc comment on
-   * `GuidedTourContextValue`), else no-op — modal Escape is out of scope
-   * until M4. This is deliberately *not* left to `Tooltip.tsx`'s own local
-   * `onKeyDown` alone: that handler only ever fires when the event
-   * originates inside the tooltip's own trigger/panel subtree, but
-   * keyboard navigation (just above) moves focus to `.gt-stage` — a
-   * sibling, not an ancestor of the tooltip — so an Escape pressed right
-   * after arrowing onto a step with an auto-open tooltip would otherwise
-   * never reach it. When Escape *does* originate inside the tooltip,
-   * `Tooltip.tsx`'s handler runs first (bubbling) and this one runs
-   * second; both resolve to the same `setOpenTooltipKey(null)`, so the
+   * `GuidedTourContextValue`), else no-op. This is deliberately *not* left
+   * to `Tooltip.tsx`'s own local `onKeyDown` alone: that handler only ever
+   * fires when the event originates inside the tooltip's own trigger/panel
+   * subtree, but keyboard navigation (just above) moves focus to
+   * `.gt-stage` — a sibling, not an ancestor of the tooltip — so an Escape
+   * pressed right after arrowing onto a step with an auto-open tooltip
+   * would otherwise never reach it. When Escape *does* originate inside the
+   * tooltip, `Tooltip.tsx`'s handler runs first (bubbling) and this one
+   * runs second; both resolve to the same `setOpenTooltipKey(null)`, so the
    * second call is a same-value, idempotent no-op — never a double-close
    * or a reopen.
+   *
+   * M4 Task 4: when this Escape actually closed an open tooltip (i.e.
+   * `closeOpenTooltipRef.current` was non-null), `event.preventDefault()`
+   * marks the event handled — `GuidedTourModal`'s own keydown listener
+   * (bubbling, mounted further up the tree once this component renders
+   * inside it) checks `event.defaultPrevented` before closing itself on
+   * Escape, so a tooltip consumes Escape first and the modal only reacts to
+   * a *second*, otherwise-unhandled Escape press. Nothing here references
+   * the modal directly — this component has no idea whether it's mounted
+   * inside one — the coordination is entirely this one `preventDefault()`
+   * call plus the modal's own `defaultPrevented` check.
    */
   function handleKeyDown(event: KeyboardEvent<HTMLDivElement>): void {
     function navigate(action: () => void): void {
@@ -572,7 +582,10 @@ export function GuidedTour({
         break
       }
       case 'Escape':
-        closeOpenTooltipRef.current?.()
+        if (closeOpenTooltipRef.current) {
+          event.preventDefault()
+          closeOpenTooltipRef.current()
+        }
         break
       default:
         break
