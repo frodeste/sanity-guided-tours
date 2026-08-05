@@ -232,7 +232,7 @@ Field definitions (exact names/types; titles sensible English; each gets a one-l
 |---|---|---|---|
 | shared | `x` | number | required, min 0, max 100 |
 | shared | `y` | number | required, min 0, max 100 |
-| shared | `mobile` | object {x:number 0–100, y:number 0–100, width:number 1–100} | all optional |
+| shared | `mobile` | object {x:number 0–100, y:number 0–100, width:number 1–600 (amended during M3: unit follows the element's own width field)} | all optional |
 | guidedTourHotspot | `label` | string | optional; used as accessible name |
 | | `action` | string | required, list: advance/reveal/link, initial `advance`, radio layout |
 | | `href` | url | required iff action==='link' (custom rule), allow http/https/mailto/tel |
