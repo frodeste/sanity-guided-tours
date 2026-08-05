@@ -1,6 +1,6 @@
 'use client'
 
-import {useEffect, useState, type ReactNode, type SubmitEvent} from 'react'
+import {useEffect, useState, type FormEvent, type ReactNode} from 'react'
 
 import type {GuidedTourLeadCapture, GuidedTourLeadCaptureField} from '../queries/types'
 import {useGuidedTourContext} from './context'
@@ -138,7 +138,18 @@ export function LeadForm({
     }
   }
 
-  function handleSubmit(event: SubmitEvent<HTMLFormElement>): void {
+  // `FormEvent<HTMLFormElement>` (not the `SubmitEvent` this briefly used
+  // — CI fix, PR 102: `@types/react` marks `SubmitEvent` "recently added"
+  // enough that it wasn't available in the `@types/react` resolution CI's
+  // typecheck job actually got, even though it type-checked locally —
+  // see the fix note in the report for the reconciliation). `FormEvent`
+  // is `@deprecated` in the installed `@types/react` too (its JSDoc
+  // suggests `ChangeEvent`/`InputEvent`/`SubmitEvent`/`SyntheticEvent`
+  // instead), but it's the long-standing, universally-available React
+  // typing for a form's `onSubmit` handler — the oxlint suppression right
+  // below is deliberate, not an oversight.
+  // oxlint-disable-next-line typescript/no-deprecated
+  function handleSubmit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault()
     if (pending) return
 
