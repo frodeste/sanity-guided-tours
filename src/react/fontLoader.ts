@@ -83,3 +83,29 @@ export function ensureGoogleFont(family: string): boolean {
   loadedFamilies.add(family)
   return true
 }
+
+/**
+ * Test-only: clears `loadedFamilies` and resets `preconnected` back to
+ * their fresh-module state. The name signals intent (`__`-prefixed, not
+ * part of the public surface — `./index.ts` doesn't re-export it) rather
+ * than relying on any bundler/tooling convention to keep it out of
+ * consumers' hands.
+ *
+ * Exists because both pieces of module-level state are otherwise
+ * write-once for the life of the module — correct in a real page (a
+ * family's stylesheet, once requested, stays valid; preconnecting is a
+ * one-time document-wide optimization), but that same persistence made
+ * `test/react/fontLoader.test.ts` order-dependent: a test's outcome
+ * differed depending on which OTHER test file (or test in this one) had
+ * already called `ensureGoogleFont` first and for which family, which
+ * depends on bun's file execution order and isn't guaranteed to match
+ * between a local run and CI. Every test that exercises `ensureGoogleFont`
+ * — directly here, or indirectly via `GuidedTour.tsx`'s font-loading
+ * effect in `test/react/GuidedTour.test.tsx` — resets this in `beforeEach`
+ * so each test starts from the same fresh-module state regardless of run
+ * order.
+ */
+export function __resetFontLoaderForTests(): void {
+  loadedFamilies.clear()
+  preconnected = false
+}

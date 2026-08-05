@@ -1,19 +1,24 @@
-import {afterEach, describe, expect, spyOn, test} from 'bun:test'
+import {afterEach, beforeEach, describe, expect, spyOn, test} from 'bun:test'
 
-import {ensureGoogleFont} from '../../src/react/fontLoader'
+import {__resetFontLoaderForTests, ensureGoogleFont} from '../../src/react/fontLoader'
 
 // `ensureGoogleFont` deliberately keeps TWO pieces of module-level state for
-// its whole lifetime (the brief's "idempotent per family (module-level
-// Set)" / "preconnects once"): a `loadedFamilies` Set and a `preconnected`
-// flag, neither reset between tests — that persistence is the very
-// behavior under test. `document.head` itself IS reset every test (below),
-// so what a given test observes in the DOM depends on whether an EARLIER
-// test in this file already touched that same family/the preconnects.
-// Rather than fight that with a reset hook this module has no production
-// reason to expose, each test below either uses a family no earlier test
-// has used, or explicitly documents which earlier test's state it's
-// building on. Tests run in declaration order (bun test, single file, no
-// `.concurrent`), which this ordering relies on.
+// the page's whole lifetime (the brief's "idempotent per family
+// (module-level Set)" / "preconnects once"): a `loadedFamilies` Set and a
+// `preconnected` flag. That's correct in a real page, but made this file
+// order-dependent when tests relied on it directly: a test's outcome
+// differed depending on which family/whether preconnects an EARLIER test —
+// in this file, or in another test FILE entirely — had already touched,
+// and bun's file execution order isn't guaranteed to match between a local
+// run and CI (a CI-only failure surfaced exactly this). `beforeEach` resets
+// both pieces of state via `__resetFontLoaderForTests` (test-only, not
+// re-exported from `./index`), so every test starts from the same
+// fresh-module state regardless of run order — no test here needs to
+// reason about what an earlier one did.
+beforeEach(() => {
+  __resetFontLoaderForTests()
+})
+
 afterEach(() => {
   document.head.innerHTML = ''
 })
@@ -27,7 +32,7 @@ function preconnectLinks(): HTMLLinkElement[] {
 }
 
 describe('ensureGoogleFont: a fresh, valid family', () => {
-  test("appends one stylesheet link with the expected css2 URL shape, plus both preconnects (first call in the module's lifetime)", () => {
+  test('appends one stylesheet link with the expected css2 URL shape, plus both preconnects', () => {
     const result = ensureGoogleFont('Inter')
     expect(result).toBe(true)
 
@@ -54,15 +59,15 @@ describe('ensureGoogleFont: a fresh, valid family', () => {
     )
   })
 
-  test('preconnects are NOT appended again for this later, distinct family — proving the once-ever flag, not once-per-family', () => {
+  test('preconnects are appended for the first call regardless of which family it is', () => {
     ensureGoogleFont('Nunito')
-    expect(stylesheetLinks()).toHaveLength(1) // Nunito's own link
-    expect(preconnectLinks()).toHaveLength(0) // already appended by the very first test above; document.head was reset since, but the flag wasn't
+    expect(stylesheetLinks()).toHaveLength(1)
+    expect(preconnectLinks()).toHaveLength(2)
   })
 })
 
 describe('ensureGoogleFont: idempotence per family', () => {
-  test('two calls for the same fresh family within one test append exactly one stylesheet link', () => {
+  test('two calls for the same family within one test append exactly one stylesheet link', () => {
     ensureGoogleFont('Merriweather')
     ensureGoogleFont('Merriweather')
     const links = stylesheetLinks()
@@ -70,15 +75,18 @@ describe('ensureGoogleFont: idempotence per family', () => {
     expect(links[0]?.getAttribute('href')).toContain('family=Merriweather')
   })
 
-  test('a call for a family already loaded by an earlier test in this file appends nothing to the (reset) DOM', () => {
-    // 'Inter' was already loaded by the first test above — the module's
-    // `loadedFamilies` Set still has it, even though `document.head` was
-    // cleared in between. This is the idempotence guarantee actually
-    // holding across the whole page's lifetime, not just within one call
-    // site.
-    const result = ensureGoogleFont('Inter')
-    expect(result).toBe(true)
-    expect(stylesheetLinks()).toHaveLength(0)
+  test('a second call for the same family appends no further preconnects either', () => {
+    ensureGoogleFont('Inter')
+    ensureGoogleFont('Inter')
+    expect(preconnectLinks()).toHaveLength(2)
+  })
+
+  test('a later, distinct family after an earlier one gets its own link, but no additional preconnects', () => {
+    ensureGoogleFont('Inter')
+    document.head.innerHTML = '' // simulates a fresh render pass without resetting module state
+    ensureGoogleFont('Nunito')
+    expect(stylesheetLinks()).toHaveLength(1) // Nunito's own link
+    expect(preconnectLinks()).toHaveLength(0) // already appended for 'Inter' above; the flag doesn't reset just because the DOM was cleared
   })
 })
 
@@ -115,6 +123,28 @@ describe('ensureGoogleFont: malicious/invalid values are rejected before any int
     expect(stylesheetLinks()).toHaveLength(0)
     warnSpy.mockRestore()
   })
+
+  test('a 41-character, valid-charset family exceeds the shared length cap and is rejected', () => {
+    const warnSpy = spyOn(console, 'warn').mockImplementation(() => {})
+    const tooLong = 'A'.repeat(41)
+    expect(tooLong).toHaveLength(41)
+    expect(ensureGoogleFont(tooLong)).toBe(false)
+    expect(stylesheetLinks()).toHaveLength(0)
+    expect(warnSpy).toHaveBeenCalledTimes(1)
+    warnSpy.mockRestore()
+  })
+
+  // No equivalent "40 chars is accepted" case here: unlike the pure
+  // `themeToStyle` (test/react/theme.test.ts, which does cover it),
+  // accepting a family here actually appends a real `<link
+  // rel="stylesheet">` — happy-dom's DOM (test/setup/dom.ts) resolves that
+  // with a genuine `fetch` to fonts.googleapis.com, so every OTHER
+  // accepted-path test in this file deliberately uses a real Google Font
+  // name (Inter, Space Grotesk, Merriweather, Nunito, Fraunces, Lora) to
+  // get a real 200 rather than a noisy failed request. A synthetic
+  // 40-character string has no such real font to reach for, so this
+  // boundary is left to the rejection case above (safe: rejected before
+  // any DOM mutation) plus `theme.test.ts`'s pure-function coverage.
 
   test('a rejected value never enters the loaded-families set — a later, valid-but-similar family still loads normally', () => {
     const warnSpy = spyOn(console, 'warn').mockImplementation(() => {})

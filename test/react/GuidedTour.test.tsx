@@ -1,4 +1,4 @@
-import {afterEach, describe, expect, spyOn, test} from 'bun:test'
+import {afterEach, beforeEach, describe, expect, spyOn, test} from 'bun:test'
 
 import {cleanup, fireEvent, render} from '@testing-library/react'
 import type {CSSProperties} from 'react'
@@ -13,6 +13,7 @@ import type {
   GuidedTourToken,
 } from '../../src/queries/types'
 import type {GuidedTourEvent} from '../../src/react/events'
+import {__resetFontLoaderForTests} from '../../src/react/fontLoader'
 import {GuidedTour} from '../../src/react/GuidedTour'
 
 afterEach(() => {
@@ -581,6 +582,17 @@ describe('GuidedTour: colorScheme prop', () => {
 })
 
 describe('GuidedTour: loadGoogleFont prop', () => {
+  // `ensureGoogleFont` (./fontLoader) keeps module-level state (a
+  // loaded-families Set, a preconnect-once flag) that outlives any single
+  // test — reset it before each test here too, not just in
+  // fontLoader.test.ts's own suite, so this describe block's outcome never
+  // depends on whether some OTHER test file already loaded "Nunito Sans"
+  // (bun's file execution order isn't guaranteed to match between a local
+  // run and CI).
+  beforeEach(() => {
+    __resetFontLoaderForTests()
+  })
+
   afterEach(() => {
     document.head.innerHTML = ''
   })

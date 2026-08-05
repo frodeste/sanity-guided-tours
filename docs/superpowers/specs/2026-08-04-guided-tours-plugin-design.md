@@ -674,14 +674,20 @@ keeps rendering exactly as before.
   unfallback'd `var()` resolving to nothing invalidates the whole
   declaration at computed-value time, not merely falling back sensibly).
 - **Google Fonts, validated at consumption time.** `googleFont` (optional
-  string, max 40 chars, `/^[A-Za-z0-9 ]+$/`) names a Google Font family;
-  `fontFamily` (a raw CSS `font-family` value) still takes precedence when
-  both are set. Studio validation doesn't bind a document written directly
-  through the Content API, so the viewer can't trust a `googleFont` value
-  just because the schema declares a pattern — `themeToStyle` and the new
-  `src/react/fontLoader.ts`'s `ensureGoogleFont` BOTH re-validate against
-  the identical pattern before the value is ever interpolated into a CSS
-  custom property or a stylesheet URL. A rejected value is a silent no-op
+  string, `GOOGLE_FONT_NAME_PATTERN` = `/^[A-Za-z0-9 ]{1,40}$/` — charset
+  AND the 1–40 character length bound folded into ONE shared pattern, not
+  split across a regex and a separate length check) names a Google Font
+  family; `fontFamily` (a raw CSS `font-family` value) still takes
+  precedence when both are set. The schema field additionally carries its
+  own `rule.max(40)` alongside the pattern — harmless duplication, kept
+  only because it produces a more specific "too long" message in Studio
+  than the regex's own error would. Studio validation doesn't bind a
+  document written directly through the Content API, so the viewer can't
+  trust a `googleFont` value just because the schema declares a pattern —
+  `themeToStyle` and the new `src/react/fontLoader.ts`'s `ensureGoogleFont`
+  BOTH re-validate against the identical shared pattern (length bound
+  included) before the value is ever interpolated into a CSS custom
+  property or a stylesheet URL. A rejected value is a silent no-op
   in production and a `console.warn` in development; nothing is appended to
   `document.head` and no custom property is emitted. On a match,
   `ensureGoogleFont` appends the two Google Fonts preconnect links once per

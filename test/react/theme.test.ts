@@ -135,6 +135,25 @@ describe('themeToStyle: font family', () => {
     const style = themeToStyle(theme({googleFont: ''}))
     expect(style).not.toHaveProperty('--gt-font-family')
   })
+
+  // Review fix: GOOGLE_FONT_NAME_PATTERN now folds the 1–40 character
+  // length bound into the pattern itself (src/queries/defaults.ts), so a
+  // 41+ character value with an otherwise-valid charset — reachable via a
+  // direct Content API write that bypasses the schema's own `rule.max(40)`
+  // — is rejected here too, not just in Studio.
+  test('a 41-character, valid-charset googleFont exceeds the shared length cap and is rejected', () => {
+    const tooLong = 'A'.repeat(41)
+    expect(tooLong).toHaveLength(41)
+    const style = themeToStyle(theme({googleFont: tooLong}))
+    expect(style).not.toHaveProperty('--gt-font-family')
+  })
+
+  test('a 40-character, valid-charset googleFont is exactly at the cap and is accepted', () => {
+    const atCap = 'A'.repeat(40)
+    expect(atCap).toHaveLength(40)
+    const style = themeToStyle(theme({googleFont: atCap}))
+    expect(style['--gt-font-family']).toBe(`'${atCap}', ${FONT_STACK}`)
+  })
 })
 
 // Parity: styles.css's scheme-mapping rules must resolve to THEME_DEFAULTS

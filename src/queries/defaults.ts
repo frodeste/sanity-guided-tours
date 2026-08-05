@@ -13,15 +13,27 @@
 /**
  * Matches a plausible Google Font family name (letters, digits, spaces —
  * excludes quotes, parens and other characters that would matter if
- * interpolated into a URL or CSS value). Shared by the theme schema's
- * `googleFont` validation (src/schema/theme.ts) AND the viewer's font loader
- * (src/react/fontLoader.ts, Task 3), which re-validates against this same
- * constant before using the value in a stylesheet URL or custom property —
- * Studio validation doesn't bind documents written directly via the Content
- * API, so the viewer can't trust a `googleFont` value has actually been
+ * interpolated into a URL or CSS value), capped at 40 characters. Shared by
+ * the theme schema's `googleFont` validation (src/schema/theme.ts) AND the
+ * viewer's font loader (src/react/fontLoader.ts) and `themeToStyle`
+ * (src/react/theme.ts), which re-validate against this same constant
+ * before using the value in a stylesheet URL or custom property — Studio
+ * validation doesn't bind documents written directly via the Content API,
+ * so the viewer can't trust a `googleFont` value has actually been
  * checked.
+ *
+ * The `{1,40}` length bound is folded INTO the pattern, not left to the
+ * schema's separate `rule.max(40)` alone (review fix — a bare charset-only
+ * pattern here meant the viewer's consumption-time re-check was weaker
+ * than the schema's own validation, so a 41+ character value with an
+ * otherwise-valid charset, written directly via the Content API and
+ * bypassing Studio, would have passed this pattern and been interpolated
+ * anyway). The schema field keeps its own `rule.max(40)` alongside this
+ * pattern too — harmless duplication, kept because it produces a more
+ * specific "too long" validation message in Studio than the regex's own
+ * error would.
  */
-export const GOOGLE_FONT_NAME_PATTERN = /^[A-Za-z0-9 ]+$/
+export const GOOGLE_FONT_NAME_PATTERN = /^[A-Za-z0-9 ]{1,40}$/
 
 /** `guidedTourTheme`'s color/size fields (src/schema/theme.ts). `fontFamily`/`logo` have no `initialValue`, so they aren't here. */
 export const THEME_DEFAULTS = {
