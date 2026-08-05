@@ -52,6 +52,37 @@ function elementsOf(step: unknown): unknown[] {
   return isRecord(step) && Array.isArray(step.elements) ? step.elements : []
 }
 
+/**
+ * A cheap structural fingerprint of every chapter/step/element `_key`
+ * present in `chapters`, in reading order. Two calls return the same
+ * string iff every key at every level is the same — insert, delete, or
+ * reorder any one of them and the signature changes.
+ *
+ * This exists to distinguish "confirmed removed" from "not visible in
+ * this particular snapshot yet" for the heal check in `useEditorState`
+ * below: `props.value` doesn't update synchronously with a local
+ * `selectElement()` call right after emitting an insert patch (the new
+ * element only appears once Sanity's document store round-trips the
+ * patch back down), so a selected key can legitimately be absent from
+ * `chapters` for a render or two without having been deleted. Gating the
+ * heal on "did the key set actually change" means that render is a no-op
+ * instead of clearing the fresh selection.
+ */
+function keyPathSignature(chapters: unknown[]): string {
+  const chapterEntries: string[] = []
+  for (const chapter of chapters) {
+    const stepEntries: string[] = []
+    for (const step of stepsOf(chapter)) {
+      const elementKeys = elementsOf(step)
+        .map((element) => keyOf(element) ?? '')
+        .join(',')
+      stepEntries.push(`${keyOf(step) ?? ''}[${elementKeys}]`)
+    }
+    chapterEntries.push(`${keyOf(chapter) ?? ''}{${stepEntries.join(',')}}`)
+  }
+  return chapterEntries.join('|')
+}
+
 /** The first `{chapterKey, stepKey}` pair in reading order, or `null` if `chapters` has no steps at all. */
 function firstStep(chapters: unknown[]): {chapterKey: string; stepKey: string} | null {
   for (const chapter of chapters) {
@@ -125,14 +156,32 @@ function healSelection(chapters: unknown[], selection: EditorSelection): EditorS
 
 /**
  * Selection/device/expanded state for the canvas editor. `chapters` is the
- * live `chapters` field value (from `ArrayOfObjectsInputProps.value`):
- * every render, the current selection is checked against it and healed if
- * the selected step or element no longer exists — done as a render-time
- * state adjustment (compute `healSelection`, `setSelection` only if it
- * actually differs) rather than a `useEffect`, the same "adjust state when
- * a prop changes" pattern `src/react/Step.tsx` and `src/react/Image.tsx`
- * use: it converges within the render that removed the step/element
- * instead of committing one extra frame with a dangling selection first.
+ * live `chapters` field value (from `ArrayOfObjectsInputProps.value`): the
+ * selection is checked against it and healed if the selected step or
+ * element no longer exists — but only on renders where `chapters`' key set
+ * (`keyPathSignature`) actually changed since the last one, not on every
+ * render.
+ *
+ * That gating matters: `CanvasInput.tsx` calls `selectElement(newKey)`
+ * (this hook's own local `setState`) in the same tick it emits the patch
+ * that inserts the new element, and `props.value` only catches up once
+ * Sanity's document store round-trips that patch back down — an
+ * intervening render can see `selection.elementKey` pointing at a key
+ * `chapters` doesn't have yet, indistinguishable from a deletion if the
+ * heal ran unconditionally. Running the heal only when the signature
+ * changed means that intervening render (same stale `chapters`, same
+ * signature) is a no-op — the selection survives untouched — and the
+ * *next* content change (chapters catching up to include the new key, or
+ * an actual delete elsewhere) is what the heal reacts to, correctly
+ * either confirming the selection or clearing it.
+ *
+ * Both the signature tracking and the heal itself are done as a
+ * render-time state adjustment (a `useState`-held previous signature,
+ * `setSelection`/`setPreviousSignature` only called when something
+ * actually differs) rather than a `useEffect`, the same "adjust state
+ * when a prop changes" pattern `src/react/Step.tsx` and
+ * `src/react/Image.tsx` use: it converges within the render that changed
+ * instead of committing one extra frame with a stale value first.
  */
 export function useEditorState(chapters: unknown[]): EditorState {
   const [selection, setSelection] = useState<EditorSelection>(() => {
@@ -146,13 +195,20 @@ export function useEditorState(chapters: unknown[]): EditorState {
   const [device, setDevice] = useState<'desktop' | 'mobile'>('desktop')
   const [expanded, setExpanded] = useState(false)
 
-  const healed = healSelection(chapters, selection)
-  if (
-    healed.chapterKey !== selection.chapterKey ||
-    healed.stepKey !== selection.stepKey ||
-    healed.elementKey !== selection.elementKey
-  ) {
-    setSelection(healed)
+  const signature = keyPathSignature(chapters)
+  const [previousSignature, setPreviousSignature] = useState(signature)
+  const contentChanged = signature !== previousSignature
+  if (contentChanged) {
+    setPreviousSignature(signature)
+
+    const healed = healSelection(chapters, selection)
+    if (
+      healed.chapterKey !== selection.chapterKey ||
+      healed.stepKey !== selection.stepKey ||
+      healed.elementKey !== selection.elementKey
+    ) {
+      setSelection(healed)
+    }
   }
 
   function selectStep(chapterKey: string, stepKey: string): void {
