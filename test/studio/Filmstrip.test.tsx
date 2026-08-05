@@ -580,6 +580,88 @@ describe('Filmstrip: bulk upload — strictly sequential', () => {
   })
 })
 
+// CI review on PR 98 (Filmstrip.tsx:640 thread): the upload button is
+// `disabled` while uploading, but the drop zone had no equivalent guard —
+// `handleChapterDrop`/`handleFilesSelected` called `runUpload` unconditionally,
+// so a second drop arriving mid-batch would clobber the single-slot
+// `uploadProgress` state and run two sequential loops concurrently,
+// interleaving their patches. Fixed with an early-return in `runUpload`
+// itself (the one place both the drop and file-input paths funnel through)
+// plus suppressing the drag-over highlight while a batch is running.
+describe('Filmstrip: bulk upload — ignores a second drop/pick mid-batch (CI review, PR 98)', () => {
+  test('a drop on a DIFFERENT chapter mid-batch never calls the uploader again, and the single progress slot is untouched', async () => {
+    const {uploader, calls, pending} = makeControllableUploader()
+    const onUploadBatch = mock((_c: string, _ok: UploadedAsset[], _failed: number) => {})
+    renderWithTheme(<Filmstrip {...baseProps({onUploadBatch, uploader})} />)
+
+    // c1's batch starts — 'a.png' is uploading, still pending.
+    fireEvent.change(screen.getByTestId('filmstrip-upload-input-c1'), {
+      target: {files: [pngFile('a.png')]},
+    })
+    await waitFor(() => expect(calls).toEqual(['a.png']))
+    expect(screen.getByTestId('filmstrip-upload-progress-c1').textContent).toBe('0/1')
+
+    // A second drop arrives on c2 — a DIFFERENT chapter — while c1's batch
+    // is still in flight. `uploadProgress` is one shared slot for the
+    // whole pane (not one per chapter), so this must be ignored too, not
+    // just a same-chapter drop.
+    fireEvent.drop(screen.getByTestId('filmstrip-dropzone-c2'), {
+      dataTransfer: {files: [pngFile('z.png')]},
+    })
+
+    // The uploader is never called for 'z.png' — the call log proves it,
+    // not just an absence of a visible effect.
+    expect(calls).toEqual(['a.png'])
+    // c1's progress slot is untouched (still the first batch's count) and
+    // no c2 progress ever appeared.
+    expect(screen.getByTestId('filmstrip-upload-progress-c1').textContent).toBe('0/1')
+    expect(screen.queryByTestId('filmstrip-upload-progress-c2')).toBeNull()
+
+    // The in-flight c1 batch completes exactly as if the second drop had
+    // never happened — one call, reporting only 'a.png'.
+    pending[0].resolve({fileName: 'a.png', assetId: 'asset-a'})
+    await waitFor(() => expect(onUploadBatch).toHaveBeenCalledTimes(1))
+    expect(onUploadBatch).toHaveBeenCalledWith('c1', [{fileName: 'a.png', assetId: 'asset-a'}], 0)
+    expect(calls).toEqual(['a.png'])
+  })
+
+  test('a second file-input pick on the SAME chapter mid-batch is also ignored', async () => {
+    const {uploader, calls, pending} = makeControllableUploader()
+    renderWithTheme(<Filmstrip {...baseProps({uploader})} />)
+
+    fireEvent.change(screen.getByTestId('filmstrip-upload-input-c1'), {
+      target: {files: [pngFile('a.png')]},
+    })
+    await waitFor(() => expect(calls).toEqual(['a.png']))
+
+    fireEvent.change(screen.getByTestId('filmstrip-upload-input-c1'), {
+      target: {files: [pngFile('b.png')]},
+    })
+
+    // Still just the one in-flight call — 'b.png' was never started.
+    expect(calls).toEqual(['a.png'])
+
+    pending[0].resolve({fileName: 'a.png', assetId: 'asset-a'})
+    await waitFor(() => expect(screen.queryByTestId('filmstrip-upload-progress-c1')).toBeNull())
+    expect(calls).toEqual(['a.png'])
+  })
+
+  test('the drag-over highlight is suppressed on any chapter while a batch is running', async () => {
+    const {uploader, calls} = makeControllableUploader()
+    renderWithTheme(<Filmstrip {...baseProps({uploader})} />)
+
+    fireEvent.change(screen.getByTestId('filmstrip-upload-input-c1'), {
+      target: {files: [pngFile('a.png')]},
+    })
+    await waitFor(() => expect(calls).toEqual(['a.png']))
+
+    const dropzone = screen.getByTestId('filmstrip-dropzone-c2')
+    fireEvent.dragOver(dropzone, {dataTransfer: {types: ['Files']}})
+
+    expect(dropzone.style.outline).toBe('')
+  })
+})
+
 describe('Filmstrip: bulk upload — partition and reporting', () => {
   test('2 ok + 1 fail: onUploadBatch gets 2 successes in natural order and a failed count of 1', async () => {
     const onUploadBatch = mock((_c: string, _ok: UploadedAsset[], _failed: number) => {})

@@ -584,10 +584,27 @@ export function Filmstrip(props: FilmstripProps): ReactNode {
    * `ok` array comes out in, since nothing reorders mid-loop — and `done`
    * increments once per settled file (success or failure alike) for the
    * `n/m` progress text.
+   *
+   * SINGLE-SLOT GUARD (CI review, PR 98): `uploadProgress` is one shared
+   * slot for the whole pane, not one per chapter — a second drop or file
+   * pick arriving while a batch is already running would otherwise
+   * clobber that slot and run two sequential loops concurrently,
+   * interleaving their patches. The "Upload screenshots…" button is
+   * already `disabled` while `uploading`, but the drop zone has no such
+   * disabled state of its own, so this early-return here is the one
+   * authoritative guard both paths funnel through — simplest fix that
+   * covers both (rather than plumbing a second, redundant disabled check
+   * into the drop handler): a drop/pick mid-batch is silently ignored,
+   * same as if it had never happened. No toast is shown for it — the
+   * visible `n/m` progress text is already the "something is in
+   * progress" signal, and firing a toast a user didn't otherwise trigger
+   * from a drop that had no visible effect seemed like more noise than
+   * help; noted here in case that tradeoff is revisited.
    */
   async function runUpload(chapterKey: string, files: File[]): Promise<void> {
     const uploader = props.uploader
     if (uploader === null || files.length === 0) return
+    if (uploadProgress !== null) return
 
     const ordered = filesInUploadOrder(files)
     setUploadProgress({chapterKey, done: 0, total: ordered.length})
@@ -617,6 +634,11 @@ export function Filmstrip(props: FilmstripProps): ReactNode {
 
   function handleChapterDragOver(event: DragEvent<HTMLDivElement>, chapterKey: string): void {
     if (props.uploader === null) return
+    // No highlight while a batch is already running (any chapter's — see
+    // `runUpload`'s SINGLE-SLOT GUARD doc comment): a drop that would land
+    // here is going to be silently ignored anyway, so showing the
+    // drop-target affordance would be a false one.
+    if (uploadProgress !== null) return
     // Only image-file drags become a valid drop target here — a step-row
     // drag (HTML5 DnD's own in-page `dragstart`, handled above by
     // `handleDragStart`/`handleDragOver`) never carries a `Files` type, so
