@@ -52,6 +52,8 @@ export interface GuidedTourTracker {
   elementClicked(element: {elementType: string; elementKey: string}): void
   /** Emits `cta_clicked` for an outro CTA click — `label` is the personalized, displayed text; `href` is the raw, unpersonalized target (spec §8.3). */
   ctaClicked(cta: {label: string; href: string}): void
+  /** Emits `lead_submitted` — called once, after a lead-capture form's `onLeadSubmit` resolves successfully (never on Skip, never on a rejection). No payload: the submitted values themselves are never part of the event (design spec §8.5 — the plugin stores nothing). */
+  leadSubmitted(): void
   complete(stepsViewed: number): void
   abandon(lastStepIndex: number): void
   scheduleAbandon(lastStepIndex: number): void
@@ -99,6 +101,10 @@ export function createTracker(
     emit({type: 'cta_clicked', ...cta})
   }
 
+  function leadSubmitted(): void {
+    emit({type: 'lead_submitted'})
+  }
+
   function cancelScheduledAbandon(): void {
     if (scheduledTimer === null) return
     clearTimeout(scheduledTimer)
@@ -132,6 +138,7 @@ export function createTracker(
     stepViewed,
     elementClicked,
     ctaClicked,
+    leadSubmitted,
     complete,
     abandon,
     scheduleAbandon,

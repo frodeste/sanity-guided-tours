@@ -8,6 +8,8 @@ import type {
   GuidedTourDoc,
   GuidedTourHotspot,
   GuidedTourImage,
+  GuidedTourLeadCapture,
+  GuidedTourLeadCaptureField,
   GuidedTourOutro,
   GuidedTourOutroCta,
   GuidedTourPortableText,
@@ -17,6 +19,7 @@ import type {
   GuidedTourTooltip,
 } from '../../src/queries/types'
 import {GuidedTour} from '../../src/react/GuidedTour'
+import {GuidedTourModal} from '../../src/react/GuidedTourModal'
 
 afterEach(() => {
   cleanup()
@@ -192,6 +195,33 @@ function fixtureTourWithOutro(): GuidedTourDoc {
   return tour({...fixtureTour(), outro: outro()})
 }
 
+function leadField(
+  overrides: Partial<GuidedTourLeadCaptureField> & {_key: string},
+): GuidedTourLeadCaptureField {
+  return {name: 'name', label: 'Name', type: 'text', required: false, ...overrides}
+}
+
+function leadCapture(overrides: Partial<GuidedTourLeadCapture> = {}): GuidedTourLeadCapture {
+  return {
+    enabled: true,
+    trigger: 'afterStep',
+    afterStepIndex: 0,
+    fields: [
+      leadField({_key: 'f1', name: 'name', label: 'Full name', type: 'text', required: true}),
+      leadField({_key: 'f2', name: 'email', label: 'Email', type: 'email', required: true}),
+      leadField({_key: 'f3', name: 'notes', label: 'Notes', type: 'textarea', required: false}),
+    ],
+    consentText: 'I agree to be contacted about this product.',
+    submitLabel: null,
+    ...overrides,
+  }
+}
+
+/** Same shape as {@link fixtureTour}, but with a lead-capture form (M4 Task 3) gated after the first step. */
+function fixtureTourWithLeadCapture(): GuidedTourDoc {
+  return tour({...fixtureTour(), leadCapture: leadCapture()})
+}
+
 // Narrowing `Element | null` to `Element` with `as` is banned (oxlint);
 // throwing keeps every call site a plain assertion instead.
 function query(container: ParentNode, selector: string): Element {
@@ -307,6 +337,40 @@ describe('axe: accessibility states', () => {
     clickNext(container) // -> outro
     expect(container.querySelector('.gt-outro')).not.toBeNull()
     expect(container.querySelectorAll('a.gt-cta')).toHaveLength(2)
+
+    await assertNoAxeViolations(container)
+  })
+
+  // M4 Task 3: the lead-capture interstitial that replaces `.gt-stage` at
+  // its configured trigger point — a freshly-opened form (no errors yet).
+  test('lead-capture form has no violations when freshly opened', async () => {
+    const {container} = render(<GuidedTour tour={fixtureTourWithLeadCapture()} />)
+    clickNext(container) // -> gated step, form shows instead
+    expect(container.querySelector('.gt-lead')).not.toBeNull()
+    expect(container.querySelectorAll('.gt-lead-field')).toHaveLength(3)
+
+    await assertNoAxeViolations(container)
+  })
+
+  // Same form, but after a failed submit — exercises the `aria-invalid`/
+  // `aria-describedby` error-wiring state, not just the pristine one above.
+  test('lead-capture form has no violations with validation errors shown', async () => {
+    const {container} = render(<GuidedTour tour={fixtureTourWithLeadCapture()} />)
+    clickNext(container) // -> gated step
+    fireEvent.submit(query(container, '.gt-lead-form'))
+    expect(container.querySelectorAll('.gt-lead-error')).toHaveLength(2) // the two required fields
+
+    await assertNoAxeViolations(container)
+  })
+
+  // M4 Task 4: GuidedTourModal's open state — backdrop, dialog panel, close
+  // button, and the wrapped tour all together.
+  test('the modal has no violations when open', async () => {
+    const {container} = render(
+      <GuidedTourModal tour={fixtureTour()} open onOpenChange={() => {}} />,
+    )
+    expect(container.querySelector('.gt-modal')).not.toBeNull()
+    expect(query(container, '.gt-modal').getAttribute('role')).toBe('dialog')
 
     await assertNoAxeViolations(container)
   })

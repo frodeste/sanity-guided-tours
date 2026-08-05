@@ -26,7 +26,9 @@ const REACT_DIR = 'src/react'
 const COMPONENT_FILES = [
   'index.ts',
   'GuidedTour.tsx',
+  'GuidedTourModal.tsx',
   'Outro.tsx',
+  'LeadForm.tsx',
   'Step.tsx',
   'Hotspot.tsx',
   'Tooltip.tsx',

@@ -66,15 +66,16 @@ describe('prefersReducedMotion', () => {
 // GuidedTour.tsx's root Arrow/Home/End (and, layered on its own
 // NATIVE_ACTIVATION_TAGS guard, Space) keydown handling defers to this —
 // exercised here against fabricated elements rather than through a full
-// `<GuidedTour>` render: nothing in M2 actually renders an
-// `<input>`/`<textarea>`/`<select>`/`contentEditable` element (only Task
-// 6's `PortableText` markup, and M4's lead-capture form doesn't exist
-// yet), so there is no real DOM-level fixture for the text-entry branch
-// to test through. The tooltip-panel branch *does* have a real fixture
-// (an open tooltip's link content) — covered separately in
-// `test/react/keyboard.test.tsx`'s DOM-level "ArrowRight on a focused
-// link inside an open tooltip panel" test, which exercises the actual
-// root `onKeyDown` wiring end to end.
+// `<GuidedTour>` render. The text-entry branch now DOES have a real
+// DOM-level fixture, closing the M2 carry-forward flag this comment used
+// to note: M4's lead-capture form (`LeadForm.tsx`) renders real
+// `<input>`/`<textarea>` elements, and `test/react/leadForm.test.tsx`'s
+// "nav-key guard" suite exercises the actual root `onKeyDown` wiring
+// against them end to end (←/→/Home/End/Space typed inside a real field
+// neither navigate the tour nor get swallowed). The tooltip-panel branch
+// *does* have a real fixture too (an open tooltip's link content) —
+// covered separately in `test/react/keyboard.test.tsx`'s DOM-level
+// "ArrowRight on a focused link inside an open tooltip panel" test.
 describe('isNavigationExempt', () => {
   test('false for a target that is not an element at all', () => {
     expect(isNavigationExempt(null)).toBe(false)

@@ -2,6 +2,8 @@
 
 export {GuidedTour} from './GuidedTour'
 export type {GuidedTourProps} from './GuidedTour'
+export {GuidedTourModal} from './GuidedTourModal'
+export type {GuidedTourModalProps} from './GuidedTourModal'
 export type {GuidedTourEvent, GuidedTourEventHandler} from './events'
 export {defaultLabels} from './labels'
 export type {GuidedTourLabels} from './labels'

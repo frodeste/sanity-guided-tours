@@ -118,6 +118,15 @@ describe('createTracker: payload passthrough', () => {
     ])
   })
 
+  test('leadSubmitted emits lead_submitted with no payload and does not auto-start', () => {
+    const {events, handler} = collector()
+    const tracker = createTracker(handler, 'tour-1')
+
+    tracker.leadSubmitted()
+
+    expect(events).toEqual([{type: 'lead_submitted'}])
+  })
+
   test('cta_clicked and lead_submitted satisfy the event union and reach the handler verbatim', () => {
     const {events, handler} = collector()
 
@@ -267,6 +276,7 @@ describe('createTracker: undefined handler', () => {
       tracker.stepViewed({stepIndex: 0, stepKey: 'step-1', chapterIndex: 0})
       tracker.elementClicked({elementType: 'hotspot', elementKey: 'el-1'})
       tracker.ctaClicked({label: 'Book a demo', href: 'https://example.com/demo'})
+      tracker.leadSubmitted()
       tracker.scheduleAbandon(0)
       tracker.cancelScheduledAbandon()
       tracker.complete(1)
