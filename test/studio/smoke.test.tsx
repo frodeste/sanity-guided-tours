@@ -28,7 +28,14 @@ import {PatchEvent, setIfMissing} from 'sanity'
 import type {ArrayOfObjectsInputProps, FormInsertPatch, FormPatch} from 'sanity'
 
 import {CanvasInput} from '../../src/studio/CanvasInput'
-import {moveElementPatch, removeElementPatch, setElementWidthPatch} from '../../src/studio/patches'
+import {
+  moveElementPatch,
+  moveStepPatch,
+  removeChapterPatch,
+  removeElementPatch,
+  removeStepPatch,
+  setElementWidthPatch,
+} from '../../src/studio/patches'
 
 afterEach(() => {
   cleanup()
@@ -521,5 +528,207 @@ describe('Canvas interactions', () => {
     fireEvent.pointerUp(resizeHandle, {clientX: 150, pointerId: 1})
 
     expect(onChange).toHaveBeenCalledTimes(1)
+  })
+})
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+/** Opens the given step's `MenuButton` (per-step `⋯` menu, `Filmstrip.tsx`). */
+function openStepMenu(chapterKey: string, stepKey: string): void {
+  fireEvent.click(screen.getByTestId(`filmstrip-step-menu-${chapterKey}-${stepKey}`))
+}
+
+/** The "Move to chapter" `MenuGroup` doesn't eagerly render its target-chapter `MenuItem`s — its own submenu popover only mounts once its trigger is clicked (see `Filmstrip.test.tsx`'s identical helper). Call after `openStepMenu`. */
+function openMoveToChapterSubmenu(): void {
+  const trigger = screen.getByText('Move to chapter').closest('button')
+  if (!trigger) throw new Error('expected the Move to chapter trigger to be a <button>')
+  fireEvent.click(trigger)
+}
+
+// Master plan Task 6 / post-review gap: the smoke tests above (Tasks 4-5)
+// and `Filmstrip.test.tsx` (Task 6, callback-spy level) never actually
+// exercised `CanvasInput.tsx`'s OWN wiring for step management — the
+// `onDeleteStep`/`onMoveStepToChapter` isLastStep/sourceBecomesEmpty
+// branches, and the `findStep`/`findChapter` re-derivation from `chapters`
+// at emit time — end to end through the rendered UI and the real
+// `onChange`/`PatchEvent` seam. These tests close that gap: they drive the
+// per-step menu and confirm dialog exactly as an author would, then assert
+// on the emitted patch shapes (reusing the same `patches.ts` builders the
+// production code calls, the same grounding `patches.test.ts` and the
+// existing "Canvas interactions" describe block above both use).
+describe('CanvasInput: filmstrip step-management wiring (Task 6)', () => {
+  test('duplicating a step emits a single insert patch with the step key and every element key regenerated', () => {
+    const onChange = mock((_patch: FormPatch | FormPatch[] | PatchEvent) => {})
+    renderWithTheme(
+      <CanvasInput {...baseInputProps()} onChange={onChange} value={fixtureChapters} />,
+    )
+
+    // Step s1 (chapter c1) carries two fixture elements (e1, e2).
+    openStepMenu('c1', 's1')
+    fireEvent.click(screen.getByTestId('filmstrip-duplicate-c1-s1'))
+
+    expect(onChange).toHaveBeenCalledTimes(1)
+    const call = onChange.mock.calls[0][0]
+    if (!isPatchEvent(call)) throw new Error('expected a PatchEvent')
+    expect(call.patches).toHaveLength(1)
+
+    const insertPatch = call.patches[0]
+    if (!isInsertPatch(insertPatch)) throw new Error('expected an insert patch')
+    expect(insertPatch.position).toBe('after')
+    expect(insertPatch.path).toEqual([{_key: 'c1'}, 'steps', {_key: 's1'}])
+    expect(insertPatch.items).toHaveLength(1)
+
+    const duplicated = insertPatch.items[0]
+    if (!isRecord(duplicated)) throw new Error('expected a record')
+    expect(typeof duplicated._key).toBe('string')
+    expect(duplicated._key).not.toBe('s1')
+
+    const elements = duplicated.elements
+    if (!Array.isArray(elements)) throw new Error('expected an elements array')
+    expect(elements).toHaveLength(2)
+    const elementKeys = elements.map((element) => (isRecord(element) ? element._key : undefined))
+    expect(elementKeys).not.toContain('e1')
+    expect(elementKeys).not.toContain('e2')
+    expect(elementKeys).not.toContain(duplicated._key)
+    expect(new Set(elementKeys).size).toBe(2)
+  })
+
+  test("deleting a step that is NOT its chapter's last emits removeStepPatch, only after confirming", () => {
+    const onChange = mock((_patch: FormPatch | FormPatch[] | PatchEvent) => {})
+    renderWithTheme(
+      <CanvasInput {...baseInputProps()} onChange={onChange} value={fixtureChapters} />,
+    )
+
+    // c1 has two steps (s1, s2) — s2 isn't the chapter's last.
+    openStepMenu('c1', 's2')
+    fireEvent.click(screen.getByTestId('filmstrip-delete-c1-s2'))
+
+    expect(onChange).not.toHaveBeenCalled()
+    const dialog = screen.getByRole('dialog')
+    expect(dialog.textContent).not.toContain('also delete the chapter')
+
+    fireEvent.click(screen.getByTestId('filmstrip-confirm-confirm'))
+
+    expect(onChange).toHaveBeenCalledTimes(1)
+    const call = onChange.mock.calls[0][0]
+    if (!isPatchEvent(call)) throw new Error('expected a PatchEvent')
+    expect(call.patches).toEqual(removeStepPatch('c1', 's2'))
+  })
+
+  // SDD ledger Parked C ruling: deleting a chapter's LAST step must remove
+  // the whole chapter (removeChapterPatch), not just the step
+  // (removeStepPatch) — chapter.steps is schema min(1). c2 (fixtureChapters)
+  // has exactly one step, s3.
+  test("deleting a chapter's LAST step emits removeChapterPatch instead, after a confirm that warns about it", () => {
+    const onChange = mock((_patch: FormPatch | FormPatch[] | PatchEvent) => {})
+    renderWithTheme(
+      <CanvasInput {...baseInputProps()} onChange={onChange} value={fixtureChapters} />,
+    )
+
+    openStepMenu('c2', 's3')
+    fireEvent.click(screen.getByTestId('filmstrip-delete-c2-s3'))
+
+    const dialog = screen.getByRole('dialog')
+    expect(dialog.textContent).toContain('Advanced')
+    expect(dialog.textContent).toContain('also delete the chapter')
+    expect(onChange).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByTestId('filmstrip-confirm-confirm'))
+
+    expect(onChange).toHaveBeenCalledTimes(1)
+    const call = onChange.mock.calls[0][0]
+    if (!isPatchEvent(call)) throw new Error('expected a PatchEvent')
+    expect(call.patches).toEqual(removeChapterPatch('c2'))
+  })
+
+  test("moving a step that is NOT its chapter's last runs immediately (no confirm) and emits moveStepPatch only", () => {
+    const onChange = mock((_patch: FormPatch | FormPatch[] | PatchEvent) => {})
+    renderWithTheme(
+      <CanvasInput {...baseInputProps()} onChange={onChange} value={fixtureChapters} />,
+    )
+
+    // s2 is c1's second (non-last) step; move it to c2.
+    openStepMenu('c1', 's2')
+    openMoveToChapterSubmenu()
+    fireEvent.click(screen.getByTestId('filmstrip-move-to-c2-c1-s2'))
+
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(onChange).toHaveBeenCalledTimes(1)
+    const call = onChange.mock.calls[0][0]
+    if (!isPatchEvent(call)) throw new Error('expected a PatchEvent')
+    // The moved step's own record is re-derived from `chapters` at emit
+    // time (`CanvasInput.tsx`'s `findStep`) — the exact fixture object c1's
+    // s2, not a hand-built stand-in, grounds this the same way
+    // `patches.test.ts` grounds its own `moveStepPatch` assertions. Routed
+    // through `isRecord` (rather than a fixture-typed variable) so it
+    // structurally satisfies `moveStepPatch`'s `Record<string, unknown>`
+    // parameter without an `as` cast — `FixtureStep`'s named interface type
+    // has no index signature TS will accept there directly.
+    const movedStepValue: unknown = fixtureChapters[0].steps[1]
+    if (!isRecord(movedStepValue)) throw new Error('expected a record')
+    expect(call.patches).toEqual(moveStepPatch('c1', 's2', movedStepValue, 'c2', null))
+  })
+
+  // SDD ledger Parked C ruling: moving a chapter's LAST step away must also
+  // remove the now-empty source chapter, appended after the move patches —
+  // and the confirm dialog must warn about it before either runs.
+  test("moving a chapter's LAST step requires confirmation and appends removeChapterPatch for the now-empty source", () => {
+    const onChange = mock((_patch: FormPatch | FormPatch[] | PatchEvent) => {})
+    renderWithTheme(
+      <CanvasInput {...baseInputProps()} onChange={onChange} value={fixtureChapters} />,
+    )
+
+    // s3 is c2's only step; move it to c1.
+    openStepMenu('c2', 's3')
+    openMoveToChapterSubmenu()
+    fireEvent.click(screen.getByTestId('filmstrip-move-to-c1-c2-s3'))
+
+    expect(onChange).not.toHaveBeenCalled()
+    const dialog = screen.getByRole('dialog')
+    expect(dialog.textContent).toContain('Advanced')
+    expect(dialog.textContent).toContain('also be deleted')
+
+    fireEvent.click(screen.getByTestId('filmstrip-confirm-confirm'))
+
+    expect(onChange).toHaveBeenCalledTimes(1)
+    const call = onChange.mock.calls[0][0]
+    if (!isPatchEvent(call)) throw new Error('expected a PatchEvent')
+    const movedStepValue: unknown = fixtureChapters[1].steps[0]
+    if (!isRecord(movedStepValue)) throw new Error('expected a record')
+    expect(call.patches).toEqual([
+      ...moveStepPatch('c2', 's3', movedStepValue, 'c1', null),
+      ...removeChapterPatch('c2'),
+    ])
+  })
+
+  test('the add-step button appends a new step scaffold via a setIfMissing+insert patch pair', () => {
+    const onChange = mock((_patch: FormPatch | FormPatch[] | PatchEvent) => {})
+    renderWithTheme(
+      <CanvasInput {...baseInputProps()} onChange={onChange} value={fixtureChapters} />,
+    )
+
+    fireEvent.click(screen.getByTestId('filmstrip-add-step-c2'))
+
+    expect(onChange).toHaveBeenCalledTimes(1)
+    const call = onChange.mock.calls[0][0]
+    if (!isPatchEvent(call)) throw new Error('expected a PatchEvent')
+    expect(call.patches).toHaveLength(2)
+    expect(call.patches[0]).toEqual(setIfMissing([], [{_key: 'c2'}, 'steps']))
+
+    const insertPatch = call.patches[1]
+    if (!isInsertPatch(insertPatch)) throw new Error('expected an insert patch')
+    expect(insertPatch.position).toBe('after')
+    expect(insertPatch.path).toEqual([{_key: 'c2'}, 'steps', -1])
+    expect(insertPatch.items).toHaveLength(1)
+
+    const newStep = insertPatch.items[0]
+    if (!isRecord(newStep)) throw new Error('expected a record')
+    expect(newStep._type).toBe('guidedTourStep')
+    expect(newStep.elements).toEqual([])
+    const newKey = newStep._key
+    if (typeof newKey !== 'string') throw new Error('expected a string _key')
+    expect(newKey.length).toBeGreaterThan(0)
   })
 })
