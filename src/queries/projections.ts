@@ -2,6 +2,19 @@
 // pulls in the `groq` template-tag package or any Studio dependency. See
 // test/exports.test.ts for the guard that enforces this.
 
+import {
+  HOTSPOT_DEFAULTS,
+  LEAD_CAPTURE_DEFAULTS,
+  LEAD_CAPTURE_FIELD_DEFAULTS,
+  OUTRO_CTA_DEFAULTS,
+  SETTINGS_DEFAULTS,
+  STEP_DEFAULTS,
+  TEXT_OVERLAY_DEFAULTS,
+  THEME_DEFAULTS,
+  TOKEN_DEFAULTS,
+  TOOLTIP_DEFAULTS,
+} from './defaults'
+
 /**
  * Resolves an `image` field to a concrete CDN URL, dimensions, LQIP
  * placeholder and alt text — used for `poster`, `screenshot`,
@@ -54,21 +67,21 @@ export const elementProjection = /* groq */ `{
   "mobile": mobile{x, y, width},
   _type == "guidedTourHotspot" => {
     label,
-    "action": coalesce(action, "advance"),
+    "action": coalesce(action, "${HOTSPOT_DEFAULTS.action}"),
     href,
-    "pulse": coalesce(pulse, true)
+    "pulse": coalesce(pulse, ${HOTSPOT_DEFAULTS.pulse})
   },
   _type == "guidedTourTooltip" => {
-    "width": coalesce(width, 300),
+    "width": coalesce(width, ${TOOLTIP_DEFAULTS.width}),
     content,
-    "placement": coalesce(placement, "auto"),
-    "trigger": coalesce(trigger, "click")
+    "placement": coalesce(placement, "${TOOLTIP_DEFAULTS.placement}"),
+    "trigger": coalesce(trigger, "${TOOLTIP_DEFAULTS.trigger}")
   },
   _type == "guidedTourTextOverlay" => {
-    "width": coalesce(width, 30),
+    "width": coalesce(width, ${TEXT_OVERLAY_DEFAULTS.width}),
     content,
-    "background": coalesce(background, "surface"),
-    "opacity": coalesce(opacity, 90)
+    "background": coalesce(background, "${TEXT_OVERLAY_DEFAULTS.background}"),
+    "opacity": coalesce(opacity, ${TEXT_OVERLAY_DEFAULTS.opacity})
   }
 }`
 
@@ -86,41 +99,41 @@ export const tourProjection = /* groq */ `{
   _id, title, "slug": slug.current, description,
   "poster": poster${imageProjection},
   "theme": coalesce(theme->, *[_type == "guidedTourTheme" && isDefault == true][0]){
-    "accent": coalesce(accent, "#2276fc"),
-    "surface": coalesce(surface, "#ffffff"),
-    "text": coalesce(text, "#1a1a1a"),
-    "overlay": coalesce(overlay, "#0f172a"),
-    "radius": coalesce(radius, 8),
-    "hotspotSize": coalesce(hotspotSize, 24),
+    "accent": coalesce(accent, "${THEME_DEFAULTS.accent}"),
+    "surface": coalesce(surface, "${THEME_DEFAULTS.surface}"),
+    "text": coalesce(text, "${THEME_DEFAULTS.text}"),
+    "overlay": coalesce(overlay, "${THEME_DEFAULTS.overlay}"),
+    "radius": coalesce(radius, ${THEME_DEFAULTS.radius}),
+    "hotspotSize": coalesce(hotspotSize, ${THEME_DEFAULTS.hotspotSize}),
     fontFamily,
     "logo": logo${imageProjection}
   },
-  tokens[]{_key, key, label, defaultValue, "required": coalesce(required, false)},
+  tokens[]{_key, key, label, defaultValue, "required": coalesce(required, ${TOKEN_DEFAULTS.required})},
   chapters[]{
     _key, title, description,
     steps[]{
-      _key, title, "advance": coalesce(advance, "hotspot"), duration,
+      _key, title, "advance": coalesce(advance, "${STEP_DEFAULTS.advance}"), duration,
       "screenshot": screenshot${imageProjection},
       "screenshotMobile": screenshotMobile${imageProjection},
       elements[]${elementProjection}
     }
   },
   leadCapture{
-    "enabled": coalesce(enabled, false),
-    "trigger": coalesce(trigger, "atEnd"),
+    "enabled": coalesce(enabled, ${LEAD_CAPTURE_DEFAULTS.enabled}),
+    "trigger": coalesce(trigger, "${LEAD_CAPTURE_DEFAULTS.trigger}"),
     afterStepIndex,
     fields[]{
       _key, name, label,
-      "type": coalesce(type, "text"),
-      "required": coalesce(required, false)
+      "type": coalesce(type, "${LEAD_CAPTURE_FIELD_DEFAULTS.type}"),
+      "required": coalesce(required, ${LEAD_CAPTURE_FIELD_DEFAULTS.required})
     },
     consentText,
     submitLabel
   },
-  outro{heading, body, ctas[]{_key, label, href, "style": coalesce(style, "primary")}},
+  outro{heading, body, ctas[]{_key, label, href, "style": coalesce(style, "${OUTRO_CTA_DEFAULTS.style}")}},
   settings{
-    "showProgress": coalesce(showProgress, true),
-    "showChapterMenu": coalesce(showChapterMenu, true),
-    "showStepDots": coalesce(showStepDots, true)
+    "showProgress": coalesce(showProgress, ${SETTINGS_DEFAULTS.showProgress}),
+    "showChapterMenu": coalesce(showChapterMenu, ${SETTINGS_DEFAULTS.showChapterMenu}),
+    "showStepDots": coalesce(showStepDots, ${SETTINGS_DEFAULTS.showStepDots})
   }
 }`

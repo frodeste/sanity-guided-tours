@@ -8,10 +8,13 @@ import {
   insertChapterPatch,
   insertElementPatch,
   insertStepPatch,
+  insertStepsPatch,
   moveElementPatch,
   moveStepPatch,
+  removeChapterPatch,
   removeElementPatch,
   removeStepPatch,
+  reorderStepPatch,
   setElementWidthPatch,
   setStepFieldPatch,
 } from '../../src/studio/patches'
@@ -44,13 +47,42 @@ function collectKeys(value: unknown, acc: string[] = []): string[] {
 }
 
 describe('insertElementPatch', () => {
-  test('appends the element into a possibly-missing/empty elements array', () => {
+  test('desktop appends the element into a possibly-missing/empty elements array, unchanged', () => {
     const element = {_type: 'hotspot', _key: 'el1', x: 10, y: 20}
-    const patches = insertElementPatch('ch1', 'st1', element)
+    const patches = insertElementPatch('ch1', 'st1', element, 'desktop')
 
     expect(patches).toEqual([
       setIfMissing([], [{_key: 'ch1'}, 'steps', {_key: 'st1'}, 'elements']),
       insert([element], 'after', [{_key: 'ch1'}, 'steps', {_key: 'st1'}, 'elements', -1]),
+    ])
+  })
+
+  test('mobile composes a mobile {x, y} override from the same coordinates into the inserted element', () => {
+    const element = {_type: 'hotspot', _key: 'el1', x: 10, y: 20}
+    const patches = insertElementPatch('ch1', 'st1', element, 'mobile')
+
+    const composed = {_type: 'hotspot', _key: 'el1', x: 10, y: 20, mobile: {x: 10, y: 20}}
+    expect(patches).toEqual([
+      setIfMissing([], [{_key: 'ch1'}, 'steps', {_key: 'st1'}, 'elements']),
+      insert([composed], 'after', [{_key: 'ch1'}, 'steps', {_key: 'st1'}, 'elements', -1]),
+    ])
+  })
+
+  test('mobile preserves other existing mobile members (e.g. width) alongside the composed x/y', () => {
+    const element = {_type: 'tooltip', _key: 'el1', x: 10, y: 20, width: 300, mobile: {width: 250}}
+    const patches = insertElementPatch('ch1', 'st1', element, 'mobile')
+
+    const composed = {
+      _type: 'tooltip',
+      _key: 'el1',
+      x: 10,
+      y: 20,
+      width: 300,
+      mobile: {width: 250, x: 10, y: 20},
+    }
+    expect(patches).toEqual([
+      setIfMissing([], [{_key: 'ch1'}, 'steps', {_key: 'st1'}, 'elements']),
+      insert([composed], 'after', [{_key: 'ch1'}, 'steps', {_key: 'st1'}, 'elements', -1]),
     ])
   })
 })
@@ -142,6 +174,44 @@ describe('insertStepPatch', () => {
     expect(patches).toEqual([
       setIfMissing([], [{_key: 'ch1'}, 'steps']),
       insert([step], 'after', [{_key: 'ch1'}, 'steps', -1]),
+    ])
+  })
+})
+
+describe('insertStepsPatch', () => {
+  test('appends every step at once, in the given order, into a possibly-missing/empty steps array', () => {
+    const steps = [
+      {_type: 'guidedTourStep', _key: 'new1', title: 'New 1'},
+      {_type: 'guidedTourStep', _key: 'new2', title: 'New 2'},
+    ]
+    const patches = insertStepsPatch('ch1', steps)
+
+    expect(patches).toEqual([
+      setIfMissing([], [{_key: 'ch1'}, 'steps']),
+      insert(steps, 'after', [{_key: 'ch1'}, 'steps', -1]),
+    ])
+  })
+
+  test('a single insert patch carries all items — not one insert per step', () => {
+    const steps = [
+      {_type: 'guidedTourStep', _key: 'new1'},
+      {_type: 'guidedTourStep', _key: 'new2'},
+      {_type: 'guidedTourStep', _key: 'new3'},
+    ]
+    const patches = insertStepsPatch('ch1', steps)
+
+    expect(patches).toHaveLength(2)
+    const insertPatch = patches[1]
+    if (!isInsertPatch(insertPatch)) throw new Error('expected an insert patch')
+    expect(insertPatch.items).toHaveLength(3)
+  })
+
+  test('empty steps array still emits the setIfMissing + insert pair (a no-op insert of nothing)', () => {
+    const patches = insertStepsPatch('ch1', [])
+
+    expect(patches).toEqual([
+      setIfMissing([], [{_key: 'ch1'}, 'steps']),
+      insert([], 'after', [{_key: 'ch1'}, 'steps', -1]),
     ])
   })
 })
@@ -302,5 +372,78 @@ describe('setStepFieldPatch', () => {
     const patches = setStepFieldPatch('ch1', 'st1', 'title', 'New title')
 
     expect(patches).toEqual([set('New title', [{_key: 'ch1'}, 'steps', {_key: 'st1'}, 'title'])])
+  })
+})
+
+// SDD ledger Parked C ruling: removing/moving the LAST step of a chapter
+// leaves it violating `steps`' `min(1)` (schema/chapter.ts) — Filmstrip.tsx
+// unsets the whole chapter instead in that case, which this builder exists
+// for.
+describe('removeChapterPatch', () => {
+  test('unsets the keyed chapter', () => {
+    const patches = removeChapterPatch('ch1')
+
+    expect(patches).toEqual([unset([{_key: 'ch1'}])])
+  })
+})
+
+describe('reorderStepPatch', () => {
+  const steps = [
+    {_type: 'guidedTourStep', _key: 'a', title: 'A'},
+    {_type: 'guidedTourStep', _key: 'b', title: 'B'},
+    {_type: 'guidedTourStep', _key: 'c', title: 'C'},
+  ]
+
+  test('moving up (earlier index) inserts before the step now occupying the target index', () => {
+    // [A, B, C] -> move C (index 2) to index 1 -> [A, C, B]
+    const patches = reorderStepPatch('ch1', steps, 'c', 1)
+
+    expect(patches).toEqual([
+      unset([{_key: 'ch1'}, 'steps', {_key: 'c'}]),
+      insert([steps[2]], 'before', [{_key: 'ch1'}, 'steps', {_key: 'b'}]),
+    ])
+  })
+
+  test('moving up to the very front inserts before the current first step', () => {
+    // [A, B, C] -> move C (index 2) to index 0 -> [C, A, B]
+    const patches = reorderStepPatch('ch1', steps, 'c', 0)
+
+    expect(patches).toEqual([
+      unset([{_key: 'ch1'}, 'steps', {_key: 'c'}]),
+      insert([steps[2]], 'before', [{_key: 'ch1'}, 'steps', {_key: 'a'}]),
+    ])
+  })
+
+  test('moving down (later index) inserts after the step now occupying the target index', () => {
+    // [A, B, C] -> move A (index 0) to index 1 -> [B, A, C]
+    const patches = reorderStepPatch('ch1', steps, 'a', 1)
+
+    expect(patches).toEqual([
+      unset([{_key: 'ch1'}, 'steps', {_key: 'a'}]),
+      insert([steps[0]], 'after', [{_key: 'ch1'}, 'steps', {_key: 'b'}]),
+    ])
+  })
+
+  test('moving down to the very end inserts after the current last step', () => {
+    // [A, B, C] -> move A (index 0) to index 2 -> [B, C, A]
+    const patches = reorderStepPatch('ch1', steps, 'a', 2)
+
+    expect(patches).toEqual([
+      unset([{_key: 'ch1'}, 'steps', {_key: 'a'}]),
+      insert([steps[0]], 'after', [{_key: 'ch1'}, 'steps', {_key: 'c'}]),
+    ])
+  })
+
+  test('no-op (empty array) when targetIndex equals the current index', () => {
+    expect(reorderStepPatch('ch1', steps, 'b', 1)).toEqual([])
+  })
+
+  test('no-op when targetIndex is out of range', () => {
+    expect(reorderStepPatch('ch1', steps, 'a', -1)).toEqual([])
+    expect(reorderStepPatch('ch1', steps, 'a', 3)).toEqual([])
+  })
+
+  test('no-op when stepKey is not found in steps', () => {
+    expect(reorderStepPatch('ch1', steps, 'missing', 0)).toEqual([])
   })
 })

@@ -2,8 +2,9 @@ import {describe, expect, test} from 'bun:test'
 
 import {
   filesInUploadOrder,
-  stepsFromAssets,
   partitionResults,
+  stepsFromAssets,
+  summarizeUploadOutcome,
   type UploadedAsset,
 } from '../../src/studio/bulkUpload'
 
@@ -219,5 +220,27 @@ describe('partitionResults', () => {
 
     expect(ok).toEqual(['a', 'b', 'c'])
     expect(failed).toBe(2)
+  })
+})
+
+describe('summarizeUploadOutcome', () => {
+  test('2 ok + 1 failed: a warning toast reporting both counts', () => {
+    expect(summarizeUploadOutcome(2, 1)).toEqual({status: 'warning', title: '2 uploaded, 1 failed'})
+  })
+
+  test('all succeeded: a success toast, no failure count mentioned', () => {
+    expect(summarizeUploadOutcome(3, 0)).toEqual({status: 'success', title: '3 uploaded'})
+  })
+
+  test('all failed: an error toast, no "uploaded" count mentioned', () => {
+    expect(summarizeUploadOutcome(0, 2)).toEqual({status: 'error', title: '2 failed'})
+  })
+
+  test('zero and zero (defensive — never reached via a non-empty upload batch): a success toast with a neutral title', () => {
+    expect(summarizeUploadOutcome(0, 0)).toEqual({status: 'success', title: 'No files uploaded'})
+  })
+
+  test("one ok, zero failed: singular-safe counts are the caller's job — this just formats the numbers given", () => {
+    expect(summarizeUploadOutcome(1, 0)).toEqual({status: 'success', title: '1 uploaded'})
   })
 })
