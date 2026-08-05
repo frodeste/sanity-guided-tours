@@ -507,16 +507,101 @@ describe('Tooltip: placement', () => {
     expect(query(container, '.gt-tooltip').classList.contains('gt-tooltip--top')).toBe(true)
   })
 
-  test('panel width comes from the width px value, with a 90% max-width', () => {
+  test('panel width comes from the width px value, with a container-relative max-width', () => {
     const {container} = render(
       <GuidedTour
         tour={oneChapterTour([step({_key: 's1', elements: [tooltip({_key: 't1', width: 250})]})])}
       />,
     )
 
-    const panel = query(container, '.gt-tooltip')
-    expect(panel.getAttribute('style')).toContain('width: 250px')
-    expect(panel.getAttribute('style')).toContain('max-width: 90%')
+    // Regression for the live-tour bug: `max-width` used to be a bare
+    // `90%`, which resolves against `.gt-tooltip-anchor` (point-sized —
+    // it only wraps the trigger button) rather than the stage, crushing
+    // the panel to min-content. It's container-relative now (`100cqw`,
+    // resolved against `.gt-stage`'s own inline size — see the
+    // `container-type: inline-size` rule on `.gt-stage` in styles.css),
+    // not a bare percentage, and not viewport-relative either: a
+    // viewport-relative bound was tried and rejected because it doesn't
+    // account for `.gt-modal`'s own `min(90vw, 640px)` cap in modal mount
+    // mode (`GuidedTourModal.tsx`) — a wide tooltip could still overflow
+    // the modal even though it fits the viewport.
+    const style = query(container, '.gt-tooltip').getAttribute('style')
+    expect(style).toContain('width: 250px')
+    expect(style).not.toContain('max-width: 90%')
+    expect(style).not.toContain('100vw')
+    expect(style).toContain('max-width: min(250px, calc(100cqw - 2rem))')
+  })
+})
+
+describe('Tooltip: edge containment', () => {
+  test('x = 15 (the boundary) gets the edge-left modifier class', () => {
+    const {container} = render(
+      <GuidedTour
+        tour={oneChapterTour([step({_key: 's1', elements: [tooltip({_key: 't1', x: 15})]})])}
+      />,
+    )
+
+    expect(query(container, '.gt-tooltip').classList.contains('gt-tooltip--edge-left')).toBe(true)
+  })
+
+  test('x = 15.1 (just past the boundary) does not get the edge-left modifier class', () => {
+    const {container} = render(
+      <GuidedTour
+        tour={oneChapterTour([step({_key: 's1', elements: [tooltip({_key: 't1', x: 15.1})]})])}
+      />,
+    )
+
+    expect(query(container, '.gt-tooltip').classList.contains('gt-tooltip--edge-left')).toBe(false)
+  })
+
+  test('x = 85 (the boundary) gets the edge-right modifier class', () => {
+    const {container} = render(
+      <GuidedTour
+        tour={oneChapterTour([step({_key: 's1', elements: [tooltip({_key: 't1', x: 85})]})])}
+      />,
+    )
+
+    expect(query(container, '.gt-tooltip').classList.contains('gt-tooltip--edge-right')).toBe(true)
+  })
+
+  test('x = 84.9 (just short of the boundary) does not get the edge-right modifier class', () => {
+    const {container} = render(
+      <GuidedTour
+        tour={oneChapterTour([step({_key: 's1', elements: [tooltip({_key: 't1', x: 84.9})]})])}
+      />,
+    )
+
+    expect(query(container, '.gt-tooltip').classList.contains('gt-tooltip--edge-right')).toBe(false)
+  })
+
+  test('x in the middle 70% gets neither edge modifier class', () => {
+    const {container} = render(
+      <GuidedTour
+        tour={oneChapterTour([step({_key: 's1', elements: [tooltip({_key: 't1', x: 50})]})])}
+      />,
+    )
+
+    const classList = query(container, '.gt-tooltip').classList
+    expect(classList.contains('gt-tooltip--edge-left')).toBe(false)
+    expect(classList.contains('gt-tooltip--edge-right')).toBe(false)
+  })
+
+  test('an explicit left/right placement never gets an edge class, even near the edge', () => {
+    // `.gt-tooltip--left`/`--right` don't horizontally center (no
+    // `translateX`), so there's no `.gt-tooltip--edge-*.gt-tooltip--left`
+    // CSS rule for an edge class to match — resolveEdgeClass gates on the
+    // resolved placement precisely to avoid emitting one here.
+    const {container} = render(
+      <GuidedTour
+        tour={oneChapterTour([
+          step({_key: 's1', elements: [tooltip({_key: 't1', placement: 'left', x: 90})]}),
+        ])}
+      />,
+    )
+
+    const classList = query(container, '.gt-tooltip').classList
+    expect(classList.contains('gt-tooltip--edge-left')).toBe(false)
+    expect(classList.contains('gt-tooltip--edge-right')).toBe(false)
   })
 })
 
