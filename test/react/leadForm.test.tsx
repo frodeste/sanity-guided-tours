@@ -1,6 +1,6 @@
 import {afterEach, describe, expect, spyOn, test} from 'bun:test'
 
-import {cleanup, fireEvent, render, waitFor} from '@testing-library/react'
+import {act, cleanup, fireEvent, render, waitFor} from '@testing-library/react'
 
 import type {
   GuidedTourChapter,
@@ -124,6 +124,36 @@ function clickPrev(container: ParentNode): void {
 function collector(): {events: GuidedTourEvent[]; handler: (event: GuidedTourEvent) => void} {
   const events: GuidedTourEvent[] = []
   return {events, handler: (event) => events.push(event)}
+}
+
+/**
+ * Settles the microtask-driven state updates from `LeadForm`'s submit
+ * promise chain (`invokeLeadSubmit().then(...)`), fired from OUTSIDE any
+ * `fireEvent.*`-provided `act()` scope. CI review fix, PR 102 (CI 2-core
+ * flake): the natural-looking `await waitFor(() => expect(container
+ * .querySelector('.gt-lead')).toBeNull())` was measured to take 1.5-2.7
+ * REAL seconds per call in this suite — not a timing coincidence,
+ * reproduced consistently. Root cause: happy-dom's `MutationObserver`
+ * doesn't reliably notice `.gt-lead`'s removal (`waitFor`'s other
+ * predicates — an element APPEARING, or a plain array's contents — were
+ * measured fast, only "wait for this element to be GONE" was slow), so
+ * `waitFor` falls through to its `setInterval` polling fallback outside
+ * any active `act()` window; the pending React update it's waiting on
+ * then sits queued until the `scheduler` package's own ~5s normal-
+ * priority task-expiry watchdog force-flushes it (`scheduler`'s dev
+ * build hardcodes `5e3` for that case) — happy-dom's real, working
+ * `MessageChannel` isn't the bottleneck; the update just never asks to be
+ * scheduled through it because nothing is "inside" `act()` when the
+ * promise resolves. An explicit, EMPTY `act(async () => {})` call — a
+ * no-op callback, deliberately — resolves the identical state change in
+ * under a millisecond: while it's active, any state update already
+ * queued (regardless of DOM visibility) is intercepted by React's own
+ * act-queue flushing instead of falling back to the scheduler/DOM path
+ * at all. Verified empirically before landing this (see the fix note in
+ * the task-3 report) — this isn't a guess.
+ */
+async function flush(): Promise<void> {
+  await act(async () => {})
 }
 
 describe('LeadForm: afterStep trigger', () => {
@@ -670,9 +700,8 @@ describe('LeadForm: validation', () => {
     // with no `onLeadSubmit` configured, `Promise.resolve(undefined)`
     // resolves on a later microtask, not synchronously) — see
     // `LeadForm.tsx`'s `handleSubmit` doc comment.
-    await waitFor(() => {
-      expect(container.querySelector('.gt-lead')).toBeNull()
-    })
+    await flush()
+    expect(container.querySelector('.gt-lead')).toBeNull()
   })
 
   test('correcting a field after a failed submit and resubmitting succeeds', async () => {
@@ -687,9 +716,8 @@ describe('LeadForm: validation', () => {
     fireEvent.change(queryInput(container, 'input[name="name"]'), {target: {value: 'Ada'}})
     fireEvent.submit(query(container, '.gt-lead-form'))
 
-    await waitFor(() => {
-      expect(container.querySelector('.gt-lead')).toBeNull()
-    })
+    await flush()
+    expect(container.querySelector('.gt-lead')).toBeNull()
   })
 })
 
@@ -723,9 +751,8 @@ describe('LeadForm: submit flow', () => {
     })
     fireEvent.submit(query(container, '.gt-lead-form'))
 
-    await waitFor(() => {
-      expect(container.querySelector('.gt-lead')).toBeNull()
-    })
+    await flush()
+    expect(container.querySelector('.gt-lead')).toBeNull()
     expect(received).toEqual([{email: 'ada@example.com'}])
     expect(events.filter((event) => event.type === 'lead_submitted')).toHaveLength(1)
   })
@@ -762,9 +789,8 @@ describe('LeadForm: submit flow', () => {
     expect(container.querySelector('.gt-lead')).not.toBeNull()
 
     resolveSubmit?.()
-    await waitFor(() => {
-      expect(container.querySelector('.gt-lead')).toBeNull()
-    })
+    await flush()
+    expect(container.querySelector('.gt-lead')).toBeNull()
   })
 
   test('a rejected onLeadSubmit re-enables submit, shows a generic error, and stays open', async () => {
@@ -903,9 +929,8 @@ describe('LeadForm: submit flow', () => {
 
     fireEvent.submit(query(container, '.gt-lead-form'))
 
-    await waitFor(() => {
-      expect(container.querySelector('.gt-lead')).toBeNull()
-    })
+    await flush()
+    expect(container.querySelector('.gt-lead')).toBeNull()
     expect(events.filter((event) => event.type === 'lead_submitted')).toHaveLength(1)
   })
 })
@@ -981,9 +1006,8 @@ describe('LeadForm: navigation guard while a submit is pending', () => {
     clickPrev(container) // no-op, still pending
     resolveSubmit()
 
-    await waitFor(() => {
-      expect(container.querySelector('.gt-lead')).toBeNull()
-    })
+    await flush()
+    expect(container.querySelector('.gt-lead')).toBeNull()
 
     expect(events.filter((event) => event.type === 'lead_submitted')).toHaveLength(1)
     expect(events.filter((event) => event.type === 'tour_completed')).toHaveLength(1)
@@ -1181,9 +1205,8 @@ describe('LeadForm: no network from the plugin', () => {
       })
       fireEvent.submit(query(container, '.gt-lead-form'))
 
-      await waitFor(() => {
-        expect(container.querySelector('.gt-lead')).toBeNull()
-      })
+      await flush()
+      expect(container.querySelector('.gt-lead')).toBeNull()
 
       expect(fetchSpy).not.toHaveBeenCalled()
     } finally {

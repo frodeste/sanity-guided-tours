@@ -422,6 +422,28 @@ describe('guidedTourLeadCapture', () => {
     expect(required.initialValue).toBe(false)
   })
 
+  // CI review fix (PR 102, thread cid 3718584942): nothing previously
+  // stopped an author from giving two fields the same `name` — the viewer
+  // submits values keyed by `name`, so a duplicate silently collapses to
+  // one value with no error anywhere. Fixed at the schema level (not a
+  // `LeadForm.tsx` runtime change — an invalid-by-validation authoring
+  // error is the same posture the rest of this schema already takes, e.g.
+  // `guidedTourToken.key`'s own no-collision expectation is never enforced
+  // by the viewer either).
+  test('fields validation rejects duplicate names and accepts unique ones', () => {
+    const fieldsField = fieldByName(fields(leadCapture), 'fields')
+    const validate = customValidator(runValidation(fieldsField.validation))
+
+    expect(validate(undefined)).toBe(true)
+    expect(validate([])).toBe(true)
+    expect(validate([{name: 'email'}, {name: 'phone'}])).toBe(true)
+
+    const duplicateResult = validate([{name: 'email'}, {name: 'phone'}, {name: 'email'}])
+    expect(typeof duplicateResult).toBe('string')
+    expect(String(duplicateResult)).toContain('email')
+    expect(String(duplicateResult).toLowerCase()).toContain('unique')
+  })
+
   test('consentText is a text field and submitLabel is a string', () => {
     const consentText = fieldByName(fields(leadCapture), 'consentText')
     expect(consentText.type).toBe('text')
