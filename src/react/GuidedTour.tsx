@@ -20,6 +20,7 @@ import {clampStep, firstStepOfChapter, flattenTour, nextStep, prevStep} from './
 import {missingRequired, personalizeText, resolveTokens} from './personalize'
 import {createTracker} from './session'
 import {Step} from './Step'
+import {themeToStyle} from './theme'
 import type {GuidedTourImageProps} from './types'
 
 /**
@@ -377,9 +378,34 @@ export function GuidedTour({
     }
   }
 
+  // Theme first, consumer `style` prop second — an explicit `--gt-*` (or
+  // any other CSS property) on `style` always wins over the theme's value
+  // for that same property (design spec §8.1 amendment, M4). Composed once
+  // here rather than inline at each `<div className="gt-tour" ...>` below,
+  // since both the empty-tour and normal render paths need it.
+  //
+  // `themeToStyle` (./theme) returns a plain `Record<string, string>` for
+  // its `--gt-*` keys — unlike `ProgressStyle`/`OverlayStyle` below and in
+  // `TextOverlay.tsx`, this can't be typed as a `CSSProperties`
+  // intersection: those add one known extra key to a literal built from
+  // scratch, but this spreads a real incoming `style: CSSProperties` value
+  // whose properties (e.g. `animationIterationCount`) can be numbers, which
+  // an intersection with a blanket `Record<string, string>` index signature
+  // rejects. Spreading straight into a `CSSProperties`-typed variable
+  // sidesteps that: a spread source's properties aren't excess-property
+  // checked against the target the way a literal's own keys are, so this
+  // is honest — not an `as` cast — about the values genuinely being valid
+  // `CSSProperties` (the `--gt-*` keys) plus whatever `style` itself
+  // already validly contained.
+  const rootStyle: CSSProperties = {...themeToStyle(tour.theme), ...style}
+
   if (flat.length === 0) {
     return (
-      <div className={joinClassNames('gt-tour', 'gt-empty', className)} style={style} data-gt="">
+      <div
+        className={joinClassNames('gt-tour', 'gt-empty', className)}
+        style={rootStyle}
+        data-gt=""
+      >
         {personalizeText(tour.title, resolvedTokens)}
       </div>
     )
@@ -421,11 +447,26 @@ export function GuidedTour({
     // oxlint-disable-next-line jsx-a11y/no-static-element-interactions
     <div
       className={joinClassNames('gt-tour', className)}
-      style={style}
+      style={rootStyle}
       data-gt=""
       onKeyDown={handleKeyDown}
     >
       <div className="gt-header">
+        {tour.theme?.logo && (
+          // Decorative — the tour title just below is the adjacent text
+          // that already conveys what this tour is about (design spec,
+          // plan Task 1). CSS (`.gt-logo`, styles.css) caps the rendered height;
+          // `width`/`height` attributes still come from the resolved
+          // asset's own dimensions so the browser reserves the right
+          // aspect ratio before the image loads.
+          <img
+            className="gt-logo"
+            src={tour.theme.logo.url}
+            alt=""
+            width={tour.theme.logo.dimensions.width}
+            height={tour.theme.logo.dimensions.height}
+          />
+        )}
         <h2 className="gt-title">{personalizeText(tour.title, resolvedTokens)}</h2>
         {settings.showProgress && (
           // A native <progress> can't be styled through the --gt-*

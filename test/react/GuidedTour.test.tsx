@@ -1,6 +1,7 @@
 import {afterEach, describe, expect, spyOn, test} from 'bun:test'
 
 import {cleanup, fireEvent, render} from '@testing-library/react'
+import type {CSSProperties} from 'react'
 
 import type {
   GuidedTourChapter,
@@ -8,6 +9,7 @@ import type {
   GuidedTourImage,
   GuidedTourSettings,
   GuidedTourStep,
+  GuidedTourTheme,
   GuidedTourToken,
 } from '../../src/queries/types'
 import type {GuidedTourEvent} from '../../src/react/events'
@@ -40,6 +42,20 @@ function step(overrides: Partial<GuidedTourStep> & {_key: string}): GuidedTourSt
     screenshot: image(),
     screenshotMobile: null,
     elements: null,
+    ...overrides,
+  }
+}
+
+function theme(overrides: Partial<GuidedTourTheme> = {}): GuidedTourTheme {
+  return {
+    accent: '#ff0000',
+    surface: '#111111',
+    text: '#eeeeee',
+    overlay: '#000000',
+    radius: 12,
+    hotspotSize: 30,
+    fontFamily: null,
+    logo: null,
     ...overrides,
   }
 }
@@ -466,6 +482,60 @@ describe('GuidedTour: labels', () => {
   test('unspecified labels fall back to the defaults', () => {
     const {container} = render(<GuidedTour tour={threeStepTour()} labels={{next: 'Fortsett'}} />)
     expect(container.querySelector('.gt-prev')?.textContent).toBe('Previous')
+  })
+})
+
+describe('GuidedTour: theme', () => {
+  test('theme colors land on the root as --gt-* inline custom properties', () => {
+    const {container} = render(<GuidedTour tour={tour({theme: theme()})} />)
+    const style = container.querySelector('.gt-tour')?.getAttribute('style')
+    expect(style).toContain('--gt-accent: #ff0000')
+    expect(style).toContain('--gt-surface: #111111')
+    expect(style).toContain('--gt-text: #eeeeee')
+    expect(style).toContain('--gt-overlay: #000000')
+    expect(style).toContain('--gt-radius: 12px')
+    expect(style).toContain('--gt-hotspot-size: 30px')
+  })
+
+  test('a null theme leaves no --gt-* inline overrides — the stylesheet defaults apply', () => {
+    const {container} = render(<GuidedTour tour={tour({theme: null})} />)
+    const style = container.querySelector('.gt-tour')?.getAttribute('style')
+    expect(style ?? '').not.toContain('--gt-accent')
+  })
+
+  test('the consumer style prop overrides a theme value for the same property', () => {
+    // `--gt-accent` isn't a member of React's `CSSProperties` type (it
+    // doesn't model arbitrary custom properties) — this narrow extension
+    // states the override honestly instead of an `as` cast, same pattern
+    // as `GuidedTour.tsx`'s own `ProgressStyle`/`TextOverlay.tsx`'s
+    // `OverlayStyle`.
+    const overrideStyle: CSSProperties & {'--gt-accent'?: string} = {'--gt-accent': 'purple'}
+    const {container} = render(
+      <GuidedTour tour={tour({theme: theme({accent: '#ff0000'})})} style={overrideStyle} />,
+    )
+    const style = container.querySelector('.gt-tour')?.getAttribute('style')
+    expect(style).toContain('--gt-accent: purple')
+    expect(style).not.toContain('#ff0000')
+  })
+
+  test('renders .gt-logo when the theme has a logo, omits it otherwise', () => {
+    const {container} = render(
+      <GuidedTour tour={tour({theme: theme({logo: image({url: 'https://cdn.test/logo.png'})})})} />,
+    )
+    const logo = container.querySelector('.gt-header > .gt-logo')
+    expect(logo).not.toBeNull()
+    expect(logo?.getAttribute('src')).toBe('https://cdn.test/logo.png')
+    expect(logo?.getAttribute('alt')).toBe('')
+  })
+
+  test('omits .gt-logo when the theme has no logo', () => {
+    const {container} = render(<GuidedTour tour={tour({theme: theme({logo: null})})} />)
+    expect(container.querySelector('.gt-logo')).toBeNull()
+  })
+
+  test('omits .gt-logo when there is no theme at all', () => {
+    const {container} = render(<GuidedTour tour={tour({theme: null})} />)
+    expect(container.querySelector('.gt-logo')).toBeNull()
   })
 })
 

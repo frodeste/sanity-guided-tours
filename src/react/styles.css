@@ -54,6 +54,12 @@
   font-weight: 600;
 }
 
+.gt-logo {
+  display: block;
+  height: 32px;
+  width: auto;
+}
+
 .gt-progress {
   height: 4px;
   border-radius: 999px;
