@@ -28,6 +28,26 @@ function resolvePlacement(tooltip: GuidedTourTooltip): 'top' | 'bottom' | 'left'
 }
 
 /**
+ * A `top`/`bottom`-placed panel is horizontally centered on its anchor
+ * (`styles.css`'s `.gt-tooltip--top`/`--bottom`: `left: 50%; transform:
+ * translate(-50%, …)`). Near the left or right edge of the screenshot,
+ * that centering pushes half the panel past the stage boundary. Returns
+ * the modifier class that swaps centering for edge-anchored positioning —
+ * `null` in the middle 70% of the width, where centering never overflows.
+ * The `<= 15` / `>= 85` boundary is the plan's own choice, not derived
+ * from panel width: it doesn't need to be exact, only to catch the points
+ * closest to either edge, where centering is guaranteed to overflow
+ * regardless of how wide the panel is.
+ */
+function resolveEdgeClass(
+  tooltip: GuidedTourTooltip,
+): 'gt-tooltip--edge-left' | 'gt-tooltip--edge-right' | null {
+  if (tooltip.x <= 15) return 'gt-tooltip--edge-left'
+  if (tooltip.x >= 85) return 'gt-tooltip--edge-right'
+  return null
+}
+
+/**
  * A positioned disclosure: a round `.gt-tooltip-trigger` button that
  * reveals a `.gt-tooltip` panel next to it (design spec, plan Task 6). The
  * panel is always in the DOM — toggled with the native `hidden` attribute
@@ -83,6 +103,7 @@ export function Tooltip({tooltip, isOpen, onOpen, onClose}: TooltipProps): React
   const {_key, x, y, width, trigger, content} = tooltip
   const panelId = `gt-tooltip-${_key}`
   const placement = resolvePlacement(tooltip)
+  const edgeClass = resolveEdgeClass(tooltip)
   const anchorRef = useRef<HTMLSpanElement>(null)
 
   function emitClicked(): void {
@@ -126,7 +147,20 @@ export function Tooltip({tooltip, isOpen, onOpen, onClose}: TooltipProps): React
   }
 
   const anchorStyle: CSSProperties = {left: `${x}%`, top: `${y}%`}
-  const panelStyle: CSSProperties = {width: `${width}px`, maxWidth: '90%'}
+  // `maxWidth` used to be `90%`, which — like `.gt-tooltip`'s own
+  // stylesheet `max-width: 90%` (now removed) — resolved against
+  // `.gt-tooltip-anchor`, the panel's actual CSS containing block (it's
+  // the nearest `position`-ed ancestor, `styles.css`). The anchor is
+  // point-sized (it only wraps the trigger button, ~`--gt-hotspot-size`
+  // wide), so 90% of it crushed the requested `width` down to min-content
+  // — one word per line. `min(width px, viewport minus margin)` is
+  // viewport-relative instead: it never shrinks the panel below its
+  // requested width unless the viewport itself is too narrow to hold it,
+  // and never depends on the anchor's incidental size at all.
+  const panelStyle: CSSProperties = {
+    width: `${width}px`,
+    maxWidth: `min(${width}px, calc(100vw - 2rem))`,
+  }
 
   const hoverEvents = {
     onPointerEnter: open,
@@ -159,7 +193,11 @@ export function Tooltip({tooltip, isOpen, onOpen, onClose}: TooltipProps): React
       {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
       <div
         id={panelId}
-        className={`gt-tooltip gt-tooltip--${placement}`}
+        className={
+          edgeClass
+            ? `gt-tooltip gt-tooltip--${placement} ${edgeClass}`
+            : `gt-tooltip gt-tooltip--${placement}`
+        }
         // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role
         role="group"
         style={panelStyle}

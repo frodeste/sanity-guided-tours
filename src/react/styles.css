@@ -202,9 +202,15 @@
 }
 
 .gt-tooltip {
+  /* No `max-width` here — `Tooltip.tsx`'s inline `style` sets a
+     viewport-relative one (`min(width px, calc(100vw - 2rem))`). A
+     percentage here would repeat the bug this file used to have: this
+     panel's CSS containing block is `.gt-tooltip-anchor` below, which is
+     point-sized (it only wraps the trigger button), so any `%` max-width
+     resolves against ~`--gt-hotspot-size`, not the stage — crushing the
+     panel to one word per line regardless of the requested `width`. */
   position: absolute;
   z-index: 1;
-  max-width: 90%;
   padding: 12px;
   background: var(--gt-surface);
   color: var(--gt-text);
@@ -235,6 +241,40 @@
   left: 100%;
   top: 50%;
   transform: translate(8px, -50%);
+}
+
+/* Edge containment (Tooltip.tsx's `resolveEdgeClass`): near the left or
+   right edge of the screenshot, `--top`/`--bottom`'s horizontal centering
+   (`left: 50%; transform: translateX(-50%)`) pushes roughly half the
+   panel past the stage boundary. These swap that centering for an
+   edge-anchored `left`/`right`, keeping each placement's own vertical
+   offset (`-8px`/`8px`) intact — `transform` is a shorthand, so it has to
+   be restated whole here rather than only overriding the X component. */
+.gt-tooltip--edge-left.gt-tooltip--top,
+.gt-tooltip--edge-left.gt-tooltip--bottom {
+  left: 0;
+}
+
+.gt-tooltip--edge-left.gt-tooltip--top {
+  transform: translate(0, -8px);
+}
+
+.gt-tooltip--edge-left.gt-tooltip--bottom {
+  transform: translate(0, 8px);
+}
+
+.gt-tooltip--edge-right.gt-tooltip--top,
+.gt-tooltip--edge-right.gt-tooltip--bottom {
+  left: auto;
+  right: 0;
+}
+
+.gt-tooltip--edge-right.gt-tooltip--top {
+  transform: translate(0, -8px);
+}
+
+.gt-tooltip--edge-right.gt-tooltip--bottom {
+  transform: translate(0, 8px);
 }
 
 /* Text overlay */
