@@ -43,6 +43,20 @@ export default async function HomePage() {
           swap <code>dynamic-365-sales</code> for whatever slug you seeded in
           the Studio; this route 404s until a matching document exists.
         </li>
+        <li>
+          <Link href="/pages/onboarding-that-actually-sticks">
+            Read an article with an inline tour
+          </Link>{' '}
+          — a <code>guidedTourEmbed</code> mid-paragraph, in an ordinary
+          Portable Text <code>body</code> field.
+        </li>
+        <li>
+          <Link href="/pages/see-it-in-action">
+            See a page section with a modal tour
+          </Link>{' '}
+          — the same embed object, <code>displayMode: &apos;modal&apos;</code>{' '}
+          instead of inline.
+        </li>
       </ul>
       <p>
         No content is seeded yet, and this repo&apos;s demo Sanity project

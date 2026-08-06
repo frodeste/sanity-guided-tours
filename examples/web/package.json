@@ -10,6 +10,7 @@
     "typecheck": "node ../../scripts/link-example-app.mjs && tsc --noEmit"
   },
   "dependencies": {
+    "@portabletext/react": "^7.0",
     "next": "^16",
     "next-sanity": "^11",
     "react": "^19",

@@ -35,7 +35,7 @@ interface PortableTextLinkMarkDef {
 interface PortableTextBlock {
   _key: string
   _type: 'block'
-  style: 'normal'
+  style: 'normal' | 'h1' | 'h2' | 'h3' | 'h4'
   children: PortableTextSpan[]
   markDefs?: PortableTextLinkMarkDef[]
 }
@@ -50,6 +50,26 @@ export function plainTextBlock(keyGen: KeyGen, text: string): PortableTextBlock[
       children: [{_key: keyGen(), _type: 'span', text}],
     },
   ]
+}
+
+/**
+ * A single block with an arbitrary heading/paragraph `style` — used by the
+ * example-page builders below (`buildArticlePageDocument`,
+ * `buildSectionPageDocument`), whose `body` field is a real editorial
+ * Portable Text array (headings + paragraphs), unlike `plainTextBlock`'s
+ * fixed `'normal'` used elsewhere for tooltip/overlay/outro content.
+ */
+export function styledTextBlock(
+  keyGen: KeyGen,
+  text: string,
+  style: PortableTextBlock['style'],
+): PortableTextBlock {
+  return {
+    _key: keyGen(),
+    _type: 'block',
+    style,
+    children: [{_key: keyGen(), _type: 'span', text}],
+  }
 }
 
 /**
@@ -761,5 +781,139 @@ export function buildMetaTourDocument(
     chapters,
     outro,
     settings,
+  }
+}
+
+// --- Example pages (examples/web/schemas/page.ts, M8 Task 1) ---------------
+//
+// Raw author-side shape of a `guidedTourEmbed` object as it's *stored* in a
+// page's `body` array — a `tour` reference, not the dereferenced
+// `GuidedTourEmbedValue` a query projection (`guidedTourEmbedProjection`)
+// returns. `examples/web`'s own `examplePage` Studio schema is what makes
+// these documents editable; this script writes them the same idempotent
+// `createOrReplace` way as the tours/theme above, into the same dataset.
+
+export interface PageEmbedDoc {
+  _key: string
+  _type: 'guidedTourEmbed'
+  tour: {_type: 'reference'; _ref: string}
+  displayMode?: 'inline' | 'modal'
+  buttonLabel?: string
+}
+
+/** A `guidedTourEmbed` body item referencing an already-seeded tour by id. */
+export function buildPageEmbed(
+  keyGen: KeyGen,
+  fields: Omit<PageEmbedDoc, '_key' | '_type'>,
+): PageEmbedDoc {
+  return {_key: keyGen(), _type: 'guidedTourEmbed', ...fields}
+}
+
+export type PageBodyBlock = PortableTextBlock | PageEmbedDoc
+
+export interface ExamplePageDocument {
+  _id: string
+  _type: 'examplePage'
+  title: string
+  slug: {_type: 'slug'; current: string}
+  body: PageBodyBlock[]
+}
+
+/** Deterministic document id/slug — same `createOrReplace` idempotency convention as the tours above. */
+export const ARTICLE_PAGE_ID = 'guided-tours-example-article-page'
+export const ARTICLE_PAGE_SLUG = 'onboarding-that-actually-sticks'
+
+/**
+ * Builds the article example page: a long-form Portable Text body (a
+ * heading plus 5+ paragraphs) with `sample-tour` embedded **inline**,
+ * mid-article — proving the exact README pattern of a `guidedTourEmbed`
+ * object living inside an ordinary `body` field alongside `block`s, not as
+ * its own dedicated field. The embed sits after the first three paragraphs
+ * and before the closing two, so it's provably mid-body rather than a
+ * leading or trailing element (see `test/seed/builders.test.ts`).
+ */
+export function buildArticlePageDocument(keyGen: KeyGen = createKeyGen()): ExamplePageDocument {
+  const body: PageBodyBlock[] = [
+    styledTextBlock(keyGen, 'Onboarding that actually sticks', 'h1'),
+    styledTextBlock(
+      keyGen,
+      'Most product tours get skipped after the first slide. The ones that stick share one trait: they let people do the thing, not just watch a description of it.',
+      'normal',
+    ),
+    styledTextBlock(keyGen, 'Show the product, not a deck', 'h2'),
+    styledTextBlock(
+      keyGen,
+      'A screenshot with a highlighted button and a short prompt teaches faster than a paragraph of prose ever will — the reader recognizes the real interface instead of translating a description into a mental model of it.',
+      'normal',
+    ),
+    styledTextBlock(
+      keyGen,
+      'That is the whole idea behind the tour embedded below: real captures of the product, walked through step by step, dropped straight into this article the same way an image would be.',
+      'normal',
+    ),
+    buildPageEmbed(keyGen, {
+      tour: {_type: 'reference', _ref: SAMPLE_TOUR_ID},
+      displayMode: 'inline',
+    }),
+    styledTextBlock(keyGen, 'Where it goes from here', 'h2'),
+    styledTextBlock(
+      keyGen,
+      'Once someone has clicked through the tour above, the rest of the article can build on it directly — referencing steps and screens they have already seen, instead of re-explaining the product from scratch.',
+      'normal',
+    ),
+    styledTextBlock(
+      keyGen,
+      'See the "See it in action" page for the same tour presented as a standalone section instead of woven into an article.',
+      'normal',
+    ),
+  ]
+
+  return {
+    _id: ARTICLE_PAGE_ID,
+    _type: 'examplePage',
+    title: 'Onboarding that actually sticks',
+    slug: {_type: 'slug', current: ARTICLE_PAGE_SLUG},
+    body,
+  }
+}
+
+/** Deterministic document id/slug — same `createOrReplace` idempotency convention as the tours above. */
+export const SECTION_PAGE_ID = 'guided-tours-example-section-page'
+export const SECTION_PAGE_SLUG = 'see-it-in-action'
+
+/**
+ * Builds the section example page: a hero heading, brief intro copy,
+ * `sample-tour` embedded in **modal** mode as its own section (a
+ * button-triggered tour rather than content woven into a paragraph — the
+ * page-builder-section half of the README's embedding pattern, using the
+ * same `body` array a Portable Text field would), and closing copy. The
+ * embed again sits strictly mid-body, between the intro and closing blocks.
+ */
+export function buildSectionPageDocument(keyGen: KeyGen = createKeyGen()): ExamplePageDocument {
+  const body: PageBodyBlock[] = [
+    styledTextBlock(keyGen, 'See it in action', 'h1'),
+    styledTextBlock(
+      keyGen,
+      'Rather than reading about the product, click through it yourself — the tour below is the exact same one used throughout this demo, walking through setup end to end.',
+      'normal',
+    ),
+    buildPageEmbed(keyGen, {
+      tour: {_type: 'reference', _ref: SAMPLE_TOUR_ID},
+      displayMode: 'modal',
+      buttonLabel: 'Watch the product tour',
+    }),
+    styledTextBlock(
+      keyGen,
+      'That is the modal variant of the same `guidedTourEmbed` object the article page embeds inline — one schema field, two ways to present it, picked per section by the editor.',
+      'normal',
+    ),
+  ]
+
+  return {
+    _id: SECTION_PAGE_ID,
+    _type: 'examplePage',
+    title: 'See it in action',
+    slug: {_type: 'slug', current: SECTION_PAGE_SLUG},
+    body,
   }
 }

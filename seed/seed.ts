@@ -23,9 +23,12 @@ import {dirname, join} from 'node:path'
 import {fileURLToPath} from 'node:url'
 
 import {
+  buildArticlePageDocument,
   buildMetaTourDocument,
   buildSampleThemeDocument,
   buildSampleTourDocument,
+  buildSectionPageDocument,
+  type ExamplePageDocument,
   type SampleTourDocument,
   type ThemeDoc,
 } from './builders'
@@ -128,7 +131,7 @@ async function uploadImage(env: SeedEnv, filePath: string, filename: string): Pr
  */
 async function createOrReplaceDocument(
   env: SeedEnv,
-  document: SampleTourDocument | ThemeDoc,
+  document: SampleTourDocument | ThemeDoc | ExamplePageDocument,
 ): Promise<void> {
   const url = `https://${env.projectId}.api.sanity.io/${API_VERSION}/data/mutate/${env.dataset}`
 
@@ -227,6 +230,27 @@ async function main(): Promise<void> {
   await createOrReplaceDocument(env, metaTour)
   console.error(
     `Seeded "${metaTour.title}" (_id: ${metaTour._id}, slug: ${metaTour.slug.current}) into ${env.projectId}/${env.dataset}.`,
+  )
+
+  // M8 Task 1: two `examplePage` documents demonstrating the
+  // `guidedTourEmbed` object in place — one inline mid-article, one as a
+  // modal-mode section — both referencing `sample-tour` above by id. The
+  // `examplePage` type itself is registered by `examples/web`'s own Studio
+  // schema (schemas/page.ts), not by this plugin, so these only render in
+  // that app's `/pages/[slug]` route (README's "Embedding tours in
+  // Portable Text" section) or the embedded Studio's document list — the
+  // mutate API accepts any `_type`, schema-registered or not.
+  console.error('Writing the example pages...')
+  const articlePage = buildArticlePageDocument()
+  await createOrReplaceDocument(env, articlePage)
+  console.error(
+    `Seeded "${articlePage.title}" (_id: ${articlePage._id}, slug: ${articlePage.slug.current}) into ${env.projectId}/${env.dataset}.`,
+  )
+
+  const sectionPage = buildSectionPageDocument()
+  await createOrReplaceDocument(env, sectionPage)
+  console.error(
+    `Seeded "${sectionPage.title}" (_id: ${sectionPage._id}, slug: ${sectionPage.slug.current}) into ${env.projectId}/${env.dataset}.`,
   )
 }
 

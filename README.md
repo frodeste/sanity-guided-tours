@@ -373,6 +373,14 @@ function Sections({sections}: {sections: Section[]}) {
 `GuidedTourEmbed` needs `'use client'` the same way `<GuidedTour>` does — see
 [Next.js usage](#nextjs-usage) above for the general server/client split.
 
+**See it live:** `examples/web`'s `examplePage` type
+(`examples/web/schemas/page.ts`) and `/pages/[slug]` route
+(`examples/web/app/pages/[slug]/page.tsx`) implement exactly the steps
+above — an inline embed mid-article at
+[`/pages/onboarding-that-actually-sticks`](https://sanity-guided-tours.vercel.app/pages/onboarding-that-actually-sticks)
+and a modal embed as a page section at
+[`/pages/see-it-in-action`](https://sanity-guided-tours.vercel.app/pages/see-it-in-action).
+
 ## Theming
 
 The `guidedTourTheme` document (registered when `theme: true`, the default)
@@ -657,6 +665,13 @@ Populate a dataset you control with two tours and a theme:
   the `Manrope` Google Font. Written before `sample-tour` so its reference
   always resolves. Not the dataset's default theme, so it never leaks onto
   `how-to-build-tours`.
+- Two `examplePage` documents (`onboarding-that-actually-sticks` and
+  `see-it-in-action`) embedding `sample-tour` inline and in a modal,
+  respectively — see [Embedding tours in Portable
+  Text](#embedding-tours-in-portable-text). The `examplePage` type itself is
+  registered by `examples/web`'s own Studio schema, not this plugin, so
+  these only render through that app's `/pages/[slug]` route or its
+  embedded Studio document list.
 
 The script is dependency-free (plain `fetch` against the Sanity assets and
 mutate APIs) and idempotent — re-running it updates the same documents in
