@@ -1,0 +1,6 @@
+# Enables the "Sponsor" button on the repository.
+# The github entry activates once the owner's GitHub Sponsors enrollment
+# (https://github.com/sponsors/accounts) is approved — until then GitHub
+# simply hides it. Add other platforms (ko_fi, buy_me_a_coffee, custom)
+# here if/when accounts exist for them.
+github: [frodeste]
