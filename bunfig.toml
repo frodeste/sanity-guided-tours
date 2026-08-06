@@ -1,2 +1,40 @@
 [test]
 preload = ["./test/setup/dom.ts", "./test/setup/reactNativeStub.ts"]
+coverage = true
+coverageReporter = ["text", "lcov"]
+coverageSkipTestFiles = true
+# `scripts/**`/`seed/**` are dev/build-time helpers (playwright capture
+# harness, one-off content seeder), not part of the shipped plugin, and
+# their thin exercise-by-happenstance coverage would otherwise skew the
+# repo-wide floor. `test/setup/matchMedia.ts` and `test/support/**` are
+# test-only harness code (a `matchMedia` stub, the react-native-stub +
+# renderNative test double) — the SAME rationale, they're infra for tests,
+# not code under test.
+coveragePathIgnorePatterns = ["scripts/**", "seed/**", "test/setup/matchMedia.ts", "test/support/**"]
+
+# M9 Task 1b (coverage lift + threshold ratchet): every file Task 1 flagged
+# as sub-93% (guidedTour.ts, PortableTextNative.tsx, native/context.ts,
+# CanvasInput.tsx, StepNative.tsx, Canvas.tsx, CanvasElement.tsx,
+# Filmstrip.tsx) is now >=91.67%/98.98% funcs/lines, most at 100/100 — see
+# task-1-report.md's "Task 1b" section for the full before->after table and
+# what each remaining gap is. Two more pre-existing sub-90% files outside
+# Task 1's original list (PreviewView.tsx 85.19% lines, react/context.ts
+# 87.50% lines) were lifted too, so the new floor reflects a real repo-wide
+# minimum, not just the 8 originally-named files.
+#
+# Repo-wide "All files" row after this task's new tests: 99.77%/99.77%
+# funcs/lines (`bun test --coverage`, same ignore patterns as before).
+#
+# STILL NOT an aggregate-only gate (Task 1's finding, reconfirmed): Bun
+# 1.3.14 enforces `coverageThreshold` PER FILE. Today's real per-file
+# minimums are `src/studio/CanvasInput.tsx` (91.67% funcs — one
+# `findChapter` null-branch, see task-1-report.md for why it's genuinely
+# unreachable via the real UI, left uncovered) and `src/studio/Inspector.tsx`
+# (95.73% lines — pre-existing, untouched by this task, not one of the
+# flagged files). Set ~1pt below each so this still catches a real
+# regression (a file dropping further, or a wholesale-untested new file
+# landing near 0%) without being permanently red on a single defensive
+# branch. Verified empirically the same way Task 1 did: `coverageThreshold`
+# at {lines: 0.96, functions: 0.92} (today's floor + 0.02) fails; at
+# {lines: 0.94, functions: 0.90} (this file's actual value) it passes.
+coverageThreshold = { lines = 0.94, functions = 0.90 }

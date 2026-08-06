@@ -768,6 +768,39 @@ describe('guidedTourDocument factory', () => {
     const tour = guidedTourDocument({theme: true, leadCapture: true, extraFields: []})
     expect(() => tour.preview?.prepare?.({})).not.toThrow()
   })
+
+  // `stepCountOf` (guidedTour.ts) reads a chapter's `steps` array length off
+  // an `unknown` value without an unsafe cast — these were previously
+  // untested (0% funcs), only ever exercised via `prepare({})`'s empty
+  // selection, which never reaches `stepCountOf` at all (no `chapters` key).
+  test('prepare computes the chapter/step counts and pluralizes the subtitle', () => {
+    const tour = guidedTourDocument({theme: true, leadCapture: true, extraFields: []})
+    const prepare = tour.preview?.prepare
+
+    // 1 chapter, 1 step: both singular.
+    expect(prepare?.({title: 'Onboarding', chapters: [{steps: [{}]}]})).toEqual(
+      expect.objectContaining({title: 'Onboarding', subtitle: '1 chapter, 1 step'}),
+    )
+
+    // 2 chapters (one with 2 steps, one with no `steps` key at all — counts
+    // as 0 via `stepCountOf`'s `!('steps' in chapter)` guard): both plural,
+    // and a missing title falls back to "Untitled tour".
+    expect(prepare?.({chapters: [{steps: [{}, {}]}, {}]})).toEqual(
+      expect.objectContaining({title: 'Untitled tour', subtitle: '2 chapters, 2 steps'}),
+    )
+
+    // A non-array `steps` value (malformed authoring state) also counts as
+    // 0 via `stepCountOf`'s `Array.isArray` guard.
+    expect(prepare?.({chapters: [{steps: 'not-an-array'}]})?.subtitle).toBe('1 chapter, 0 steps')
+  })
+
+  test('prepare treats non-object/null chapter entries as contributing zero steps', () => {
+    const tour = guidedTourDocument({theme: true, leadCapture: true, extraFields: []})
+    // `stepCountOf`'s `typeof chapter !== 'object' || chapter === null`
+    // guard, hit by a primitive (5) and `null` chapter entry respectively.
+    const result = tour.preview?.prepare?.({chapters: [null, 5, {steps: [{}]}]})
+    expect(result?.subtitle).toBe('3 chapters, 1 step')
+  })
 })
 
 describe('schemaTypes', () => {

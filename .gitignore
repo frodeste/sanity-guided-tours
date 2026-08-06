@@ -19,6 +19,10 @@ node_modules
 dist/
 assets/
 
+# jscpd duplication report (M9 Task 2) — CI-generated, appended to the job
+# summary, not committed
+.jscpd/
+
 # misc
 .DS_Store
 *.pem

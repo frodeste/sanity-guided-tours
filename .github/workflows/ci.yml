@@ -5,9 +5,27 @@ on:
   push:
     branches: [main]
 
+# M9 QA hardening (issues #134/#136/#138): the actual gate sequence
+# (lint/typecheck/build/test-with-coverage/attw/verify/examples) now lives
+# in the shared `gates.yml` reusable workflow so `release.yml` can call the
+# exact same checks before a publish rather than drifting from what PRs are
+# gated on — see `.superpowers/sdd/qa-research.md` §6. GitHub renders a
+# called-workflow's job as `<this job id> / <called job's name>`, so this
+# job's id (`gates`) is part of the resulting required-status-check context;
+# see `gates.yml`'s own comment for the exact string.
 jobs:
-  ci:
-    name: lint · typecheck · build · test · verify
+  gates:
+    uses: ./.github/workflows/gates.yml
+  # M9 QA hardening (issue #135): dead-code/circular-dependency/duplication
+  # checks. Parallel to `gates` (not `needs:`) — none of the three tools
+  # read `dist/`, so there's no build-order dependency, and running them
+  # concurrently keeps this job off the PR's critical path. Job id is
+  # `quality` deliberately (not e.g. `code-health`): the controller's
+  # required-status-checks ruleset update (qa-research.md §5) pins on this
+  # exact context once findings are triaged clean, so the id/name must stay
+  # `quality` verbatim — see `docs/superpowers/plans/2026-08-06-m9-qa-hardening.md`.
+  quality:
+    name: quality
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -15,38 +33,31 @@ jobs:
         with:
           bun-version: latest
       - run: bun install --frozen-lockfile
-      - run: bun run lint
-      - run: bun run typecheck
-      - run: bun run build
-      # Must run AFTER `bun run build` above, not before: three tests in
-      # test/react/useClient.test.ts read the real dist/react|index|queries
-      # output (the "use client" directive guard) and self-skip when dist/
-      # doesn't exist yet — with the old lint/typecheck/test/build order,
-      # those tests never actually ran in CI, only locally after a manual
-      # `bun run build`. Moving the build step first makes CI exercise the
-      # same guard a local `rm -rf dist && bun run build && bun test` does.
-      - run: bun test
-      - name: build example app
-        # env vars intentionally unset — this is the no-env build guard
-        # (examples/web must build without NEXT_PUBLIC_SANITY_* configured).
-        # Must run after `bun run build` above: the example app resolves
-        # sanity-plugin-guided-tours through dist/, not src/.
-        run: cd examples/web && bun run build
-      - name: typecheck native example app
-        # Same dist/-not-src/ ordering requirement as examples/web above.
-        run: cd examples/native && bun run typecheck
-      - name: export native example app
-        # M8 Task 4's plan text expected this to need network/EAS and to be
-        # skipped in favor of typecheck-only — measured locally instead:
-        # `expo export --platform ios --platform android` is a pure local
-        # Metro bundle of already-installed node_modules (~9s, no EAS
-        # login, no network call of its own), a real check `tsc --noEmit`
-        # alone can't give — every import in the module graph (including
-        # `sanity-plugin-guided-tours/native` + `/queries`'s dist output)
-        # actually resolves and bundles for both platforms, not just
-        # typechecks. `web` is deliberately excluded — this example has no
-        # `react-native-web`/`react-dom` dependency (out of scope for a
-        # native-only demo) and `expo export`'s default platform list
-        # includes web unless told otherwise.
-        run: cd examples/native && bunx expo export --platform ios --platform android
-      - run: bunx @sanity/plugin-kit verify-package
+      # Dead exports/files/dependencies — gating. `knip.jsonc` carries the
+      # entry points and targeted ignores (each with an inline comment for
+      # why); a clean run here means no NEW dead surface has crept in since
+      # this job's config was last triaged (qa-research.md §4).
+      - run: bunx knip --reporter compact
+      # Circular imports — gating, near-zero false-positive risk for a
+      # plugin package this size (qa-research.md §4).
+      - run: bunx madge --circular --extensions ts,tsx src
+      # Duplication — informational only (qa-research.md §4: "needs one
+      # real run to calibrate before it can safely block merges"; the M9
+      # Task 2 baseline is ~2.05% duplicated lines across `src/`, recorded
+      # in the task report, not enforced here). `.jscpd.json` writes a
+      # markdown report to `.jscpd/`; `|| true` is scoped to ONLY this
+      # step, matching the plan's Global Constraints — `knip`/`madge`
+      # above stay fully gating. The summary append runs unconditionally
+      # (not gated on jscpd's own exit code) so a report still shows up
+      # even if jscpd itself errors out for an unrelated reason.
+      - name: Duplication (jscpd, informational)
+        run: bunx jscpd || true
+      - name: Append duplication report to job summary
+        if: always()
+        run: |
+          if [ -f .jscpd/jscpd-report.md ]; then
+            cat .jscpd/jscpd-report.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo '## Duplication (`jscpd`)' >> "$GITHUB_STEP_SUMMARY"
+            echo 'jscpd produced no report.' >> "$GITHUB_STEP_SUMMARY"
+          fi

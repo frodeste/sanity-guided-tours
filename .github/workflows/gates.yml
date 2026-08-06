@@ -1,0 +1,104 @@
+# Shared release-gate sequence (M9 QA hardening, issues #134/#136/#138):
+# the full lint → typecheck → build → test → attw → verify → examples
+# pipeline, factored into one `workflow_call` reusable workflow so `ci.yml`
+# (every PR/push) and `release.yml` (manual publish dispatch) can never
+# drift apart — see `.superpowers/sdd/qa-research.md` §6.
+#
+# Step order intentionally matches `ci.yml`'s pre-M9 order through `build`,
+# then inserts the new coverage/attw checks before `verify-package` and the
+# example-app steps (per the M9 plan's Task 1 spec): install → lint →
+# typecheck → build → test --coverage → attw → verify-package → examples.
+name: Gates
+
+on:
+  workflow_call: {}
+
+jobs:
+  gates:
+    # This check-run's context name is `gates / lint · typecheck · build ·
+    # test · verify` when invoked via `workflow_call` from another workflow's
+    # job (GitHub renders `<caller job id> / <called job id or name>`) — see
+    # `ci.yml`'s `jobs.ci` (which calls this workflow with job id `gates`)
+    # for the exact resulting context required by the branch ruleset.
+    name: lint · typecheck · build · test · verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - run: bun run lint
+      - run: bun run typecheck
+      - run: bun run build
+      # Must run AFTER `bun run build` above, not before: three tests in
+      # test/react/useClient.test.ts read the real dist/react|index|queries
+      # output (the "use client" directive guard) and self-skip when dist/
+      # doesn't exist yet — with the old lint/typecheck/test/build order,
+      # those tests never actually ran in CI, only locally after a manual
+      # `bun run build`. Moving the build step first makes CI exercise the
+      # same guard a local `rm -rf dist && bun run build && bun test` does.
+      #
+      # `--coverage` enforces the `bunfig.toml` `[test]` coverageThreshold
+      # (lines/functions only — Bun 1.3 doesn't compute branches/statements,
+      # see qa-research.md §1) — `bun test` exits non-zero if either drops
+      # below the configured floor, on top of any actual test failure. The
+      # coverage table is captured (not re-run) and appended to the job
+      # summary below; `PIPESTATUS` (this step's shell is bash) recovers the
+      # real exit code from the `bun test` side of the `tee` pipe so a
+      # failure here isn't masked by `tee`'s own always-zero exit.
+      - name: Test with coverage
+        run: |
+          set +e
+          bun test --coverage 2>&1 | tee coverage-output.raw
+          status=${PIPESTATUS[0]}
+          set -e
+          {
+            echo '## Coverage (`bun test --coverage`)'
+            echo '```text'
+            tr '\r' '\n' < coverage-output.raw | sed -E 's/\x1b\[[0-9;]*m//g'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+      # Type-export soundness: catches missing .d.ts, export-map
+      # inconsistencies, and "masquerading as CJS/ESM" issues that
+      # `pkg-utils build --check`'s bundled publint doesn't (qa-research.md
+      # §3). `--profile esm-only` matches this package's actual shape (no
+      # `require` condition in `exports`) — without it, attw reports
+      # spurious CJS-resolution failures for a package that never claimed
+      # CJS support. `--exclude-entrypoints ./react/styles.css` is a
+      # targeted exclusion, not a blanket rule suppression: that entrypoint
+      # is a plain CSS asset (`"./react/styles.css": "./assets/react/styles.css"`
+      # in `package.json#exports`), not a JS/TS module — attw has no notion
+      # of a non-JS export and reports it as a 💀 "no-resolution" failure on
+      # every platform/resolution combination unconditionally; excluding
+      # just this one non-code entrypoint (verified locally: every real JS
+      # entrypoint is 🟢 clean under this profile) avoids masking a genuine
+      # `no-resolution` failure on an actual module with a blanket
+      # `--ignore-rules no-resolution`.
+      - name: Type-export soundness (attw)
+        run: bunx --bun @arethetypeswrong/cli --pack . --profile esm-only --exclude-entrypoints ./react/styles.css
+      - run: bunx @sanity/plugin-kit verify-package
+      - name: build example app
+        # env vars intentionally unset — this is the no-env build guard
+        # (examples/web must build without NEXT_PUBLIC_SANITY_* configured).
+        # Must run after `bun run build` above: the example app resolves
+        # sanity-plugin-guided-tours through dist/, not src/.
+        run: cd examples/web && bun run build
+      - name: typecheck native example app
+        # Same dist/-not-src/ ordering requirement as examples/web above.
+        run: cd examples/native && bun run typecheck
+      - name: export native example app
+        # M8 Task 4's plan text expected this to need network/EAS and to be
+        # skipped in favor of typecheck-only — measured locally instead:
+        # `expo export --platform ios --platform android` is a pure local
+        # Metro bundle of already-installed node_modules (~9s, no EAS
+        # login, no network call of its own), a real check `tsc --noEmit`
+        # alone can't give — every import in the module graph (including
+        # `sanity-plugin-guided-tours/native` + `/queries`'s dist output)
+        # actually resolves and bundles for both platforms, not just
+        # typechecks. `web` is deliberately excluded — this example has no
+        # `react-native-web`/`react-dom` dependency (out of scope for a
+        # native-only demo) and `expo export`'s default platform list
+        # includes web unless told otherwise.
+        run: cd examples/native && bunx expo export --platform ios --platform android
