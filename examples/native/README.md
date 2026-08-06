@@ -28,16 +28,16 @@ Scan the QR code with [Expo Go](https://expo.dev/go), or press `i`/`a` for a
 simulator/emulator. There's no `.env` to configure — the demo project is
 public-read, no token required (see `App.tsx`'s own comment).
 
-## Typecheck only
+## What CI runs
 
-`bun run typecheck` (used by CI) re-links `node_modules/sanity-plugin-guided-tours`
-back to the repo root the same way `examples/web`'s scripts do
-(`../../scripts/link-example-app.mjs`, generalized in M8 Task 4 to work for
-either example directory) and runs `tsc --noEmit` — no Metro bundling, no
-device/simulator, so this is exactly what CI reproduces. Running the app for
-real (`expo start`, `expo export`) isn't exercised by CI; it needs a
-device/simulator or an Expo/EAS network round-trip this repo's CI doesn't
-have.
+CI runs two checks against this example. `bun run typecheck` re-links
+`node_modules/sanity-plugin-guided-tours` back to the repo root the same way
+`examples/web`'s scripts do (`../../scripts/link-example-app.mjs`, generalized
+in M8 Task 4 to work for either example directory) and runs `tsc --noEmit`.
+Then `expo export --platform ios --platform android` produces a full Metro
+bundle for both platforms — a pure local build, no Expo/EAS account or network
+round-trip. Only running the app for real (`expo start` on a device or
+simulator) is left to a human.
 
 ## v1 scope
 
