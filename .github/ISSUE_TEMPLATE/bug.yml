@@ -1,8 +1,16 @@
 name: Bug report
-description: Something in the plugin or viewer doesn't work as documented
+description: Something in the plugin, a viewer, or the tooling doesn't work as documented
 title: "bug: "
 labels: [bug]
 body:
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Before reporting
+      options:
+        - label: I searched existing issues and this hasn't been reported yet
+          required: true
+        - label: I can reproduce it with the latest published version
   - type: dropdown
     id: surface
     attributes:
@@ -10,22 +18,27 @@ body:
       options:
         - Studio plugin / canvas editor
         - React viewer (/react)
+        - React Native viewer (/native)
+        - Embeds (portable text / page sections)
+        - Theming (tokens, dark mode, fonts)
         - Queries / types (/queries)
-        - Example app
-        - Build / packaging
+        - Example apps (web or native)
+        - Build / packaging / CI
+        - Other
     validations:
       required: true
   - type: textarea
     id: what
     attributes:
       label: What happened?
-      description: What did you expect, and what happened instead?
+      description: What did you expect, and what happened instead? Screenshots or a screen recording help a lot.
     validations:
       required: true
   - type: textarea
     id: repro
     attributes:
       label: Reproduction steps
+      description: Smallest sequence that triggers it. A link to a minimal repo or the example app config is gold.
       placeholder: |
         1. …
         2. …
@@ -35,6 +48,18 @@ body:
     id: versions
     attributes:
       label: Versions
-      placeholder: "plugin x.y.z, sanity x.y.z, next x.y.z, react x.y.z"
+      placeholder: "plugin x.y.z, sanity x.y.z, next/expo x.y.z, react x.y.z"
     validations:
       required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Where it happens — browser + OS, or device/simulator + RN platform for native issues.
+      placeholder: "Chrome 132 / macOS 15 — or iPhone 16 simulator, iOS 18, Expo Go"
+  - type: textarea
+    id: logs
+    attributes:
+      label: Console output / logs
+      description: Any errors or warnings from the browser console, Metro, or the terminal. Will be auto-formatted as code.
+      render: shell

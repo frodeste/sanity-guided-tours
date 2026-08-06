@@ -1,5 +1,8 @@
-blank_issues_enabled: true
+blank_issues_enabled: false
 contact_links:
+  - name: Question / support
+    url: https://github.com/frodeste/sanity-guided-tours/discussions
+    about: Ask questions and discuss ideas that aren't a concrete bug, feature, or change yet.
   - name: Project board
     url: https://github.com/users/frodeste/projects/1
     about: Roadmap, milestones and task status for the plugin.

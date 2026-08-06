@@ -1,0 +1,35 @@
+name: Change request
+description: Existing behavior should work differently (API, editor UX, defaults)
+title: "change: "
+labels: ["change request"]
+body:
+  - type: textarea
+    id: current
+    attributes:
+      label: Current behavior
+      description: What does it do today? Link docs/code if you can.
+    validations:
+      required: true
+  - type: textarea
+    id: desired
+    attributes:
+      label: Desired behavior
+      description: What should it do instead, and why is that better?
+    validations:
+      required: true
+  - type: dropdown
+    id: breaking
+    attributes:
+      label: Is this a breaking change?
+      description: Would existing tours, schemas, or consumer code need migration?
+      options:
+        - "No — additive or behavioral polish"
+        - "Yes — existing users would need to migrate"
+        - "Not sure"
+    validations:
+      required: true
+  - type: textarea
+    id: migration
+    attributes:
+      label: Migration / compatibility notes
+      description: If breaking — how could existing users move over? (Leave empty if not.)
