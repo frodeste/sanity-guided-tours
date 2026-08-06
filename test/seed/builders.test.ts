@@ -1,16 +1,23 @@
 import {describe, expect, test} from 'bun:test'
 
 import {
+  ARTICLE_PAGE_ID,
+  ARTICLE_PAGE_SLUG,
+  buildArticlePageDocument,
   buildMetaTourDocument,
   buildSampleThemeDocument,
   buildSampleTourDocument,
+  buildSectionPageDocument,
   createKeyGen,
   META_TOUR_ID,
   META_TOUR_SLUG,
   SAMPLE_THEME_ID,
   SAMPLE_TOUR_ID,
   SAMPLE_TOUR_SLUG,
+  SECTION_PAGE_ID,
+  SECTION_PAGE_SLUG,
   type ElementDoc,
+  type PageBodyBlock,
 } from '../../seed/builders'
 
 const ASSET_IDS = {
@@ -347,5 +354,102 @@ describe('buildMetaTourDocument', () => {
     const doc = buildMetaTourDocument(META_ASSET_IDS, createKeyGen())
     expect(doc.description).toContain('real capture')
     expect(doc.description).toContain('fixture data')
+  })
+})
+
+/** Index of the sole `guidedTourEmbed` item in a page's body, asserting there is exactly one. */
+function embedIndex(body: PageBodyBlock[]): number {
+  const embedIndices = body.reduce<number[]>((indices, block, index) => {
+    if (block._type === 'guidedTourEmbed') indices.push(index)
+    return indices
+  }, [])
+  expect(embedIndices).toHaveLength(1)
+  return embedIndices[0]
+}
+
+describe('buildArticlePageDocument', () => {
+  test('is deterministic given a fresh keyGen', () => {
+    const first = buildArticlePageDocument(createKeyGen())
+    const second = buildArticlePageDocument(createKeyGen())
+    expect(first).toEqual(second)
+  })
+
+  test('uses a deterministic, stable document id, type and matching slug', () => {
+    const doc = buildArticlePageDocument(createKeyGen())
+    expect(doc._id).toBe(ARTICLE_PAGE_ID)
+    expect(doc._type).toBe('examplePage')
+    expect(doc.slug).toEqual({_type: 'slug', current: ARTICLE_PAGE_SLUG})
+  })
+
+  test('has a title and at least 5 paragraph/heading blocks plus the embed', () => {
+    const doc = buildArticlePageDocument(createKeyGen())
+    expect(doc.title.length).toBeGreaterThan(0)
+    const textBlocks = doc.body.filter((block) => block._type === 'block')
+    expect(textBlocks.length).toBeGreaterThanOrEqual(5)
+  })
+
+  test('embeds the sample tour exactly once, inline, strictly mid-body (not first or last)', () => {
+    const doc = buildArticlePageDocument(createKeyGen())
+    const index = embedIndex(doc.body)
+    expect(index).toBeGreaterThan(0)
+    expect(index).toBeLessThan(doc.body.length - 1)
+
+    const embed = doc.body[index]
+    if (embed?._type !== 'guidedTourEmbed') throw new Error('expected a guidedTourEmbed block')
+    expect(embed.tour).toEqual({_type: 'reference', _ref: SAMPLE_TOUR_ID})
+    expect(embed.displayMode).toBe('inline')
+  })
+
+  test('every body item carries a _key, and every key is unique', () => {
+    const doc = buildArticlePageDocument(createKeyGen())
+    const keys = doc.body.map((block) => block._key)
+    expect(keys.every((key) => typeof key === 'string' && key.length > 0)).toBe(true)
+    expect(new Set(keys).size).toBe(keys.length)
+  })
+
+  test('has a distinct id/slug from the section page', () => {
+    expect(ARTICLE_PAGE_ID).not.toBe(SECTION_PAGE_ID)
+    expect(ARTICLE_PAGE_SLUG).not.toBe(SECTION_PAGE_SLUG)
+  })
+})
+
+describe('buildSectionPageDocument', () => {
+  test('is deterministic given a fresh keyGen', () => {
+    const first = buildSectionPageDocument(createKeyGen())
+    const second = buildSectionPageDocument(createKeyGen())
+    expect(first).toEqual(second)
+  })
+
+  test('uses a deterministic, stable document id, type and matching slug', () => {
+    const doc = buildSectionPageDocument(createKeyGen())
+    expect(doc._id).toBe(SECTION_PAGE_ID)
+    expect(doc._type).toBe('examplePage')
+    expect(doc.slug).toEqual({_type: 'slug', current: SECTION_PAGE_SLUG})
+  })
+
+  test('has a hero heading and intro/closing copy around the embed', () => {
+    const doc = buildSectionPageDocument(createKeyGen())
+    const textBlocks = doc.body.filter((block) => block._type === 'block')
+    expect(textBlocks.length).toBeGreaterThanOrEqual(3)
+  })
+
+  test('embeds the sample tour exactly once, in modal mode with a button label, strictly mid-body', () => {
+    const doc = buildSectionPageDocument(createKeyGen())
+    const index = embedIndex(doc.body)
+    expect(index).toBeGreaterThan(0)
+    expect(index).toBeLessThan(doc.body.length - 1)
+
+    const embed = doc.body[index]
+    if (embed?._type !== 'guidedTourEmbed') throw new Error('expected a guidedTourEmbed block')
+    expect(embed.tour).toEqual({_type: 'reference', _ref: SAMPLE_TOUR_ID})
+    expect(embed.displayMode).toBe('modal')
+    expect(embed.buttonLabel?.length).toBeGreaterThan(0)
+  })
+
+  test('every body item carries a _key, and every key is unique', () => {
+    const doc = buildSectionPageDocument(createKeyGen())
+    const keys = doc.body.map((block) => block._key)
+    expect(keys.every((key) => typeof key === 'string' && key.length > 0)).toBe(true)
+    expect(new Set(keys).size).toBe(keys.length)
   })
 })

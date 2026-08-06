@@ -2,8 +2,13 @@
 
 The plugin's dev harness and the live Vercel demo — a Next 16 App Router app
 that embeds a Sanity Studio at `/studio` (loaded from the workspace, not
-npm) and renders tours at `/tours/[slug]`. See the root
-[README](../../README.md) for the plugin's own API docs.
+npm), renders tours at `/tours/[slug]`, and renders `examplePage` documents
+(`schemas/page.ts`, this app's own document type) at `/pages/[slug]` — long-
+form pages with a `guidedTourEmbed` object embedded in their Portable Text
+`body`, one inline and one as a modal-triggering section. See the root
+[README](../../README.md) for the plugin's own API docs, including
+["Embedding tours in Portable Text"](../../README.md#embedding-tours-in-portable-text),
+which this app's `/pages/[slug]` route implements.
 
 ## Run locally
 
