@@ -105,6 +105,40 @@ describe('GuidedTourNative: navigation', () => {
     actNative(() => findByLabel(renderer, 'Previous')?.props.onPress())
     expect(JSON.stringify(renderer.toJSON())).toContain('2 / 2')
   })
+
+  // Regression (M4, mirrored from web's test/react/outro.test.tsx "Outro:
+  // controlled step reconciliation" suite): `showOutro` used to be
+  // reconciled only by the component's own transitions (`goTo`) — a
+  // controlled consumer changing `step` EXTERNALLY (a route change, a
+  // "restart" action) left the outro rendered on top of a counter that had
+  // already moved on to the new step. `GuidedTourNative.tsx`'s render-time
+  // controlled-sync block (mirrors web's `GuidedTour.tsx`) clears
+  // `showOutro` whenever it detects `step` actually changed, independent of
+  // whether `onStepChange` was ever called to leave the outro itself.
+  test('an external step prop change dismisses the outro, even though onStepChange was never called to leave it', () => {
+    const withOutro = tour({
+      chapters: [chapter({_key: 'ch-1', steps: [step({_key: 's1'}), step({_key: 's2'})]})],
+      outro: {heading: 'Done!', body: null, ctas: null},
+    })
+    const renderer = renderNative(<GuidedTour tour={withOutro} step={1} onStepChange={() => {}} />)
+    expect(JSON.stringify(renderer.toJSON())).toContain('2 / 2')
+
+    // Completes the tour and shows the outro; the controlled `step` (1) is
+    // never touched by this — `onStepChange` isn't called on the
+    // last-step Next once `showOutro` takes over.
+    actNative(() => findByLabel(renderer, 'Next')?.props.onPress())
+    expect(JSON.stringify(renderer.toJSON())).toContain('Done!')
+
+    // The consumer drives `step` back to 0 itself — entirely independent of
+    // the component's own Prev/goTo path (which never fires here).
+    actNative(() =>
+      renderer.update(<GuidedTour tour={withOutro} step={0} onStepChange={() => {}} />),
+    )
+
+    const json = JSON.stringify(renderer.toJSON())
+    expect(json).not.toContain('Done!')
+    expect(json).toContain('1 / 2')
+  })
 })
 
 describe('GuidedTourNative: event sequence parity with web', () => {
