@@ -213,6 +213,29 @@ describe('buildSampleThemeDocument', () => {
     expect(doc.dark?.overlay).toBeUndefined()
   })
 
+  test('frame is a simple, brand-pink border rounded on the top corners only, deliberately leaving borderRadius unset (M10)', () => {
+    const doc = buildSampleThemeDocument()
+    expect(doc.frame?.style).toBe('simple')
+    expect(doc.frame?.borderWidth).toBe(2)
+    expect(doc.frame?.borderColor).toBe('#db2777')
+    expect(doc.frame?.borderColor).toBe(doc.accent) // matches the theme's own accent
+    expect(doc.frame?.radiusTopLeft).toBe(16)
+    expect(doc.frame?.radiusTopRight).toBe(16)
+    expect(doc.frame?.radiusBottomRight).toBe(0)
+    expect(doc.frame?.radiusBottomLeft).toBe(0)
+    expect(doc.frame?.borderRadius).toBeUndefined()
+  })
+
+  test('elements sets only bubble/button radius, leaving every color unset so they fall back to accent/surface/text (M10)', () => {
+    const doc = buildSampleThemeDocument()
+    expect(doc.elements?.bubble?.radius).toBe(4)
+    expect(doc.elements?.bubble?.background).toBeUndefined()
+    expect(doc.elements?.bubble?.textColor).toBeUndefined()
+    expect(doc.elements?.button?.radius).toBe(999)
+    expect(doc.elements?.button?.background).toBeUndefined()
+    expect(doc.elements?.button?.textColor).toBeUndefined()
+  })
+
   test('sets a Google Font and a radius distinct from the schema default', () => {
     const doc = buildSampleThemeDocument()
     expect(doc.googleFont).toBe('Manrope')

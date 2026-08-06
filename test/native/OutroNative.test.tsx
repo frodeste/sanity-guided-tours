@@ -118,4 +118,25 @@ describe('OutroNative', () => {
     const renderer = renderNative(withContext(context, <OutroNative outro={outro({ctas: null})} />))
     expect(renderer.root.findAllByType(Pressable).length).toBe(0)
   })
+
+  test('a primary CTA label uses styles.ctaTextPrimary, a secondary one uses styles.ctaTextSecondary (M10)', () => {
+    const context = buildContext({}, () => {})
+    const renderer = renderNative(
+      withContext(
+        context,
+        <OutroNative
+          outro={outro({
+            ctas: [
+              {_key: 'c1', label: 'First', href: '#first', style: 'primary'},
+              {_key: 'c2', label: 'Second', href: '#second', style: 'secondary'},
+            ],
+          })}
+        />,
+      ),
+    )
+
+    const [primaryText, secondaryText] = renderer.root.findAllByType(Text)
+    expect(primaryText?.props.style).toBe(context.styles.ctaTextPrimary)
+    expect(secondaryText?.props.style).toBe(context.styles.ctaTextSecondary)
+  })
 })

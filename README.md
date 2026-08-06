@@ -436,6 +436,69 @@ participating in it. To keep an override scheme-aware, override the pair
 instead:
 `style={{'--gt-light-accent': '#ff6b00', '--gt-dark-accent': '#ffb37a'}}`.
 
+### Window chrome (`frame`)
+
+The theme's `frame` object picks the window chrome rendered around the tour
+stage — a title bar, a plain border, or nothing — via `frame.style`:
+
+| Style | Renders | Notes |
+|---|---|---|
+| `mac` (default) | A title bar with three traffic-light dots and the tour title, centered | The dots are fixed macOS colors (`#ff5f57`/`#febc2e`/`#28c840`), not theme colors — they're meant to read as "a mac window," not themed UI |
+| `windows` | A title bar with the title left-aligned and three caption glyphs (`−`/`□`/`×`) on the right | |
+| `simple` | A configurable border only, no title bar | Width (`borderWidth`, 0–12px, default `1`), color (`borderColor`, hex or `var(--token)`, default `#e2e8f0`) and radius (`borderRadius`, 0–48px, default `12`) |
+| `none` | Nothing — the stage renders with no chrome at all | |
+
+Every chrome decoration (dots, glyphs) is `aria-hidden` and inert — never a
+focusable fake control, so it never trips `axe-core`'s interactive-element
+rules. A theme with no `frame` object at all resolves to `mac` with the
+defaults above (`FRAME_DEFAULTS`, `src/queries/defaults.ts`) — the same
+per-field fallback posture `dark` already has.
+
+`simple`'s border radius can be overridden per corner —
+`radiusTopLeft`/`radiusTopRight`/`radiusBottomRight`/`radiusBottomLeft`
+(0–48px, independently optional) — composing into a CSS four-value
+`border-radius` shorthand (`--gt-frame-radius`) with each unset corner
+falling back to `borderRadius` individually, so overriding one corner never
+squares off the other three. The bundled sample theme ("Acme brand," see
+[Seeding your own dataset](#seeding-your-own-dataset)) showcases this: a
+2px brand-pink `simple` border rounded on the top two corners only, square
+on the bottom two.
+
+`frame.borderColor` follows the paired `--gt-light-frame-border`/
+`--gt-dark-frame-border` custom properties, same architecture as
+`accent`/`surface`/`text`/`overlay` above (`dark.frameBorder` is the
+independent dark override) — `frame.style`/`borderWidth`/`borderRadius`
+are scheme-independent, one value each.
+
+### Element design (buttons & tooltip bubbles)
+
+The theme's `elements` object styles two surfaces independently — `button`
+(the CTA/Next/Prev/lead-submit/embed-start pill buttons — NOT the round
+hotspot/tooltip-trigger markers, a distinct visual language left alone) and
+`bubble` (tooltip panels) — each with `background`, `textColor` (hex or
+`var(--token)`) and `radius` (0–32px). Every field is independently
+optional and has no schema default: an unset `background`/`textColor`
+falls back to the theme's own resolved `accent`/`surface` (button) or
+`surface`/`text` (bubble) — "whichever color is actually active," not a
+second, independently-authored literal — and an unset `radius` falls back
+to a pill (`calc(var(--gt-radius) * 2)`, which clamps to a true pill at
+`--gt-radius`'s own default since CSS `border-radius` can't exceed half a
+box's height) for buttons, or the plain theme `radius` for bubbles.
+Outline-style secondary buttons (the outro's secondary CTA) pick up only
+the shared radius, not the fill colors — filled elevation is reserved for
+primary/contained buttons.
+
+Like `frame`, every `elements` color is paired
+(`--gt-light-button-bg`/`--gt-dark-button-bg`, and so on for
+`button-text`/`bubble-bg`/`bubble-text`) and emitted **only when authored**
+— `dark.buttonBackground`/`buttonText`/`bubbleBackground`/`bubbleText` are
+the independent dark overrides.
+
+Native's `frame`/`elements` support is a subset of the above — see
+[React Native / Expo](#react-native--expo) below — and design spec
+[§17](docs/superpowers/specs/2026-08-04-guided-tours-plugin-design.md#17-frames--element-design--theming-v3-m10-added-2026-08-06)
+for the full rationale behind every default and fallback chain on this page.
+
 ### Binding to your own design tokens
 
 `accent`/`surface`/`text`/`overlay` accept either a 6-digit hex color or a
@@ -574,7 +637,8 @@ exactly the latter against the plugin's public demo project.
 
 Steps, hotspots, tooltips, text overlays, progress, chapter jump, the outro,
 personalization and full event parity are all implemented — theming too,
-with one exception below. What's different from `/react`:
+with a couple of exceptions below (`var(--token)` colors, window chrome).
+What's different from `/react`:
 
 | Web feature | Native (v1) |
 |---|---|
@@ -584,6 +648,8 @@ with one exception below. What's different from `/react`:
 | Sibling preload | ±1 step only (`Image.prefetch`), not every step — RN's image cache behaves differently than a browser's. |
 | `googleFont` auto-loading | Not fetched — there's no `document.head` to append a stylesheet `<link>` to on native. Load fonts yourself (e.g. [`expo-font`](https://docs.expo.dev/versions/latest/sdk/font/)), then set the theme's `fontFamily` to the family you loaded. |
 | `accent`/`surface`/`text`/`overlay` as `var(--token)` | Falls back to the scheme's built-in default, with a `console.warn` in development — CSS custom properties don't exist in React Native, so a theme meant to [bind to a web site's own design tokens](#binding-to-your-own-design-tokens) has nothing to resolve against here. Set a literal hex color on any theme a native app also renders. |
+| Window chrome (`frame`) | `mac`/`windows` render **no chrome at all** — a title bar with traffic-light dots or caption glyphs is a web-only concept, no RN component exists for it. `simple` still applies: a plain border (`borderWidth`/`borderColor`/`borderRadius`) around the step's screenshot stage. Per-corner radius overrides (`radiusTopLeft` etc.) are web-only — native uses the uniform `borderRadius` only. `frame.borderColor` as `var(--token)` degrades the same way `accent` etc. do, above. |
+| Element design (`elements`) | Fully supported — `elements.button`/`.bubble` style the prev/next/CTA/chip buttons and tooltip bubbles the same way they do on web, with the same accent/surface/text fallback chain. `radius` has no RN `calc()` equivalent, so an unset button radius falls back to a literal full-pill constant (`999`) rather than a formula — same resulting look as web's default, different mechanism. |
 | Keyboard navigation | N/A — RN has no keyboard-focus-driven arrow/Home/End equivalent on a touch-primary platform. |
 
 A hotspot's `link` action keeps the same accessibility carve-out the web

@@ -23,7 +23,7 @@
  * `Hotspot`/`Tooltip`/`TextOverlay`/`PortableText`.
  */
 export {resolveNativeTheme} from './nativeTheme'
-export type {NativeTheme} from './nativeTheme'
+export type {NativeTheme, NativeThemeFrame} from './nativeTheme'
 export {GuidedTour} from './GuidedTourNative'
 export type {GuidedTourNativeProps, NativeColorScheme} from './GuidedTourNative'
 export {GuidedTourModal} from './GuidedTourModalNative'
