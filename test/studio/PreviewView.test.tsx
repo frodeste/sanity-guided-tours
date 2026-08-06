@@ -14,6 +14,7 @@ import {LayerProvider, ThemeProvider} from '@sanity/ui'
 import {buildTheme} from '@sanity/ui/theme'
 import {cleanup, render, screen} from '@testing-library/react'
 import type {ReactNode} from 'react'
+import {WorkspaceContext} from 'sanity/_singletons'
 
 import {GuidedTourPreviewView} from '../../src/studio/PreviewView'
 
@@ -102,5 +103,85 @@ describe('GuidedTourPreviewView: no WorkspaceProvider ancestor', () => {
     )
 
     expect(screen.getByTestId('preview-no-context')).toBeTruthy()
+  })
+})
+
+// `useProjectDataset()` (this component's only Studio-context read) only
+// ever touches `workspace.projectId`/`workspace.dataset` (see
+// `useProjectDataset.ts`'s own implementation) — a minimal `{projectId,
+// dataset}` stand-in through `sanity`'s own public `WorkspaceContext`
+// singleton (`sanity/_singletons`) resolves a real, non-null value without
+// constructing a full `Workspace` (the real interface's ~20 other fields
+// are genuine "UI scaffolding" this suite avoids, same rationale
+// `useUploader.test.tsx`'s own doc comment gives for `SourceContext`).
+function renderWithWorkspace(
+  ui: ReactNode,
+  workspace: {projectId: string; dataset: string} = {projectId: 'proj123', dataset: 'production'},
+) {
+  // `any`, not a cast off the real (much larger) `Workspace` type — this
+  // repo bans `as`, and oxlint's `typescript/no-unsafe-type-assertion`
+  // would reject a narrowing cast here outright regardless.
+  const fakeWorkspace: any = workspace
+  return render(
+    <ThemeProvider theme={theme}>
+      <LayerProvider>
+        <WorkspaceContext.Provider value={fakeWorkspace}>{ui}</WorkspaceContext.Provider>
+      </LayerProvider>
+    </ThemeProvider>,
+  )
+}
+
+describe('GuidedTourPreviewView: inside a real WorkspaceProvider', () => {
+  test('a step with a resolvable screenshot renders no notice at all', () => {
+    renderWithWorkspace(<GuidedTourPreviewView {...baseProps(fixtureDoc())} />)
+
+    expect(screen.queryByTestId('preview-no-context')).toBeNull()
+    expect(screen.queryByTestId('preview-dropped-steps')).toBeNull()
+    // The resolved tour actually rendered (not dropped) — `GuidedTour`'s
+    // own stage, not its `.gt-empty` branch.
+    expect(document.querySelector('.gt-empty')).toBeNull()
+  })
+
+  test('exactly one step without a resolvable screenshot shows the singular "isn\'t shown" notice', () => {
+    const doc = fixtureDoc({
+      chapters: [
+        {
+          _type: 'guidedTourChapter',
+          _key: 'c1',
+          title: 'Chapter one',
+          steps: [
+            {_type: 'guidedTourStep', _key: 's1', screenshot: image('image-aaa-800x600-png'), elements: []},
+            {_type: 'guidedTourStep', _key: 's2', screenshot: null, elements: []},
+          ],
+        },
+      ],
+    })
+    renderWithWorkspace(<GuidedTourPreviewView {...baseProps(doc)} />)
+
+    expect(screen.queryByTestId('preview-no-context')).toBeNull()
+    const notice = screen.getByTestId('preview-dropped-steps')
+    expect(notice.textContent).toContain('1 step')
+    expect(notice.textContent).toContain("isn't shown")
+  })
+
+  test('more than one step without a resolvable screenshot pluralizes to "steps ... aren\'t shown"', () => {
+    const doc = fixtureDoc({
+      chapters: [
+        {
+          _type: 'guidedTourChapter',
+          _key: 'c1',
+          title: 'Chapter one',
+          steps: [
+            {_type: 'guidedTourStep', _key: 's1', screenshot: null, elements: []},
+            {_type: 'guidedTourStep', _key: 's2', screenshot: null, elements: []},
+          ],
+        },
+      ],
+    })
+    renderWithWorkspace(<GuidedTourPreviewView {...baseProps(doc)} />)
+
+    const notice = screen.getByTestId('preview-dropped-steps')
+    expect(notice.textContent).toContain('2 steps')
+    expect(notice.textContent).toContain("aren't shown")
   })
 })

@@ -1,4 +1,4 @@
-import {afterEach, describe, expect, mock, test} from 'bun:test'
+import {afterEach, describe, expect, mock, spyOn, test} from 'bun:test'
 
 // Direct render tests for `Filmstrip` (as opposed to `smoke.test.tsx`, which
 // only ever exercises it through `CanvasInput`). Like `Canvas.test.tsx`,
@@ -189,6 +189,24 @@ describe('Filmstrip: grouping and rendering', () => {
     expect(onSelectStep).toHaveBeenCalledWith('c1', 's2')
   })
 
+  // `StepRow`'s own `role="button"` can't be a real `<button>` (it nests a
+  // `MenuButton`, itself a real `<button>` — invalid HTML nesting), so
+  // `handleRowKeyDown` reimplements Enter/Space activation by hand.
+  test('Enter or Space on a step row calls onSelectStep, same as a click; any other key does nothing', () => {
+    const onSelectStep = mock((_chapterKey: string, _stepKey: string) => {})
+    renderWithTheme(<Filmstrip {...baseProps({onSelectStep})} />)
+
+    const row = screen.getByTestId('filmstrip-step-c1-s2')
+    fireEvent.keyDown(row, {key: 'a'})
+    expect(onSelectStep).not.toHaveBeenCalled()
+
+    fireEvent.keyDown(row, {key: 'Enter'})
+    expect(onSelectStep).toHaveBeenCalledWith('c1', 's2')
+
+    fireEvent.keyDown(row, {key: ' '})
+    expect(onSelectStep).toHaveBeenCalledTimes(2)
+  })
+
   test('renders "No steps yet." when there are no steps at all, with an add-chapter button', () => {
     const onAddChapter = mock((_afterChapterKey: string | null) => {})
     renderWithTheme(
@@ -376,6 +394,24 @@ describe('Filmstrip: HTML5 drag reorder', () => {
 
     expect(onReorderStep).not.toHaveBeenCalled()
   })
+
+  // `handleDragEnd` (fired on a drag that ends WITHOUT a drop — e.g. the
+  // user presses Escape or drags back out — as opposed to `handleDrop`,
+  // which also clears the same state on a successful drop) resets
+  // `draggedStep`, which is what un-dims the dragged row (`StepRow`'s own
+  // `opacity: props.dragging ? 0.4 : 1`).
+  test('ending a drag without dropping (dragend) clears the dragging visual state', () => {
+    renderWithTheme(<Filmstrip {...baseProps()} />)
+
+    const source = screen.getByTestId('filmstrip-step-c1-s1')
+    expect(source.style.opacity).toBe('1')
+
+    fireEvent.dragStart(source)
+    expect(source.style.opacity).toBe('0.4')
+
+    fireEvent.dragEnd(source)
+    expect(source.style.opacity).toBe('1')
+  })
 })
 
 describe('Filmstrip: delete confirm flow', () => {
@@ -402,6 +438,24 @@ describe('Filmstrip: delete confirm flow', () => {
     openStepMenu('c1', 's1')
     fireEvent.click(screen.getByTestId('filmstrip-delete-c1-s1'))
     fireEvent.click(screen.getByTestId('filmstrip-confirm-cancel'))
+
+    expect(onDeleteStep).not.toHaveBeenCalled()
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  // The Dialog's own `onClose` (Escape key / click-outside, @sanity/ui's
+  // `DialogCard`) is a SEPARATE prop from the Cancel button's `onClick`
+  // above — both happen to reset the same `pendingAction` state, but only
+  // the Cancel button was exercised elsewhere in this file.
+  test('pressing Escape closes the confirm dialog via its own onClose, same as Cancel', () => {
+    const onDeleteStep = mock((_chapterKey: string, _stepKey: string) => {})
+    renderWithTheme(<Filmstrip {...baseProps({callbacks: {...noopCallbacks(), onDeleteStep}})} />)
+
+    openStepMenu('c1', 's1')
+    fireEvent.click(screen.getByTestId('filmstrip-delete-c1-s1'))
+    expect(screen.getByRole('dialog')).toBeTruthy()
+
+    fireEvent.keyDown(screen.getByTestId('filmstrip-confirm-confirm'), {key: 'Escape'})
 
     expect(onDeleteStep).not.toHaveBeenCalled()
     expect(screen.queryByRole('dialog')).toBeNull()
@@ -517,6 +571,28 @@ describe('Filmstrip: bulk upload — no uploader (no Studio client available)', 
 
     expect(screen.queryByTestId('filmstrip-upload-button-c1')).toBeNull()
     expect(screen.queryByTestId('filmstrip-upload-input-c1')).toBeNull()
+  })
+})
+
+describe('Filmstrip: bulk upload — the visible button delegates to the hidden input', () => {
+  // The visible "Upload screenshots…" button is the real keyboard/click
+  // target (ChapterHeader.tsx's own doc comment); every other bulk-upload
+  // test in this file drives the hidden `<input type="file">` directly via
+  // `fireEvent.change`, which never exercises this button's own
+  // `fileInputRef.current?.click()` handler.
+  test('clicking the button clicks the hidden file input', () => {
+    renderWithTheme(
+      <Filmstrip
+        {...baseProps({uploader: async (file) => ({fileName: file.name, assetId: 'x'})})}
+      />,
+    )
+
+    const input = screen.getByTestId('filmstrip-upload-input-c1')
+    const clickSpy = spyOn(input, 'click')
+
+    fireEvent.click(screen.getByTestId('filmstrip-upload-button-c1'))
+
+    expect(clickSpy).toHaveBeenCalledTimes(1)
   })
 })
 

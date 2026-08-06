@@ -1,5 +1,3 @@
-import {afterEach, describe, expect, test} from 'bun:test'
-
 // Direct render tests for `Canvas` (as opposed to `smoke.test.tsx`, which
 // only ever exercises it through `CanvasInput` — and, since none of those
 // renders have a `WorkspaceProvider` ancestor, `projectId`/`dataset` are
@@ -8,9 +6,11 @@ import {afterEach, describe, expect, test} from 'bun:test'
 // documented design: `Canvas` never calls `useProjectDataset()` itself — see
 // `Canvas.tsx`'s module comment) to exercise the other branch: a real
 // `assetRefToUrl`-resolved `<img src>`.
+import {afterEach, describe, expect, mock, test} from 'bun:test'
+
 import {LayerProvider, ThemeProvider} from '@sanity/ui'
 import {buildTheme} from '@sanity/ui/theme'
-import {cleanup, render, screen} from '@testing-library/react'
+import {cleanup, fireEvent, render, screen} from '@testing-library/react'
 import type {ReactNode} from 'react'
 
 import {Canvas, type CanvasProps} from '../../src/studio/Canvas'
@@ -98,5 +98,123 @@ describe('Canvas', () => {
     expect(screen.getByTestId('canvas-screenshot-placeholder').textContent).toContain(
       'not-a-real-ref',
     )
+  })
+
+  test('shows "no screenshot yet" when the step has no screenshot field at all (as opposed to a malformed ref)', () => {
+    const step = {_key: 's1', title: 'Welcome', elements: []}
+
+    renderWithTheme(
+      <Canvas {...baseProps({dataset: 'production', projectId: 'proj123', step})} />,
+    )
+
+    expect(screen.queryByTestId('canvas-screenshot')).toBeNull()
+    expect(screen.queryByTestId('canvas-screenshot-placeholder')).toBeNull()
+    expect(screen.getByText('This step has no screenshot yet.')).toBeTruthy()
+  })
+})
+
+// Element chip interaction: drag and keyboard nudge. `smoke.test.tsx`
+// already covers ArrowRight/ArrowDown nudges and a full resize gesture
+// (through `CanvasInput`); these cover the remaining gap — a drag gesture
+// (Canvas.tsx's `handleDragMove`/`handleDragEnd`, CanvasElement.tsx's
+// `handlePointerMove`/`handlePointerUp` while `dragging`) and the
+// ArrowUp/ArrowLeft nudge cases — at the `Canvas` level directly, same
+// rationale this file's own module comment gives for testing `Canvas`
+// standalone rather than only through `CanvasInput`.
+describe('Canvas: element chip drag and keyboard nudge', () => {
+  function stepWithHotspot(x: number, y: number) {
+    return {
+      _key: 's1',
+      screenshot: {
+        _type: 'image',
+        asset: {_type: 'reference', _ref: 'image-abc123-800x600-png'},
+        alt: 'Welcome screenshot',
+      },
+      elements: [{_type: 'guidedTourHotspot', _key: 'e1', x, y, action: 'advance', pulse: true}],
+    }
+  }
+
+  test('dragging a chip live-updates its rendered position, then reports the final drop via onMoveElement and reverts (this bare harness never feeds a new value back in)', () => {
+    const onMoveElement = mock((_elementKey: string, _pos: {x: number; y: number}) => {})
+    renderWithTheme(
+      <Canvas
+        {...baseProps({
+          dataset: 'production',
+          projectId: 'proj123',
+          step: stepWithHotspot(10, 10),
+          onMoveElement,
+        })}
+      />,
+    )
+
+    const chip = screen.getByTestId('canvas-element-e1')
+    expect(chip.style.left).toBe('10%')
+
+    fireEvent.pointerDown(chip, {pointerId: 1, clientX: 10, clientY: 10})
+    // happy-dom's `getBoundingClientRect()` always returns an all-zero rect
+    // (no real layout engine — same caveat `smoke.test.tsx`'s click-to-place
+    // tests document), so `pointToPercent`'s documented zero-width/height
+    // fallback places every drag position at (0, 0) regardless of
+    // clientX/clientY: the point under test is that a live drag re-renders
+    // the chip at the reported position at all, not the exact coordinate.
+    fireEvent.pointerMove(chip, {pointerId: 1, clientX: 50, clientY: 50})
+    expect(chip.style.left).toBe('0%')
+    expect(chip.style.top).toBe('0%')
+
+    fireEvent.pointerUp(chip, {pointerId: 1, clientX: 50, clientY: 50})
+    expect(onMoveElement).toHaveBeenCalledTimes(1)
+    expect(onMoveElement).toHaveBeenCalledWith('e1', {x: 0, y: 0})
+    // The drag-live `dragPosition` state clears on drop, so the chip
+    // reverts to its prop-derived position — this bare harness's `step` is
+    // a static fixture, not fed a new value from `onMoveElement` the way a
+    // real form-builder round-trip would.
+    expect(chip.style.left).toBe('10%')
+  })
+
+  test('ArrowUp/ArrowLeft nudge the selected element up/left by the small (0.5%) step', () => {
+    const onMoveElement = mock((_elementKey: string, _pos: {x: number; y: number}) => {})
+    renderWithTheme(
+      <Canvas
+        {...baseProps({
+          dataset: 'production',
+          projectId: 'proj123',
+          step: stepWithHotspot(50, 50),
+          selectedElementKey: 'e1',
+          onMoveElement,
+        })}
+      />,
+    )
+
+    const chip = screen.getByTestId('canvas-element-e1')
+    fireEvent.keyDown(chip, {key: 'ArrowUp'})
+    expect(onMoveElement).toHaveBeenCalledWith('e1', {x: 50, y: 49.5})
+
+    fireEvent.keyDown(chip, {key: 'ArrowLeft'})
+    expect(onMoveElement).toHaveBeenCalledWith('e1', {x: 49.5, y: 50})
+
+    expect(onMoveElement).toHaveBeenCalledTimes(2)
+  })
+
+  test('clicking an existing chip does not also trigger the surface\'s click-to-place handler', () => {
+    // CanvasElement.tsx's own doc comment: the chip's `onClick` stops the
+    // click from also reaching `Canvas.tsx`'s click-to-place surface
+    // handler — "selecting/dragging an existing element must never also
+    // insert a new one under the cursor."
+    const onInsertElement = mock((_element: {_type: string; _key: string}) => {})
+    renderWithTheme(
+      <Canvas
+        {...baseProps({
+          dataset: 'production',
+          projectId: 'proj123',
+          step: stepWithHotspot(50, 50),
+          onInsertElement,
+        })}
+      />,
+    )
+
+    fireEvent.click(screen.getByTestId('canvas-tool-hotspot'))
+    fireEvent.click(screen.getByTestId('canvas-element-e1'))
+
+    expect(onInsertElement).not.toHaveBeenCalled()
   })
 })

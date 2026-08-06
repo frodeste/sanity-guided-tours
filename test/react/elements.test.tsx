@@ -16,6 +16,7 @@ import type {
 } from '../../src/queries/types'
 import type {GuidedTourEvent} from '../../src/react/events'
 import {GuidedTour} from '../../src/react/GuidedTour'
+import {Hotspot} from '../../src/react/Hotspot'
 
 afterEach(() => {
   cleanup()
@@ -793,5 +794,17 @@ describe('TextOverlay', () => {
     fireEvent.click(query(container, '.gt-overlay'))
 
     expect(events.map((event) => event.type)).toEqual(['tour_started', 'step_viewed'])
+  })
+})
+
+// `useGuidedTourContext` (`react/context.ts`)'s throw branch was previously
+// untested (0% of that line) — every real render always happens inside
+// `<GuidedTour>`'s own subtree (this file's whole suite included), so
+// nothing ever hit the "rendered standalone" programmer-error guard.
+describe('Hotspot: rendered outside <GuidedTour> (react/context.ts programmer-error guard)', () => {
+  test('throws, same invariant as the native viewer\'s useNativeTourContext', () => {
+    expect(() =>
+      render(<Hotspot hotspot={hotspot({_key: 'h1'})} onActivate={() => {}} />),
+    ).toThrow(/must be rendered inside <GuidedTour>/)
   })
 })

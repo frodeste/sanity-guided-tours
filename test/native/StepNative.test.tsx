@@ -1,9 +1,10 @@
 import {describe, expect, mock, test} from 'bun:test'
 
 import type {ReactElement, ReactNode} from 'react'
-import {Image, Pressable} from 'react-native'
+import {Image, Pressable, View} from 'react-native'
 
 import {NativeTourContext, type NativeTourContextValue} from '../../src/native/context'
+import {computeContainRect} from '../../src/native/layout'
 import {resolveNativeTheme} from '../../src/native/nativeTheme'
 import {nearestTooltipKeyNative, StepNative} from '../../src/native/StepNative'
 import {createStyles} from '../../src/native/styles'
@@ -11,7 +12,7 @@ import type {GuidedTourElement} from '../../src/queries/types'
 import {defaultLabels} from '../../src/react/labels'
 import {createTracker} from '../../src/react/session'
 import {actNative, renderNative} from '../support/react-native-stub/renderNative'
-import {hotspot, step, tooltip} from './fixtures'
+import {hotspot, step, textOverlay, tooltip} from './fixtures'
 
 function buildContext(): NativeTourContextValue {
   const theme = resolveNativeTheme(null, 'light')
@@ -183,7 +184,10 @@ describe('StepNative', () => {
     )
   })
 
-  test('renders a text overlay and a hotspot together without crashing (switch covers every element _type)', () => {
+  test('renders a text overlay, tooltip and hotspot together without crashing (switch covers every element _type)', () => {
+    // Previously only hotspot+tooltip, despite this test's own name — the
+    // `guidedTourTextOverlay` switch case (StepNative.tsx's `OverlayNative`
+    // branch) was never actually exercised. Fixed to match its own claim.
     const context = buildContext()
     expect(() =>
       renderNative(
@@ -192,12 +196,70 @@ describe('StepNative', () => {
           <StepNative
             step={step({
               _key: 's1',
-              elements: [hotspot({_key: 'h1'}), tooltip({_key: 't1'})],
+              elements: [hotspot({_key: 'h1'}), tooltip({_key: 't1'}), textOverlay({_key: 'o1'})],
             })}
             onAdvance={() => {}}
           />,
         ),
       ),
     ).not.toThrow()
+  })
+
+  test('pressing an already-open tooltip trigger closes it (StepNative wires TooltipNative.onClose)', () => {
+    const context = buildContext()
+    const renderer = renderNative(
+      withContext(
+        context,
+        <StepNative
+          step={step({_key: 's1', elements: [tooltip({_key: 't1', trigger: 'auto'})]})}
+          onAdvance={() => {}}
+        />,
+      ),
+    )
+    // `trigger: 'auto'` opens on mount (already covered elsewhere) — this
+    // test's own point is pressing it again while OPEN.
+    const trigger = renderer.root.findByType(Pressable)
+    expect(trigger.props.accessibilityLabel).toBe(defaultLabels.closeTooltip)
+
+    actNative(() => trigger.props.onPress())
+
+    expect(renderer.root.findByType(Pressable).props.accessibilityLabel).toBe(
+      defaultLabels.hotspotReveal,
+    )
+  })
+
+  test('onLayout measures the stage and resolves the hotspot marker against the real computeContainRect (not the {0,0,0,0} pre-measurement fallback)', () => {
+    const context = buildContext()
+    const renderer = renderNative(
+      withContext(
+        context,
+        <StepNative
+          step={step({_key: 's1', elements: [hotspot({_key: 'h1', x: 50, y: 50})]})}
+          onAdvance={() => {}}
+        />,
+      ),
+    )
+
+    // Before `onLayout` ever fires, `containRect` is the documented
+    // `{x:0,y:0,width:0,height:0}` pre-measurement fallback — the marker's
+    // resolved point is (0, 0).
+    const markerStyleBefore = renderer.root.findByType(Pressable).props.style
+    expect(markerStyleBefore[1]).toEqual({left: 0, top: 0})
+
+    const stage = renderer.root.findByType(View)
+    actNative(() =>
+      stage.props.onLayout({nativeEvent: {layout: {x: 0, y: 0, width: 200, height: 100}}}),
+    )
+
+    // Fixture `image()`'s default `dimensions.aspectRatio` is 2 (100x50) —
+    // a 200x100 container is height-bound, so this is NOT a same-as-before
+    // {0,0} coincidence.
+    const expectedRect = computeContainRect(200, 100, 2)
+    const expectedPoint = {
+      left: expectedRect.x + (50 / 100) * expectedRect.width,
+      top: expectedRect.y + (50 / 100) * expectedRect.height,
+    }
+    const markerStyleAfter = renderer.root.findByType(Pressable).props.style
+    expect(markerStyleAfter[1]).toEqual(expectedPoint)
   })
 })

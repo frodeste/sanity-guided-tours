@@ -22,9 +22,10 @@ import {afterEach, describe, expect, mock, test} from 'bun:test'
 // Per-test, only `value`/`onChange`/`renderDefault` actually vary.
 import {LayerProvider, ThemeProvider} from '@sanity/ui'
 import {buildTheme} from '@sanity/ui/theme'
-import {cleanup, fireEvent, render, screen, within} from '@testing-library/react'
+import {act, cleanup, fireEvent, render, screen, within} from '@testing-library/react'
 import {StrictMode, type ReactNode} from 'react'
 import {PatchEvent, setIfMissing} from 'sanity'
+import {SourceContext} from 'sanity/_singletons'
 import type {
   ArrayOfObjectsInputProps,
   ArrayOfObjectsItemMember,
@@ -38,11 +39,13 @@ import type {
 
 import {CanvasInput} from '../../src/studio/CanvasInput'
 import {
+  insertChapterPatch,
   moveElementPatch,
   moveStepPatch,
   removeChapterPatch,
   removeElementPatch,
   removeStepPatch,
+  reorderStepPatch,
   setElementWidthPatch,
 } from '../../src/studio/patches'
 
@@ -890,6 +893,147 @@ describe('CanvasInput: filmstrip step-management wiring (Task 6)', () => {
     const newKey = newStep._key
     if (typeof newKey !== 'string') throw new Error('expected a string _key')
     expect(newKey.length).toBeGreaterThan(0)
+  })
+
+  test('the add-chapter button inserts a new chapter scaffold after the clicked chapter', () => {
+    const onChange = mock((_patch: FormPatch | FormPatch[] | PatchEvent) => {})
+    renderWithTheme(
+      <CanvasInput {...baseInputProps()} onChange={onChange} value={fixtureChapters} />,
+    )
+
+    fireEvent.click(screen.getByTestId('filmstrip-add-chapter-c1'))
+
+    expect(onChange).toHaveBeenCalledTimes(1)
+    const call = onChange.mock.calls[0][0]
+    if (!isPatchEvent(call)) throw new Error('expected a PatchEvent')
+    expect(call.patches).toHaveLength(1)
+
+    const insertPatch = call.patches[0]
+    if (!isInsertPatch(insertPatch)) throw new Error('expected an insert patch')
+    const newChapter = insertPatch.items[0]
+    if (!isRecord(newChapter)) throw new Error('expected a record')
+    expect(newChapter).toMatchObject({
+      _type: 'guidedTourChapter',
+      title: 'New chapter',
+      steps: [],
+    })
+    expect(typeof newChapter._key).toBe('string')
+    // The wrapping shape (position 'after', anchored at c1) matches
+    // `patches.ts`'s own `insertChapterPatch` builder exactly, given the
+    // same (real, randomly-keyed) chapter this handler just produced.
+    expect(call.patches).toEqual(insertChapterPatch(newChapter, 'c1'))
+  })
+
+  test('the Move down menu item emits a reorder patch via onReorderStep', () => {
+    const onChange = mock((_patch: FormPatch | FormPatch[] | PatchEvent) => {})
+    renderWithTheme(
+      <CanvasInput {...baseInputProps()} onChange={onChange} value={fixtureChapters} />,
+    )
+
+    openStepMenu('c1', 's1')
+    fireEvent.click(screen.getByTestId('filmstrip-move-down-c1-s1'))
+
+    expect(onChange).toHaveBeenCalledTimes(1)
+    const call = onChange.mock.calls[0][0]
+    if (!isPatchEvent(call)) throw new Error('expected a PatchEvent')
+    // `CanvasInput.tsx`'s own `onReorderStep` re-derives the chapter's
+    // current `steps` from its own `chapters` value (`stepsOf(findChapter(...))`)
+    // rather than trusting anything passed up from `Filmstrip` — asserting
+    // against `reorderStepPatch` called with that same fixture slice pins
+    // that re-derivation, not just the target index.
+    const rawSteps: unknown[] = fixtureChapters[0].steps
+    expect(call.patches).toEqual(reorderStepPatch('c1', rawSteps.filter(isRecord), 's1', 1))
+  })
+})
+
+// SourceContext technique established by M9 QA hardening's `useUploader.test.tsx`
+// (see that file's own doc comment for the full mechanism/rejected-
+// alternatives trail): a minimal `{getClient}` stand-in through `sanity`'s
+// own public `SourceContext` singleton gives `useUploader()` a real,
+// working uploader inside this bare `ThemeProvider`/`LayerProvider` smoke
+// harness — the only way to reach `CanvasInput.tsx`'s `handleUploadBatch`
+// (Filmstrip's upload UI is hidden entirely while `uploader === null`,
+// true of every OTHER test in this file).
+describe('CanvasInput: bulk upload -> handleUploadBatch (Task 8 seam)', () => {
+  function renderWithSource(
+    ui: ReactNode,
+    fakeClient: {assets: {upload: (assetType: string, file: File) => Promise<{_id: string}>}},
+  ) {
+    // `any`, not a cast off the real (huge) `Source` type — oxlint's
+    // `typescript/no-unsafe-type-assertion` rejects a narrowing `as`
+    // outright, and this repo's own "no `as` casts" constraint agrees; see
+    // `useUploader.test.tsx`'s doc comment for the full rationale. Only the
+    // slice `useClient()` actually reads (`getClient`) is implemented.
+    const fakeSource: any = {getClient: () => fakeClient}
+    return render(
+      <ThemeProvider theme={theme}>
+        <LayerProvider>
+          {/* oxlint-disable-next-line react/jsx-no-constructed-context-values -- `fakeSource` is a stable per-call const, not a re-render-perf concern (same as `useUploader.test.tsx`'s identical case). */}
+          <SourceContext.Provider value={fakeSource}>{ui}</SourceContext.Provider>
+        </LayerProvider>
+      </ThemeProvider>,
+    )
+  }
+
+  test('a successful upload emits one insertStepsPatch scaffolding a step per uploaded asset, then a success toast (no ToastProvider here, so it silently no-ops)', async () => {
+    const fakeClient = {
+      assets: {
+        upload: async (_assetType: string, file: File) => ({_id: `image-${file.name}`}),
+      },
+    }
+    const onChange = mock((_patch: FormPatch | FormPatch[] | PatchEvent) => {})
+    renderWithSource(
+      <CanvasInput {...baseInputProps()} onChange={onChange} value={fixtureChapters} />,
+      fakeClient,
+    )
+
+    fireEvent.change(screen.getByTestId('filmstrip-upload-input-c2'), {
+      target: {files: [new File(['bytes'], 'shot.png', {type: 'image/png'})]},
+    })
+    // Settles the microtask-driven upload chain (`runUpload`'s `await
+    // uploader(file)` then `props.onUploadBatch(...)`) fired from outside
+    // any `fireEvent`-provided `act()` scope — the same empty-callback
+    // `act(async () => {})` idiom `test/react/leadForm.test.tsx`'s `flush()`
+    // documents in full, then plain synchronous assertions (repo
+    // convention: never `waitFor`-for-removal).
+    await act(async () => {})
+
+    expect(onChange).toHaveBeenCalledTimes(1)
+    const call = onChange.mock.calls[0][0]
+    if (!isPatchEvent(call)) throw new Error('expected a PatchEvent')
+    expect(call.patches).toHaveLength(2)
+    expect(call.patches[0]).toEqual(setIfMissing([], [{_key: 'c2'}, 'steps']))
+
+    const insertPatch = call.patches[1]
+    if (!isInsertPatch(insertPatch)) throw new Error('expected an insert patch')
+    expect(insertPatch.items).toHaveLength(1)
+    expect(insertPatch.items[0]).toMatchObject({
+      _type: 'guidedTourStep',
+      screenshot: {_type: 'image', asset: {_type: 'reference', _ref: 'image-shot.png'}},
+      elements: [],
+    })
+  })
+
+  test('an all-failed upload emits NO patch at all — only the toast summary', async () => {
+    const fakeClient = {
+      assets: {
+        upload: async (): Promise<{_id: string}> => {
+          throw new Error('upload failed')
+        },
+      },
+    }
+    const onChange = mock((_patch: FormPatch | FormPatch[] | PatchEvent) => {})
+    renderWithSource(
+      <CanvasInput {...baseInputProps()} onChange={onChange} value={fixtureChapters} />,
+      fakeClient,
+    )
+
+    fireEvent.change(screen.getByTestId('filmstrip-upload-input-c1'), {
+      target: {files: [new File(['bytes'], 'shot.png', {type: 'image/png'})]},
+    })
+    await act(async () => {})
+
+    expect(onChange).not.toHaveBeenCalled()
   })
 })
 
