@@ -118,6 +118,7 @@ describe('PortableTextNative', () => {
     // reaches into a link's href.
     actNative(() => link.props.onPress())
     expect(openURLSpy).toHaveBeenCalledWith('https://example.com/{{slug}}')
+    openURLSpy.mockRestore()
   })
 
   test('a mark with no matching (or non-link) markDef falls through unchanged — no crash, plain text still renders', () => {
