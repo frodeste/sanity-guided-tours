@@ -28,6 +28,7 @@ const COMPONENT_FILES = [
   'GuidedTour.tsx',
   'GuidedTourEmbed.tsx',
   'GuidedTourModal.tsx',
+  'Frame.tsx',
   'Outro.tsx',
   'LeadForm.tsx',
   'Step.tsx',

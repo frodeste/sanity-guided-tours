@@ -45,6 +45,27 @@
  * themselves, exactly like `GuidedTour.tsx` does for `.gt-tour` — so this
  * rule (and the two scheme-override rules) resolves the SAME custom
  * properties independently on each of the three, not just on `.gt-tour`.
+ * M10 addition (frames + element design): `--gt-frame-border`,
+ * `--gt-button-bg`/`--gt-button-text`, and `--gt-bubble-bg`/`--gt-bubble-text`
+ * join the same paired-mapping rules below, resolved from
+ * `./theme.ts`'s `themeToStyle` `--gt-light-*`/`--gt-dark-*` pairs exactly
+ * like `--gt-accent` etc. — EXCEPT `frame`/`elements` are optional theme
+ * sub-objects with no required value (unlike accent/surface/text/overlay),
+ * so `themeToStyle` only emits a pair member when it's actually authored;
+ * an unset button/bubble color falls back to whichever of
+ * `--gt-accent`/`--gt-surface`/`--gt-text` is ALREADY resolved for the
+ * active scheme in that same rule (custom properties declared in one rule
+ * can reference each other regardless of declaration order — they're all
+ * simultaneously in effect on the element), not a second independent
+ * literal. `--gt-frame-border` has no such natural value to inherit, so
+ * its own fallback is the literal `FRAME_DEFAULTS.borderColor`/
+ * `THEME_DARK_DEFAULTS.frameBorder` instead (`../queries/defaults`).
+ * `--gt-frame-border-width`/`--gt-frame-radius`/`--gt-button-radius`/
+ * `--gt-bubble-radius` are scheme-independent (one value, not a pair,
+ * same as `--gt-radius` itself) and are emitted directly under their own
+ * final names — they don't need a rule here at all; every selector that
+ * consumes one carries its own local fallback where it's used below.
+ *
  * Every `var(--gt-accent)`/etc reference inside `.gt-modal-backdrop`'s,
  * `.gt-modal`'s, `.gt-modal-close`'s, and `.gt-embed-start`'s own rules
  * (further down) additionally carries its OWN literal fallback now too —
@@ -71,6 +92,12 @@
   --gt-font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --gt-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 10px 24px -8px rgb(0 0 0 / 0.18);
   --gt-border: color-mix(in srgb, var(--gt-text) 12%, transparent);
+  /* M10: frame/element colors — see this file's top comment. */
+  --gt-frame-border: var(--gt-light-frame-border, #e2e8f0);
+  --gt-button-bg: var(--gt-light-button-bg, var(--gt-accent));
+  --gt-button-text: var(--gt-light-button-text, var(--gt-surface));
+  --gt-bubble-bg: var(--gt-light-bubble-bg, var(--gt-surface));
+  --gt-bubble-text: var(--gt-light-bubble-text, var(--gt-text));
 }
 
 .gt-tour {
@@ -95,6 +122,11 @@
     --gt-surface: var(--gt-dark-surface, #0f172a);
     --gt-text: var(--gt-dark-text, #f1f5f9);
     --gt-overlay: var(--gt-dark-overlay, #020617);
+    --gt-frame-border: var(--gt-dark-frame-border, #334155);
+    --gt-button-bg: var(--gt-dark-button-bg, var(--gt-accent));
+    --gt-button-text: var(--gt-dark-button-text, var(--gt-surface));
+    --gt-bubble-bg: var(--gt-dark-bubble-bg, var(--gt-surface));
+    --gt-bubble-text: var(--gt-dark-bubble-text, var(--gt-text));
   }
 }
 
@@ -105,6 +137,11 @@
   --gt-surface: var(--gt-dark-surface, #0f172a);
   --gt-text: var(--gt-dark-text, #f1f5f9);
   --gt-overlay: var(--gt-dark-overlay, #020617);
+  --gt-frame-border: var(--gt-dark-frame-border, #334155);
+  --gt-button-bg: var(--gt-dark-button-bg, var(--gt-accent));
+  --gt-button-text: var(--gt-dark-button-text, var(--gt-surface));
+  --gt-bubble-bg: var(--gt-dark-bubble-bg, var(--gt-surface));
+  --gt-bubble-text: var(--gt-dark-bubble-text, var(--gt-text));
 }
 
 .gt-empty {
@@ -186,6 +223,101 @@
 .gt-chapter[aria-current='true'] {
   border-color: var(--gt-accent);
   color: var(--gt-accent);
+}
+
+/* Frame: window chrome rendered around the tour's step/outro/lead area
+   (M10, `./Frame.tsx`) — mac traffic lights, a Windows-style caption bar, a
+   simple configurable border, or no chrome at all
+   (`guidedTourTheme.frame.style`, defaults to `mac`, `../queries/defaults`'s
+   `FRAME_DEFAULTS`). `--gt-frame-radius` rounds the WHOLE window — chrome
+   bar included — independent of `--gt-radius`, which stays reserved for
+   the content the frame wraps (`.gt-stage`, `.gt-tooltip`, `.gt-lead`,
+   `.gt-outro`, ...) just below. */
+
+.gt-frame {
+  border-radius: var(--gt-frame-radius, 12px);
+  overflow: hidden;
+}
+
+.gt-frame--mac,
+.gt-frame--windows {
+  box-shadow: var(--gt-shadow);
+}
+
+.gt-frame--simple {
+  border-style: solid;
+  border-width: var(--gt-frame-border-width, 1px);
+  border-color: var(--gt-frame-border, #e2e8f0);
+}
+
+.gt-frame__bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: var(--gt-surface);
+  color: var(--gt-text);
+  border-bottom: 1px solid var(--gt-border);
+}
+
+.gt-frame--mac .gt-frame__bar {
+  position: relative;
+  justify-content: center;
+}
+
+.gt-frame--windows .gt-frame__bar {
+  justify-content: space-between;
+}
+
+/* Mac traffic lights — purely decorative (`Frame.tsx`: `aria-hidden`,
+   `inert`), never real window controls. Absolutely positioned against the
+   bar (`position: relative` above) so the centered title text isn't offset
+   by their width. */
+.gt-frame__dots {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  display: flex;
+  gap: 8px;
+  transform: translateY(-50%);
+}
+
+.gt-frame__dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+
+.gt-frame__dot--red {
+  background: #ff5f57;
+}
+
+.gt-frame__dot--yellow {
+  background: #febc2e;
+}
+
+.gt-frame__dot--green {
+  background: #28c840;
+}
+
+.gt-frame__title {
+  overflow: hidden;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Windows caption glyphs — same "purely decorative" treatment as the mac
+   dots above (`Frame.tsx`: `aria-hidden`, `inert`, plain characters rather
+   than `<button>`s). */
+.gt-frame__glyphs {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: color-mix(in srgb, var(--gt-text) 65%, transparent);
+  font-size: 0.875rem;
+  line-height: 1;
 }
 
 /* Stage: the screenshot and its positioned elements */
@@ -326,10 +458,14 @@
   position: absolute;
   z-index: 1;
   padding: 12px;
-  background: var(--gt-surface);
-  color: var(--gt-text);
+  /* M10: `--gt-bubble-bg`/`--gt-bubble-text`/`--gt-bubble-radius`
+     (`elements.bubble`, `../queries/types`) — each falls back to the base
+     surface/text/radius when unset (`./theme.ts`'s `themeToStyle` doc
+     comment), so an unthemed tooltip renders identically to before M10. */
+  background: var(--gt-bubble-bg, var(--gt-surface));
+  color: var(--gt-bubble-text, var(--gt-text));
   border: 1px solid var(--gt-border);
-  border-radius: var(--gt-radius);
+  border-radius: var(--gt-bubble-radius, var(--gt-radius));
   box-shadow: var(--gt-shadow);
   transition: opacity 150ms ease;
 }
@@ -467,14 +603,22 @@
   gap: 12px;
 }
 
-/* CTA/start/Next buttons are always pill-shaped (M7 design brief),
-   independent of `--gt-radius` — that property is reserved for
-   cards/tooltips/panels (`.gt-stage`, `.gt-tooltip`, `.gt-lead`,
-   `.gt-modal`, `.gt-outro`, ...), never for a button. */
+/* CTA/start/Next buttons (M7 design brief) used to be unconditionally
+   pill-shaped, independent of `--gt-radius` — that property stayed
+   reserved for cards/tooltips/panels (`.gt-stage`, `.gt-tooltip`,
+   `.gt-lead`, `.gt-modal`, `.gt-outro`, ...), never a button. M10
+   (Material-inspired defaults) makes that configurable instead of fixed:
+   `--gt-button-radius` (`elements.button.radius`, `./theme.ts`'s
+   `themeToStyle`) defaults to `calc(var(--gt-radius) * 2)` when unset — at
+   `--gt-radius`'s own 12px default that clamps to a full pill (border-radius
+   can never exceed half a box's height, so the DEFAULT LOOK is unchanged
+   from before M10), while a smaller `--gt-radius` (a theme going for a
+   sharper, less rounded look overall) now produces a visibly less pill-like
+   button instead of forcing a pill regardless. */
 .gt-cta {
   display: inline-block;
   padding: 8px 20px;
-  border-radius: 999px;
+  border-radius: var(--gt-button-radius, calc(var(--gt-radius) * 2));
   font: inherit;
   font-weight: 600;
   text-decoration: none;
@@ -482,7 +626,9 @@
   transition:
     filter 150ms ease,
     background-color 150ms ease,
-    border-color 150ms ease;
+    border-color 150ms ease,
+    box-shadow 150ms ease,
+    transform 150ms ease;
 }
 
 .gt-cta:focus-visible {
@@ -490,17 +636,39 @@
   outline-offset: 2px;
 }
 
+/* Filled/"contained" — M10's `--gt-button-bg`/`--gt-button-text`
+   (`elements.button`, this file's top comment) replace the old direct
+   `--gt-accent`/`--gt-surface` references; each already falls back to
+   accent/surface on its own when unauthored, so an unthemed button renders
+   identically to before M10. Material-inspired resting elevation plus a
+   hover "lift" and an active "press" (subtle box-shadow + translateY),
+   layered on top of the pre-existing brightness filter rather than
+   replacing it. */
 .gt-cta--primary {
-  background: var(--gt-accent);
-  color: var(--gt-surface);
+  background: var(--gt-button-bg);
+  color: var(--gt-button-text);
   border: 1px solid transparent;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.15);
 }
 
 .gt-cta--primary:hover,
 .gt-cta--primary:focus-visible {
+  box-shadow: 0 4px 10px rgb(0 0 0 / 0.18);
   filter: brightness(1.08);
+  transform: translateY(-1px);
 }
 
+.gt-cta--primary:active {
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
+  filter: brightness(0.96);
+  transform: translateY(0);
+}
+
+/* Outline/"text" — no fill, so it stays on `--gt-accent` directly rather
+   than the new button-bg/text pair (those are meant for the surface a
+   FILLED button's label sits on, not an outline button's own accent-colored
+   border/label) — only its shared `--gt-button-radius` (above) is new. No
+   elevation shadow either: Material reserves that for contained buttons. */
 .gt-cta--secondary {
   background: transparent;
   color: var(--gt-accent);
@@ -591,21 +759,36 @@
   gap: 12px;
 }
 
+/* Same M10 filled-button treatment as `.gt-cta--primary` above:
+   `--gt-button-bg`/`--gt-button-text`/`--gt-button-radius`, resting
+   elevation, hover lift, active press. */
 .gt-lead-submit {
   padding: 8px 20px;
   border: 1px solid transparent;
-  border-radius: 999px;
-  background: var(--gt-accent);
-  color: var(--gt-surface);
+  border-radius: var(--gt-button-radius, calc(var(--gt-radius) * 2));
+  background: var(--gt-button-bg);
+  color: var(--gt-button-text);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.15);
   font: inherit;
   font-weight: 600;
   cursor: pointer;
-  transition: filter 150ms ease;
+  transition:
+    filter 150ms ease,
+    box-shadow 150ms ease,
+    transform 150ms ease;
 }
 
 .gt-lead-submit:hover:not(:disabled),
 .gt-lead-submit:focus-visible {
+  box-shadow: 0 4px 10px rgb(0 0 0 / 0.18);
   filter: brightness(1.08);
+  transform: translateY(-1px);
+}
+
+.gt-lead-submit:active:not(:disabled) {
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
+  filter: brightness(0.96);
+  transform: translateY(0);
 }
 
 .gt-lead-submit:focus-visible {
@@ -618,10 +801,12 @@
   cursor: not-allowed;
 }
 
+/* Outline, not filled — same "--gt-button-radius only" treatment as
+   `.gt-cta--secondary` above. */
 .gt-lead-skip {
   padding: 8px 20px;
   border: 1px solid color-mix(in srgb, var(--gt-accent) 35%, transparent);
-  border-radius: 999px;
+  border-radius: var(--gt-button-radius, calc(var(--gt-radius) * 2));
   background: transparent;
   color: var(--gt-text);
   font: inherit;
@@ -724,22 +909,37 @@
   gap: 12px;
 }
 
+/* Same M10 filled-button treatment as `.gt-cta--primary`/`.gt-lead-submit`
+   above (this file's "CTA/start/Next buttons" comment, further up). */
 .gt-prev,
 .gt-next {
   padding: 8px 20px;
   border: 1px solid transparent;
-  border-radius: 999px;
-  background: var(--gt-accent);
-  color: var(--gt-surface);
+  border-radius: var(--gt-button-radius, calc(var(--gt-radius) * 2));
+  background: var(--gt-button-bg);
+  color: var(--gt-button-text);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.15);
   font: inherit;
   font-weight: 600;
   cursor: pointer;
-  transition: filter 150ms ease;
+  transition:
+    filter 150ms ease,
+    box-shadow 150ms ease,
+    transform 150ms ease;
 }
 
 .gt-prev:hover:not(:disabled),
 .gt-next:hover:not(:disabled) {
+  box-shadow: 0 4px 10px rgb(0 0 0 / 0.18);
   filter: brightness(1.08);
+  transform: translateY(-1px);
+}
+
+.gt-prev:active:not(:disabled),
+.gt-next:active:not(:disabled) {
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
+  filter: brightness(0.96);
+  transform: translateY(0);
 }
 
 .gt-prev:focus-visible,
@@ -801,20 +1001,43 @@
   display: block;
 }
 
+/* Same M10 filled-button treatment as `.gt-cta--primary`/`.gt-prev`/
+   `.gt-next` (this file's "CTA/start/Next buttons" comment, further up) —
+   `--gt-button-bg`/`--gt-button-text`/`--gt-button-radius` each ALREADY
+   carry their own fallback to accent/surface/pill-via-`--gt-radius`
+   (this file's top comment, and the "CTA/start/Next buttons" comment) —
+   the literal fallbacks below are this section's own belt-and-suspenders
+   layer on top of that, matching THEME_DEFAULTS (`../queries/defaults`),
+   same as every other `var()` in this section. The focus outline stays on
+   `--gt-accent` directly (not `--gt-button-bg`) — a consistent,
+   recognizable focus ring regardless of how a theme customizes button
+   fill, same choice `.gt-cta`/`.gt-prev`/`.gt-next` make above. */
 .gt-embed-start {
   padding: 8px 20px;
   border: 1px solid transparent;
-  border-radius: 999px;
-  background: var(--gt-accent, #7c3aed);
-  color: var(--gt-surface, #ffffff);
+  border-radius: var(--gt-button-radius, calc(var(--gt-radius, 12px) * 2));
+  background: var(--gt-button-bg, #7c3aed);
+  color: var(--gt-button-text, #ffffff);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.15);
   font: inherit;
   font-weight: 600;
   cursor: pointer;
-  transition: filter 150ms ease;
+  transition:
+    filter 150ms ease,
+    box-shadow 150ms ease,
+    transform 150ms ease;
 }
 
 .gt-embed-start:hover {
+  box-shadow: 0 4px 10px rgb(0 0 0 / 0.18);
   filter: brightness(1.08);
+  transform: translateY(-1px);
+}
+
+.gt-embed-start:active {
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
+  filter: brightness(0.96);
+  transform: translateY(0);
 }
 
 .gt-embed-start:focus-visible {
