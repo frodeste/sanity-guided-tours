@@ -34,6 +34,7 @@ same tour with a personalization token filled in:
 | `sanity-plugin-guided-tours` | Studio plugin: schema types, visual canvas editor, live preview |
 | `sanity-plugin-guided-tours/react` | `<GuidedTour>` / `<GuidedTourModal>` — pure React, no Sanity client |
 | `sanity-plugin-guided-tours/react/styles.css` | Stylesheet driven by `--gt-*` CSS custom properties |
+| `sanity-plugin-guided-tours/native` | `<GuidedTour>` for React Native / Expo — see [React Native / Expo](#react-native--expo) |
 | `sanity-plugin-guided-tours/queries` | GROQ queries + TypeScript types; your app does the fetching |
 
 ## Install
@@ -50,10 +51,13 @@ bun add sanity-plugin-guided-tours
 pnpm add sanity-plugin-guided-tours
 ```
 
-`sanity`, `@sanity/ui` and `styled-components` are **optional peer
-dependencies** — only resolved if your app actually imports the Studio entry
-point (`sanity-plugin-guided-tours`). An app that imports only `/react` and
-`/queries` never pulls them in.
+`sanity`, `@sanity/ui`, `styled-components` and `react-native` are all
+**optional peer dependencies** — each is only resolved if your app actually
+imports the entry that needs it: `sanity`/`@sanity/ui`/`styled-components`
+for the Studio plugin entry point (`sanity-plugin-guided-tours`),
+`react-native` for `/native` (see [React Native /
+Expo](#react-native--expo)). An app that imports only `/react` and
+`/queries` — a plain web app — never pulls in any of them.
 
 ## Studio setup
 
@@ -520,6 +524,73 @@ family arrives some other way:
 When neither `fontFamily` nor a valid `googleFont` is set, `--gt-font-family`
 falls back entirely to the stylesheet's own default stack: `'Inter',
 ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif`.
+
+## React Native / Expo
+
+`sanity-plugin-guided-tours/native` renders the same `guidedTour` documents
+in a React Native / Expo app: `<GuidedTour>` built from RN primitives
+(`View`, `Text`, `Pressable`, `Image`, `Modal`), reusing the exact same
+DOM-free logic the `/react` viewer runs on — navigation, personalization,
+event sequencing, session handling — so the two runtimes stay behaviorally
+identical instead of two implementations quietly drifting apart. It's a
+deliberate v1 subset of the web viewer; see [Scope](#scope-v1-subset) below.
+
+```bash
+bun add sanity-plugin-guided-tours react-native
+```
+
+`react-native` (`>=0.74`) is its own **optional peer dependency** — resolved
+only if your app imports `/native`. A web app that never imports it doesn't
+need it installed (see [Install](#install) above).
+
+```tsx
+import {SafeAreaView} from 'react-native'
+import {GuidedTour} from 'sanity-plugin-guided-tours/native'
+import type {GuidedTourDoc} from 'sanity-plugin-guided-tours/queries'
+
+function TourScreen({tour}: {tour: GuidedTourDoc}) {
+  return (
+    <SafeAreaView style={{flex: 1}}>
+      <GuidedTour
+        tour={tour}
+        colorScheme="auto"
+        style={{flex: 1}}
+        onEvent={(event) => console.log('[guided-tour]', event)}
+      />
+    </SafeAreaView>
+  )
+}
+```
+
+Fetch the tour the same way any consumer does — compose `/queries`'
+exported `tourProjection` (or the ready-made `guidedTourBySlugQuery`) against
+your own Sanity client, or a plain `fetch` against the Content API if you'd
+rather not add a client dependency to a mobile bundle. See
+[`examples/native`](examples/native) for a complete, runnable Expo app doing
+exactly the latter against the plugin's public demo project.
+
+### Scope (v1 subset)
+
+Steps, hotspots, tooltips, text overlays, progress, chapter jump, the outro,
+personalization and full event parity are all implemented — theming too,
+with one exception below. What's different from `/react`:
+
+| Web feature | Native (v1) |
+|---|---|
+| Lead capture | Not implemented — deferred; RN forms need their own UX pass, tracked as a follow-up issue. |
+| Tooltip trigger | Tap only — `hover` has no touch equivalent, so a tooltip configured `trigger: 'hover'` degrades to tap-to-open. |
+| LQIP placeholder | Not rendered — screenshots load with no blurred placeholder while fetching. |
+| Sibling preload | ±1 step only (`Image.prefetch`), not every step — RN's image cache behaves differently than a browser's. |
+| `googleFont` auto-loading | Not fetched — there's no `document.head` to append a stylesheet `<link>` to on native. Load fonts yourself (e.g. [`expo-font`](https://docs.expo.dev/versions/latest/sdk/font/)), then set the theme's `fontFamily` to the family you loaded. |
+| `accent`/`surface`/`text`/`overlay` as `var(--token)` | Falls back to the scheme's built-in default, with a `console.warn` in development — CSS custom properties don't exist in React Native, so a theme meant to [bind to a web site's own design tokens](#binding-to-your-own-design-tokens) has nothing to resolve against here. Set a literal hex color on any theme a native app also renders. |
+| Keyboard navigation | N/A — RN has no keyboard-focus-driven arrow/Home/End equivalent on a touch-primary platform. |
+
+A hotspot's `link` action keeps the same accessibility carve-out the web
+viewer documents (see [Accessibility](#accessibility) above), in RN's own
+vocabulary: `accessibilityRole="link"` instead of `"button"`, `Linking.openURL`
+instead of `window.open`. See design spec
+[§16](docs/superpowers/specs/2026-08-04-guided-tours-plugin-design.md#16-react-native--expo-runtime-added-2026-08-05)
+for the full rationale behind each exclusion above.
 
 ## Personalization
 

@@ -47,16 +47,30 @@ import {dirname, resolve} from 'node:path'
 import {fileURLToPath} from 'node:url'
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)))
-const targetDir = resolve(repoRoot, 'examples/web/node_modules')
-const linkPath = resolve(targetDir, 'sanity-plugin-guided-tours')
 
-if (!existsSync(resolve(repoRoot, 'examples/web'))) {
-  // Nothing to link — examples/web isn't installed as a workspace member.
+// The example package's own directory. This script is always chained in
+// front of an examples/* workspace member's OWN `dev`/`build`/`typecheck`
+// script (`node ../../scripts/link-example-app.mjs && ...`), invoked either
+// directly inside that package (`bun run build`) or via `cd examples/x &&
+// bun run build` (what CI does) — either way `process.cwd()` IS that
+// package's directory, never the repo root. Resolving the target off cwd
+// rather than a hardcoded `examples/web` path is deliberate (M8 Task 4): a
+// second example app (`examples/native`) chains this same script in front
+// of its own `typecheck` script and needs the identical fix, without a
+// second near-duplicate copy of this file.
+const exampleDir = process.cwd()
+
+if (!existsSync(resolve(exampleDir, 'package.json'))) {
+  // Not actually running inside a package directory (e.g. invoked from the
+  // repo root by mistake) — nothing sensible to link.
   process.exit(0)
 }
 
+const targetDir = resolve(exampleDir, 'node_modules')
+const linkPath = resolve(targetDir, 'sanity-plugin-guided-tours')
+
 if (!existsSync(targetDir)) {
-  // `bun install` hasn't created examples/web/node_modules yet (e.g. the
+  // `bun install` hasn't created this example's node_modules yet (e.g. the
   // workspace member has no other deps to hoist). Nothing to fix up.
   process.exit(0)
 }
@@ -72,7 +86,5 @@ if (!alreadyLinked) {
   // This repo's oxlint config only allows console.warn/error (see
   // oxlint.config.ts) — this is a one-line install-time notice, not
   // application logging, so warn is the closest fit.
-  console.warn(
-    `[link-example-app] linked examples/web/node_modules/sanity-plugin-guided-tours -> ${repoRoot}`,
-  )
+  console.warn(`[link-example-app] linked ${linkPath} -> ${repoRoot}`)
 }
