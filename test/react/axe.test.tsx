@@ -16,6 +16,7 @@ import type {
   GuidedTourPortableText,
   GuidedTourSettings,
   GuidedTourStep,
+  GuidedTourStepVideo,
   GuidedTourTextOverlay,
   GuidedTourTheme,
   GuidedTourThemeFrame,
@@ -233,6 +234,28 @@ function fixtureTourWithOutro(): GuidedTourDoc {
   return tour({...fixtureTour(), outro: outro()})
 }
 
+function video(overrides: Partial<GuidedTourStepVideo> = {}): GuidedTourStepVideo {
+  return {
+    source: 'file',
+    fileUrl: 'https://cdn.sanity.io/files/proj/ds/clip.mp4',
+    url: null,
+    ...overrides,
+  }
+}
+
+/**
+ * A single-step tour whose only step has a `video` (M11) — reaches the
+ * `<Video>` state (`src/react/Video.tsx`) rather than reusing
+ * {@link fixtureTour}'s four fixed steps, which several tests above assert
+ * exact `.gt-counter` totals against ("1 / 4" etc.) that a fifth step would
+ * break.
+ */
+function fixtureTourWithVideo(): GuidedTourDoc {
+  return tour({
+    chapters: [chapter([step({_key: 'step-video', title: 'A quick walkthrough', video: video()})])],
+  })
+}
+
 function leadField(
   overrides: Partial<GuidedTourLeadCaptureField> & {_key: string},
 ): GuidedTourLeadCaptureField {
@@ -387,6 +410,22 @@ describe('axe: accessibility states', () => {
     clickNext(container) // -> outro
     expect(container.querySelector('.gt-outro')).not.toBeNull()
     expect(container.querySelectorAll('a.gt-cta')).toHaveLength(2)
+
+    await assertNoAxeViolations(container)
+  })
+
+  // M11: a step whose screenshot is replaced by a `<video>`
+  // (`src/react/Video.tsx`) — muted, looping, no captions track. Design
+  // spec §18's a11y stance: a demo loop like this is decorative (the same
+  // rationale a purely-visual, muted GIF replacement would carry), so it
+  // doesn't need captions/transcript to pass; it still needs a real
+  // accessible name, which `Step.tsx` supplies from the step's title
+  // (`aria-label`) — that's what this asserts alongside the axe run itself.
+  test('a video step has no violations', async () => {
+    const {container} = render(<GuidedTour tour={fixtureTourWithVideo()} />)
+    const videoEl = container.querySelector('video.gt-video')
+    expect(videoEl).not.toBeNull()
+    expect(videoEl?.getAttribute('aria-label')).toBe('A quick walkthrough')
 
     await assertNoAxeViolations(container)
   })

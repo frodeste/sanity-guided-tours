@@ -10,7 +10,7 @@ coverageSkipTestFiles = true
 # test-only harness code (a `matchMedia` stub, the react-native-stub +
 # renderNative test double) — the SAME rationale, they're infra for tests,
 # not code under test.
-coveragePathIgnorePatterns = ["scripts/**", "seed/**", "test/setup/matchMedia.ts", "test/support/**"]
+coveragePathIgnorePatterns = ["scripts/**", "seed/**", "test/setup/matchMedia.ts", "test/setup/intersectionObserver.ts", "test/support/**"]
 
 # M9 Task 1b (coverage lift + threshold ratchet): every file Task 1 flagged
 # as sub-93% (guidedTour.ts, PortableTextNative.tsx, native/context.ts,
