@@ -21,8 +21,14 @@ import type {GuidedTourColorScheme} from './types'
  * side effects to log through; `ensureGoogleFont` is the one place that
  * actually warns, called by `GuidedTour.tsx`'s font-loading effect for the
  * same `googleFont` value.
+ *
+ * Exported (M8 Task 2) — not just consumed internally by `themeToStyle` —
+ * so `src/native/nativeTheme.ts`'s `resolveNativeTheme` shares this EXACT
+ * precedence for its own RN-specific single-family extraction, instead of
+ * re-implementing the same two-step fallback and risking the two silently
+ * drifting apart.
  */
-function resolveFontFamily(theme: GuidedTourTheme): string | null {
+export function resolveFontFamily(theme: GuidedTourTheme): string | null {
   if (theme.fontFamily) return theme.fontFamily
   if (theme.googleFont && GOOGLE_FONT_NAME_PATTERN.test(theme.googleFont)) {
     return `'${theme.googleFont}', ${FONT_STACK}`

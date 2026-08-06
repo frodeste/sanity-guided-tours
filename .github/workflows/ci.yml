@@ -32,4 +32,21 @@ jobs:
         # Must run after `bun run build` above: the example app resolves
         # sanity-plugin-guided-tours through dist/, not src/.
         run: cd examples/web && bun run build
+      - name: typecheck native example app
+        # Same dist/-not-src/ ordering requirement as examples/web above.
+        run: cd examples/native && bun run typecheck
+      - name: export native example app
+        # M8 Task 4's plan text expected this to need network/EAS and to be
+        # skipped in favor of typecheck-only — measured locally instead:
+        # `expo export --platform ios --platform android` is a pure local
+        # Metro bundle of already-installed node_modules (~9s, no EAS
+        # login, no network call of its own), a real check `tsc --noEmit`
+        # alone can't give — every import in the module graph (including
+        # `sanity-plugin-guided-tours/native` + `/queries`'s dist output)
+        # actually resolves and bundles for both platforms, not just
+        # typechecks. `web` is deliberately excluded — this example has no
+        # `react-native-web`/`react-dom` dependency (out of scope for a
+        # native-only demo) and `expo export`'s default platform list
+        # includes web unless told otherwise.
+        run: cd examples/native && bunx expo export --platform ios --platform android
       - run: bunx @sanity/plugin-kit verify-package

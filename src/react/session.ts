@@ -13,15 +13,64 @@ export interface GuidedTourSession {
 }
 
 /**
- * Creates a fresh session: a `crypto.randomUUID()` identifier and the
- * current time via `Date.now()`. `Date.now()` is deliberately used here
- * (rather than `performance.now()`) because this is product code, not a
- * build/workflow script — see design spec §8.4.
+ * Builds an RFC 4122 v4-shaped UUID from 16 random bytes: `getRandomValues`
+ * when available, else `Math.random` — see `randomUUID`'s doc comment
+ * below for why both a CSPRNG path and a `Math.random` path exist here.
+ * `bytes[6]`'s top nibble is forced to `4` (the version) and `bytes[8]`'s
+ * top two bits to `10` (the variant), then the 32 hex digits are grouped
+ * into the standard `8-4-4-4-12` dashed form.
+ */
+function fallbackUUID(): string {
+  const bytes = new Uint8Array(16)
+  if (typeof globalThis.crypto?.getRandomValues === 'function') {
+    globalThis.crypto.getRandomValues(bytes)
+  } else {
+    for (let i = 0; i < bytes.length; i += 1) {
+      bytes[i] = Math.floor(Math.random() * 256)
+    }
+  }
+  bytes[6] = (bytes[6] & 0x0f) | 0x40
+  bytes[8] = (bytes[8] & 0x3f) | 0x80
+
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0'))
+  return [
+    hex.slice(0, 4).join(''),
+    hex.slice(4, 6).join(''),
+    hex.slice(6, 8).join(''),
+    hex.slice(8, 10).join(''),
+    hex.slice(10, 16).join(''),
+  ].join('-')
+}
+
+/**
+ * `crypto.randomUUID()` when it exists, else `fallbackUUID()` — the
+ * `?.` chain covers BOTH "no `crypto` global at all" and "`crypto` exists
+ * but has no `randomUUID` method", which matters once this module runs
+ * under Hermes (the native viewer's JS engine, M8 Task 2): Hermes has no
+ * built-in WebCrypto, so `crypto` is `undefined` unless a consumer's own
+ * polyfill provides one, and even a polyfill commonly implements only
+ * `getRandomValues` (the lower-level primitive) without `randomUUID`
+ * (the higher-level convenience method layered on top of it) — hence
+ * `fallbackUUID` preferring `getRandomValues` over `Math.random` itself,
+ * one level down, rather than jumping straight to `Math.random` the
+ * moment `randomUUID` is missing. `Math.random` is the last resort only
+ * for an environment with no crypto surface whatsoever.
+ */
+function randomUUID(): string {
+  return globalThis.crypto?.randomUUID?.() ?? fallbackUUID()
+}
+
+/**
+ * Creates a fresh session: a v4-shaped UUID identifier (native
+ * `crypto.randomUUID()` where available, `fallbackUUID()` under Hermes)
+ * and the current time via `Date.now()`. `Date.now()` is deliberately used
+ * here (rather than `performance.now()`) because this is product code, not
+ * a build/workflow script — see design spec §8.4.
  *
  * @public
  */
 export function createSession(): GuidedTourSession {
-  return {sessionId: crypto.randomUUID(), startedAt: Date.now()}
+  return {sessionId: randomUUID(), startedAt: Date.now()}
 }
 
 /**

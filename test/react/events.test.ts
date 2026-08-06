@@ -1,9 +1,15 @@
-import {describe, expect, test} from 'bun:test'
+import {afterEach, describe, expect, test} from 'bun:test'
 
 import type {GuidedTourEvent} from '../../src/react/events'
 import {createSession, createTracker} from '../../src/react/session'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+// Strict RFC4122 v4 shape: version nibble is literally 4, variant nibble is
+// one of 8/9/a/b — `UUID_PATTERN` above only checks hex-digit placement, not
+// that createSession() actually produced a v4 id, which matters once
+// `fallbackUUID()` (Hermes path, no `crypto.randomUUID`) is a second code
+// path that must land on the same shape as the native one.
+const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 function collector(): {events: GuidedTourEvent[]; handler: (event: GuidedTourEvent) => void} {
   const events: GuidedTourEvent[] = []
@@ -26,6 +32,65 @@ describe('createSession', () => {
     const after = Date.now()
     expect(session.startedAt).toBeGreaterThanOrEqual(before)
     expect(session.startedAt).toBeLessThanOrEqual(after)
+  })
+})
+
+// `createSession` calls its randomUUID helper fresh on every invocation
+// (nothing is cached at module load), so these tests can monkeypatch
+// `globalThis.crypto` for the duration of one test and restore it in
+// `afterEach` — no module-reset helper needed, unlike `fontLoader.ts`'s
+// genuinely-cached module state.
+describe('createSession: Hermes/React Native fallback (no crypto.randomUUID)', () => {
+  const originalCrypto = globalThis.crypto
+
+  afterEach(() => {
+    Object.defineProperty(globalThis, 'crypto', {
+      value: originalCrypto,
+      configurable: true,
+      writable: true,
+    })
+  })
+
+  test('crypto.randomUUID absent, crypto.getRandomValues present: still produces a v4-shaped UUID', () => {
+    Object.defineProperty(globalThis, 'crypto', {
+      value: {getRandomValues: originalCrypto.getRandomValues.bind(originalCrypto)},
+      configurable: true,
+      writable: true,
+    })
+    const session = createSession()
+    expect(session.sessionId).toMatch(UUID_V4_PATTERN)
+  })
+
+  test('crypto entirely absent (Hermes with no WebCrypto polyfill): falls back to Math.random, still v4-shaped', () => {
+    Object.defineProperty(globalThis, 'crypto', {
+      value: undefined,
+      configurable: true,
+      writable: true,
+    })
+    const session = createSession()
+    expect(session.sessionId).toMatch(UUID_V4_PATTERN)
+  })
+
+  test('the Math.random fallback still produces distinct ids across calls', () => {
+    Object.defineProperty(globalThis, 'crypto', {
+      value: undefined,
+      configurable: true,
+      writable: true,
+    })
+    expect(createSession().sessionId).not.toBe(createSession().sessionId)
+  })
+
+  test('globalThis.crypto present but randomUUID specifically undefined (older Hermes polyfills): falls back, still v4-shaped', () => {
+    Object.defineProperty(globalThis, 'crypto', {
+      value: {
+        getRandomValues: originalCrypto.getRandomValues.bind(originalCrypto),
+        randomUUID: undefined,
+      },
+      configurable: true,
+      writable: true,
+    })
+    const session = createSession()
+    expect(session.sessionId).toMatch(UUID_V4_PATTERN)
   })
 })
 

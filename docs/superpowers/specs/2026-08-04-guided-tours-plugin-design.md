@@ -716,3 +716,201 @@ keeps rendering exactly as before.
   `sample-tour` references it; `how-to-build-tours` (the meta tour) stays
   theme-less on purpose, so a freshly seeded dataset shows both a branded
   tour and the viewer's own modern built-in defaults side by side.
+
+## 16. React Native / Expo runtime (added 2026-08-05)
+
+A fourth entry, `sanity-plugin-guided-tours/native` (issues #124/#125),
+renders the same `guidedTour` documents in a React Native / Expo app. The
+schema and GROQ queries are completely untouched — `/native` is a new
+consumer of the exact same `tourProjection`/`GuidedTourDoc` contract every
+other entry already uses, not a parallel content model.
+
+### Entry and shared core
+
+`src/native/` is built from RN primitives (`View`, `Text`, `Pressable`,
+`Image`, `Modal`, `ScrollView`) and reuses the SAME dependency-free logic
+modules `/react` already depends on — `navigation.ts` (flatten/next/prev/
+goto), `personalize.ts` (token substitution), `events.ts`/`session.ts`
+(the tracker), `labels.ts` — plus everything under `/queries`. Nothing in
+those shared modules touches a DOM global at module scope; `session.ts`'s
+session-id generation gained a `crypto.getRandomValues`-backed
+`fallbackUUID()` for engines (Hermes on older RN) that don't expose
+`crypto.randomUUID()`. Reusing rather than re-deriving this core is the
+whole point: flattening, token substitution, event sequencing and session
+handling behave IDENTICALLY on both runtimes, so a bug fixed in one can't
+silently persist in the other.
+
+`test/exports.test.ts`'s entry-isolation guard extends to `src/native`:
+its files may import ONLY `react`, `react-native`, `../queries`, and an
+explicit allow-list of `../react/*` pure logic modules
+(`navigation`/`personalize`/`events`/`session`/`labels`/`theme`) — never a
+DOM-touching `react` module (`fontLoader.ts`, `styles.css`, any component
+file) and never `sanity`/`@sanity/ui`/`styled-components`. `react-native`
+itself is registered as an **optional** peer dependency (`>=0.74`,
+`peerDependenciesMeta.react-native.optional: true`) — a web-only consumer
+importing only `/react` and `/queries` never resolves it, and
+`verify-package` stays green with an optional RN peer present (checked;
+no special-casing needed).
+
+`./native` carries no `'use client'` banner, unlike `./react` — React
+Native has no React Server Components client/server boundary to mark, so
+the directive would be meaningless. `package.config.ts`'s Rollup banner
+that re-adds `'use client'` after bundling stays scoped to exactly the
+`react/index.js` output chunk for the same reason.
+
+Theming has its own resolver, `resolveNativeTheme` (`src/native/nativeTheme.ts`):
+the RN counterpart of `themeToStyle`, but flat rather than paired —
+RN has no CSS cascade to resolve a light/dark pair against at paint time,
+so one scheme is resolved eagerly into plain values a `StyleSheet` factory
+(`src/native/styles.ts`) can consume directly. `fontFamily` uses the exact
+same precedence as the web resolver (`fontFamily` first, then a
+pattern-gated `googleFont`, via the shared `resolveFontFamily`), reduced to
+RN's single-family model by taking the winning value's first
+comma-separated, unquoted family name.
+
+### v1 subset and exclusions
+
+A deliberate subset of the web viewer, not a smaller feature set by
+accident:
+
+- **In scope, full parity:** steps, hotspots, tooltips, text overlays,
+  progress bar + step counter, prev/next + chapter jump, the outro with
+  CTAs, personalization, theming (see the `var()` exception below),
+  `colorScheme` (`'auto'` via `useColorScheme()`), labels, and the full
+  analytics event sequence (`tour_started` → `step_viewed` → ... →
+  `tour_completed`/`tour_abandoned`) via the same `createTracker`.
+- **Lead capture: deferred.** RN forms need their own UX design pass —
+  keyboard avoidance, native input types, a different validation-feedback
+  idiom than the web viewer's inline error text — that this milestone's
+  scope didn't include. Tracked as a follow-up issue rather than shipped
+  half-considered. `onLeadSubmit`/`lead_submitted` exist in the shared
+  tracker but are unreachable from `/native` in v1, same as any other
+  consumer that doesn't wire lead capture up.
+- **Prefetch ±1, not every step.** `usePrefetchSiblings` calls
+  `Image.prefetch` on only the immediately adjacent steps' screenshot URLs,
+  deduped per URL per mount, silently swallowing rejections — RN's image
+  cache has different eviction behavior than a browser's, so eagerly
+  prefetching an entire tour isn't the same trade-off web's browser-cache
+  reliance makes.
+- **`prefers-reduced-motion` is mandatory, not a CSS media query.**
+  `useReducedMotion()` reads `AccessibilityInfo.isReduceMotionEnabled()`
+  (plus a `reduceMotionChanged` listener) and threads the result through
+  context to every component — gating the hotspot pulse ring and the
+  modal's `animationType` exactly like web's own `prefers-reduced-motion`
+  rule gates CSS animation, just resolved through RN's accessibility API
+  instead of a stylesheet, since RN has no media-query equivalent at all.
+- **Link accessibility carve-out, in RN's vocabulary.** §8.6's web rule — a
+  hotspot whose `action` is `'link'` gets real anchor semantics instead of
+  button semantics — carries over as `accessibilityRole="link"` (instead of
+  `"button"`) plus `Linking.openURL` on the RAW `href` (instead of
+  `window.open`), on both hotspot link-actions and outro CTAs.
+- **`var(--token)` theme colors: unsupported, not silently wrong.** A
+  theme's `accent`/`surface`/`text`/`overlay` may be authored as a CSS
+  variable reference to bind to a *web* site's own design tokens (§15). CSS
+  custom properties don't exist in React Native — there is nothing to
+  resolve a `var(...)` value against — so `resolveNativeTheme` falls back
+  to the scheme's own built-in default for that field, with a
+  `console.warn` in development (silent in production, the same "silent
+  prod, loud dev" idiom `ensureGoogleFont`'s own warning uses). Documented
+  as a limitation, not treated as a bug: an author sharing one
+  `guidedTourTheme` document across a web site and a native app needs a
+  literal hex color on that theme, not a `var()` reference, for the native
+  app to render it correctly.
+- **Font loading is the consumer's job.** There is no `document.head` on
+  native for `ensureGoogleFont` to append a stylesheet `<link>` to, so
+  `googleFont` auto-loading is a no-op there — `fontFamily`/`googleFont`
+  still resolve to a family NAME (via the same `resolveFontFamily`
+  precedence), but making that family actually render is left to the
+  consumer's own font-loading pipeline (e.g. `expo-font`), exactly as
+  `loadGoogleFont={false}` already leaves it to the consumer on web.
+- **LQIP: skipped.** No blurred-placeholder background while a screenshot
+  loads — an intentional v1 cut, not a bug.
+- **No keyboard navigation.** RN has no keyboard-focus-driven Arrow/Home/
+  End/Space equivalent to port on a touch-primary platform; tap/swipe are
+  the only input model.
+
+### Test strategy
+
+Bun can't execute the real `react-native` package — its entry file uses
+Flow syntax Bun's transpiler rejects outright, and it assumes a live
+Hermes/JSC host with native modules wired up that doesn't exist under `bun
+test`. Two pieces make `src/native` testable anyway:
+
+- **A lightweight `react-native` stub** (`test/support/react-native-stub/`)
+  implementing just enough of `View`/`Text`/`Image` (with static
+  `prefetch`/`getSize`)/`Pressable`/`Modal`/`ScrollView`/`StyleSheet`/
+  `Linking`/`AccessibilityInfo`/`useColorScheme`/`useWindowDimensions`/
+  `Platform` to render and be inspected. Host components render literal
+  custom JSX tags (`<rn-view>`, etc.) rather than `createElement(...)`
+  calls, because this repo's shared lint config forbids importing
+  `createElement` directly.
+- **A `Bun.plugin` `onLoad` alias**, not `onResolve` (`test/setup/reactNativeStub.ts`,
+  wired into `bunfig.toml`'s `[test] preload`). The original plan's Global
+  Constraints called for "a resolver-level alias via bunfig/tsconfig
+  paths," on the assumption `onResolve`-style interception would do it;
+  in practice Bun's runtime module loader resolves a top-level static ESM
+  `import ... from 'react-native'` through a fast native path that a
+  registered `onResolve` hook never intercepts (verified by instrumented
+  logging: `onResolve` fires for every *nested* `require()` inside
+  `react`/`react-test-renderer`'s own CJS entry files, but never for that
+  top-level import). `onLoad`, filtered on the already-resolved absolute
+  path to `node_modules/react-native/index.js` (tolerant of the `.bun`
+  package-hash directory segment Bun's own install layout inserts), fires
+  reliably; `loader: 'object'` hands back the stub's live exports directly,
+  with no source-text templating to drift out of sync with what call sites
+  actually destructure. `tsconfig` `paths` was ruled out for the same
+  reason it was never a candidate for the runtime path: it only affects
+  `tsc`, never `bun`'s own module resolution.
+
+Rendering assertions run through `react-test-renderer` (`@deprecated`
+upstream, but still the tool the ecosystem hasn't replaced for this use
+case), centralized behind `renderNative`/`actNative` helpers so the
+suppression for its deprecation warning lives in exactly one place rather
+than once per test file. `globalThis.IS_REACT_ACT_ENVIRONMENT = true` is
+required for React 19's `act(...)` to flush synchronously under this
+harness — without it, `TestRenderer.create()` returns a renderer whose
+`.toJSON()` is `null`, not merely unwrapped-in-`act` noisy.
+
+Coverage: navigation wiring, hotspot actions (including a raw-href
+`Linking` spy), token personalization, the full event sequence, theme
+application (resolved colors landing in style objects), `colorScheme`
+forced vs. `'auto'`, and `accessibilityRole`/`accessibilityLabel` presence
+on every interactive element — the native counterpart of the web suite's
+axe-core pass, since `axe-core` itself has no RN equivalent.
+
+### Example app and docs
+
+[`examples/native`](../../../examples/native) is a minimal Expo (SDK 57,
+paired with `react-native@0.86.2`/`react@19.2.3` — matching this package's
+own `react-native` devDependency exactly) TypeScript app: `App.tsx`
+plain-`fetch`es the plugin's public demo project (project `2xpymzdv`,
+dataset `production`, slug `demo-tour` — the same content
+`examples/web` renders at `/tours/demo-tour`) via the Content API's CDN
+endpoint, composing the exported `tourProjection` fragment into its own
+query exactly the way `examples/web/app/tours/[slug]/page.tsx` composes
+its, then renders `<GuidedTour>` full-screen inside a `SafeAreaView` with
+`colorScheme="auto"`. It depends on the plugin via `file:../..`, same as
+`examples/web`.
+
+`scripts/link-example-app.mjs` (§9, the `file:../..` one-time-copy fix)
+was generalized from a single `examples/web`-hardcoded path to resolve its
+target off `process.cwd()`, so `examples/native`'s own `typecheck` script
+chains the identical `node ../../scripts/link-example-app.mjs &&
+tsc --noEmit` prefix `examples/web`'s `dev`/`build`/`typecheck` scripts
+already used, rather than duplicating the whole file per example app. No
+lifecycle hook (`postinstall`) was added anywhere — the same
+`bun install --frozen-lockfile` instability §9's original amendment
+documented for `examples/web` applies identically to any workspace member.
+
+CI (`.github/workflows/ci.yml`) runs `examples/native`'s `typecheck`
+script after `examples/web`'s build step (same dist-not-src ordering
+requirement), plus `expo export --platform ios --platform android` —
+measured locally at under 10 seconds with no EAS login or network call of
+its own (a pure local Metro bundle of already-installed `node_modules`),
+so the plan's fallback-to-typecheck-only default didn't apply; `web` is
+excluded from the export platforms since this example has no
+`react-native-web`/`react-dom` dependency (out of scope for a native-only
+demo, and `expo export`'s default platform list otherwise includes it).
+Runtime verification on a real device/simulator remains impossible on a
+CI runner or this box — recorded as an owner-verification ask (`cd
+examples/native && npx expo start`, then Expo Go or a simulator).

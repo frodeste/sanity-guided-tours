@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "name": "guided-tours-example-native",
+    "slug": "guided-tours-example-native",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": true
+    }
+  }
+}
