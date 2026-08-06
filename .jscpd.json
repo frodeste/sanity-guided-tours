@@ -1,0 +1,7 @@
+{
+  "path": ["src"],
+  "reporters": ["markdown", "console"],
+  "output": ".jscpd",
+  "gitignore": true,
+  "absolute": false
+}

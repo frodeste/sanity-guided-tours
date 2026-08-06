@@ -116,7 +116,11 @@ export function chapter(overrides: Partial<GuidedTourChapter> & {_key: string}):
   }
 }
 
-export function settings(overrides: Partial<GuidedTourSettings> = {}): GuidedTourSettings {
+// File-local (M9 Task 2, `bunx knip`): only used by `tour()` below in this
+// same file — no `test/native/*.test.tsx` imports it directly (unlike the
+// sibling fixture functions above/below it), so the `export` was
+// unnecessary public surface.
+function settings(overrides: Partial<GuidedTourSettings> = {}): GuidedTourSettings {
   return {
     showProgress: true,
     showChapterMenu: true,

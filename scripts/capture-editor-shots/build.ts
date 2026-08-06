@@ -27,7 +27,15 @@ const DEMO_PROJECT_ID = '2xpymzdv'
 const DEMO_DATASET = 'production'
 const DEMO_API_VERSION = 'v2026-08-01'
 
-export interface DemoAssetRefs {
+// `DemoAssetRefs`/`fetchDemoAssetRefs` below are file-local (M9 Task 2,
+// `bunx knip`): only `buildAndServe` is imported by `capture.ts` — these
+// two are called from inside `buildAndServe` itself, never from outside
+// this file, so the `export` keyword was unnecessary public surface, not a
+// real consumer. Note `fixtures.tsx` declares its OWN separate
+// `DemoAssetRefs` interface (structurally identical, independently typed)
+// — that one runs in the bundled-for-the-browser entry, this one runs in
+// the Bun/Node-side build script; the two never share a module boundary.
+interface DemoAssetRefs {
   step1: string
   step2: string
   step3: string
@@ -57,7 +65,7 @@ function extractAssetRefs(json: unknown): string[] | null {
  * `docs/superpowers/plans/2026-08-04-m1-foundation.md`'s controller notes
  * record it as such).
  */
-export async function fetchDemoAssetRefs(): Promise<DemoAssetRefs> {
+async function fetchDemoAssetRefs(): Promise<DemoAssetRefs> {
   const query =
     '*[_type == "guidedTour" && slug.current == "sample-tour"][0]' +
     '{"refs": chapters[].steps[].screenshot.asset._ref}'

@@ -7,6 +7,20 @@
 // `_key`/`_id` generation is injected via `KeyGen` rather than called
 // directly (`crypto.randomUUID()`) so tests can assert on exact document
 // shape with deterministic keys — see `test/seed/builders.test.ts`.
+//
+// M9 Task 2 (`bunx knip`): the per-element/per-field builder functions and
+// their `*Doc` interfaces (`buildHotspot`/`HotspotDoc`, `buildStep`/
+// `StepDoc`, etc.) are intentionally NOT exported — only the higher-level
+// `build*Document` functions and the umbrella `SampleTourDocument`/
+// `ExamplePageDocument` types are (what `seed/seed.ts` and
+// `test/seed/builders.test.ts` actually consume). The lower-level ones are
+// composed internally by the `build*Document` functions in this same file;
+// exporting them too was pure habit, not a real public surface, and knip's
+// unused-exports check caught it. Kept as plain (non-exported) file-local
+// helpers rather than deleted, since they ARE used — just not from outside
+// this module. `ElementDoc`/`PageBodyBlock` stay exported (and their own
+// union members stay unexported) because those two ARE the public
+// element/body shapes `test/seed/builders.test.ts` types against.
 
 /** Generates one string per call. Injected so tests get deterministic keys. */
 export type KeyGen = () => string
@@ -41,7 +55,7 @@ interface PortableTextBlock {
 }
 
 /** A single-paragraph rich text value with one plain-text span. */
-export function plainTextBlock(keyGen: KeyGen, text: string): PortableTextBlock[] {
+function plainTextBlock(keyGen: KeyGen, text: string): PortableTextBlock[] {
   return [
     {
       _key: keyGen(),
@@ -59,7 +73,7 @@ export function plainTextBlock(keyGen: KeyGen, text: string): PortableTextBlock[
  * Portable Text array (headings + paragraphs), unlike `plainTextBlock`'s
  * fixed `'normal'` used elsewhere for tooltip/overlay/outro content.
  */
-export function styledTextBlock(
+function styledTextBlock(
   keyGen: KeyGen,
   text: string,
   style: PortableTextBlock['style'],
@@ -77,7 +91,7 @@ export function styledTextBlock(
  * exercises `guidedTourRichText`'s `link` annotation, which the outro's
  * `body` field is capable of carrying.
  */
-export function linkedTextBlock(
+function linkedTextBlock(
   keyGen: KeyGen,
   before: string,
   linkText: string,
@@ -109,11 +123,11 @@ interface ImageAssetField {
 }
 
 /** An `image` field pointing at an already-uploaded asset document. */
-export function imageField(assetId: string, alt: string): ImageAssetField {
+function imageField(assetId: string, alt: string): ImageAssetField {
   return {_type: 'image', asset: {_type: 'reference', _ref: assetId}, alt}
 }
 
-export interface HotspotDoc {
+interface HotspotDoc {
   _key: string
   _type: 'guidedTourHotspot'
   x: number
@@ -124,14 +138,11 @@ export interface HotspotDoc {
   pulse?: boolean
 }
 
-export function buildHotspot(
-  keyGen: KeyGen,
-  fields: Omit<HotspotDoc, '_key' | '_type'>,
-): HotspotDoc {
+function buildHotspot(keyGen: KeyGen, fields: Omit<HotspotDoc, '_key' | '_type'>): HotspotDoc {
   return {_key: keyGen(), _type: 'guidedTourHotspot', ...fields}
 }
 
-export interface TooltipDoc {
+interface TooltipDoc {
   _key: string
   _type: 'guidedTourTooltip'
   x: number
@@ -142,14 +153,11 @@ export interface TooltipDoc {
   trigger?: 'click' | 'hover' | 'auto'
 }
 
-export function buildTooltip(
-  keyGen: KeyGen,
-  fields: Omit<TooltipDoc, '_key' | '_type'>,
-): TooltipDoc {
+function buildTooltip(keyGen: KeyGen, fields: Omit<TooltipDoc, '_key' | '_type'>): TooltipDoc {
   return {_key: keyGen(), _type: 'guidedTourTooltip', ...fields}
 }
 
-export interface TextOverlayDoc {
+interface TextOverlayDoc {
   _key: string
   _type: 'guidedTourTextOverlay'
   x: number
@@ -160,7 +168,7 @@ export interface TextOverlayDoc {
   opacity?: number
 }
 
-export function buildTextOverlay(
+function buildTextOverlay(
   keyGen: KeyGen,
   fields: Omit<TextOverlayDoc, '_key' | '_type'>,
 ): TextOverlayDoc {
@@ -171,7 +179,7 @@ export type ElementDoc = HotspotDoc | TooltipDoc | TextOverlayDoc
 
 // --- Step / chapter (src/schema/step.ts, src/schema/chapter.ts) ------------
 
-export interface StepDoc {
+interface StepDoc {
   _key: string
   _type: 'guidedTourStep'
   title?: string
@@ -181,11 +189,11 @@ export interface StepDoc {
   duration?: number
 }
 
-export function buildStep(keyGen: KeyGen, fields: Omit<StepDoc, '_key' | '_type'>): StepDoc {
+function buildStep(keyGen: KeyGen, fields: Omit<StepDoc, '_key' | '_type'>): StepDoc {
   return {_key: keyGen(), _type: 'guidedTourStep', ...fields}
 }
 
-export interface ChapterDoc {
+interface ChapterDoc {
   _key: string
   _type: 'guidedTourChapter'
   title: string
@@ -193,16 +201,13 @@ export interface ChapterDoc {
   steps: StepDoc[]
 }
 
-export function buildChapter(
-  keyGen: KeyGen,
-  fields: Omit<ChapterDoc, '_key' | '_type'>,
-): ChapterDoc {
+function buildChapter(keyGen: KeyGen, fields: Omit<ChapterDoc, '_key' | '_type'>): ChapterDoc {
   return {_key: keyGen(), _type: 'guidedTourChapter', ...fields}
 }
 
 // --- Tokens (src/schema/token.ts) -------------------------------------------
 
-export interface TokenDoc {
+interface TokenDoc {
   _key: string
   _type: 'guidedTourToken'
   key: string
@@ -211,13 +216,13 @@ export interface TokenDoc {
   required?: boolean
 }
 
-export function buildToken(keyGen: KeyGen, fields: Omit<TokenDoc, '_key' | '_type'>): TokenDoc {
+function buildToken(keyGen: KeyGen, fields: Omit<TokenDoc, '_key' | '_type'>): TokenDoc {
   return {_key: keyGen(), _type: 'guidedTourToken', ...fields}
 }
 
 // --- Outro (src/schema/outro.ts) --------------------------------------------
 
-export interface OutroCtaDoc {
+interface OutroCtaDoc {
   _key: string
   _type: 'cta'
   label: string
@@ -225,27 +230,24 @@ export interface OutroCtaDoc {
   style?: 'primary' | 'secondary'
 }
 
-export function buildOutroCta(
-  keyGen: KeyGen,
-  fields: Omit<OutroCtaDoc, '_key' | '_type'>,
-): OutroCtaDoc {
+function buildOutroCta(keyGen: KeyGen, fields: Omit<OutroCtaDoc, '_key' | '_type'>): OutroCtaDoc {
   return {_key: keyGen(), _type: 'cta', ...fields}
 }
 
-export interface OutroDoc {
+interface OutroDoc {
   _type: 'guidedTourOutro'
   heading?: string
   body?: PortableTextBlock[]
   ctas?: OutroCtaDoc[]
 }
 
-export function buildOutro(fields: Omit<OutroDoc, '_type'>): OutroDoc {
+function buildOutro(fields: Omit<OutroDoc, '_type'>): OutroDoc {
   return {_type: 'guidedTourOutro', ...fields}
 }
 
 // --- Lead capture (src/schema/leadCapture.ts) -------------------------------
 
-export interface LeadCaptureFieldDoc {
+interface LeadCaptureFieldDoc {
   _key: string
   _type: 'field'
   name: string
@@ -254,14 +256,14 @@ export interface LeadCaptureFieldDoc {
   required?: boolean
 }
 
-export function buildLeadCaptureField(
+function buildLeadCaptureField(
   keyGen: KeyGen,
   fields: Omit<LeadCaptureFieldDoc, '_key' | '_type'>,
 ): LeadCaptureFieldDoc {
   return {_key: keyGen(), _type: 'field', ...fields}
 }
 
-export interface LeadCaptureDoc {
+interface LeadCaptureDoc {
   _type: 'guidedTourLeadCapture'
   enabled: boolean
   trigger?: 'afterStep' | 'atEnd'
@@ -271,27 +273,27 @@ export interface LeadCaptureDoc {
   submitLabel?: string
 }
 
-export function buildLeadCapture(fields: Omit<LeadCaptureDoc, '_type'>): LeadCaptureDoc {
+function buildLeadCapture(fields: Omit<LeadCaptureDoc, '_type'>): LeadCaptureDoc {
   return {_type: 'guidedTourLeadCapture', ...fields}
 }
 
 // --- Settings (src/schema/settings.ts) --------------------------------------
 
-export interface SettingsDoc {
+interface SettingsDoc {
   _type: 'guidedTourSettings'
   showProgress?: boolean
   showChapterMenu?: boolean
   showStepDots?: boolean
 }
 
-export function buildSettings(fields: Omit<SettingsDoc, '_type'>): SettingsDoc {
+function buildSettings(fields: Omit<SettingsDoc, '_type'>): SettingsDoc {
   return {_type: 'guidedTourSettings', ...fields}
 }
 
 // --- Theme (src/schema/theme.ts) --------------------------------------------
 
 /** `guidedTourTheme.dark`'s independently optional overrides — see that field's schema description. */
-export interface ThemeDarkDoc {
+interface ThemeDarkDoc {
   accent?: string
   surface?: string
   text?: string
@@ -793,7 +795,7 @@ export function buildMetaTourDocument(
 // these documents editable; this script writes them the same idempotent
 // `createOrReplace` way as the tours/theme above, into the same dataset.
 
-export interface PageEmbedDoc {
+interface PageEmbedDoc {
   _key: string
   _type: 'guidedTourEmbed'
   tour: {_type: 'reference'; _ref: string}
@@ -802,7 +804,7 @@ export interface PageEmbedDoc {
 }
 
 /** A `guidedTourEmbed` body item referencing an already-seeded tour by id. */
-export function buildPageEmbed(
+function buildPageEmbed(
   keyGen: KeyGen,
   fields: Omit<PageEmbedDoc, '_key' | '_type'>,
 ): PageEmbedDoc {

@@ -1,0 +1,108 @@
+{
+  // M9 Task 2 (#135): dead-export/dead-file/dead-dependency detector, run
+  // gating in CI's `quality` job (`bunx knip --reporter compact`) — see
+  // `.superpowers/sdd/qa-research.md` §4 and the M9 plan's Task 2.
+  //
+  // `entry` below is deliberately explicit rather than relying purely on
+  // knip's own `package.json#exports`/workspace auto-detection, per the
+  // task brief: the four public entry points ARE already auto-resolved
+  // from `package.json#exports`'s `source` condition (verified: knip finds
+  // zero issues in `src/**` without any config at all) — listed here again
+  // anyway so the entry surface is legible from this file alone, not
+  // implied. Everything else in `entry` fixes a real false positive:
+  // knip's static import graph can't see a file that's only ever reached
+  // through a dynamic mechanism (a `Bun.build`/`Bun.plugin` string path
+  // join, a CLI-invoked script, a config file read by filename convention,
+  // or a virtual-module swap-in whose consumer does `import * as ns`
+  // rather than destructuring named bindings). Each one is commented with
+  // which dynamic path applies.
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    // Public API — already covered via `package.json#exports`'s `source`
+    // condition; restated for legibility (see module comment above).
+    "src/index.ts",
+    "src/react/index.ts",
+    "src/native/index.ts",
+    "src/queries/index.ts",
+    // `@sanity/pkg-utils` loads this by filename convention (cosmiconfig
+    // under the hood) — never imported by any other module in the repo.
+    "package.config.ts",
+    // `bun run seed` (`package.json#scripts.seed`) invokes this directly;
+    // nothing imports it.
+    "seed/seed.ts",
+    // `package.json#scripts["capture:editor-shots"]` invokes this
+    // directly.
+    "scripts/capture-editor-shots/capture.ts",
+    // Bundled by `build.ts`'s `Bun.build({entrypoints: [join(HERE,
+    // 'entry.tsx')]})` — a runtime string path join, not a static import,
+    // so knip's graph never reaches it from `capture.ts` alone.
+    "scripts/capture-editor-shots/entry.tsx",
+    // Resolved in by `build.ts`'s `sanityShimPlugin` (`build.onResolve`
+    // redirecting the bare `'sanity'` specifier to this file's path) —
+    // same "reached only via a runtime path join" shape as `entry.tsx`.
+    "scripts/capture-editor-shots/sanityShim.ts",
+    // Throwaway, run-once-and-commit-the-output generator (see its own
+    // module comment) — not part of any build step or `package.json`
+    // script by design, kept for reproducibility of `seed/images/*.png`.
+    "scripts/generate-seed-images.ts",
+    // `bunfig.toml`'s `[test] preload` — loaded by Bun before the test
+    // run starts, never imported from a test file.
+    "test/setup/dom.ts",
+    "test/setup/reactNativeStub.ts",
+    // A virtual-module stand-in for `react-native`, swapped in by
+    // `test/setup/reactNativeStub.ts`'s `Bun.plugin` `onLoad` hook via
+    // `import * as stub from '../support/react-native-stub/index'` then
+    // `exports: stub` — knip sees the import but, because every named
+    // export is consumed opaquely through the namespace object rather
+    // than destructured by name, it can't attribute individual exports
+    // (`View`, `Text`, `StyleSheet`, ...) as used. Declaring this file
+    // itself an entry point (its whole job IS to be a drop-in
+    // module — every export is deliberately part of that surface) is the
+    // correct fix, not a suppression: nothing here is actually dead.
+    "test/support/react-native-stub/index.tsx",
+  ],
+  // `ajv@^8.13` (root devDependency): a deliberate version-resolution pin,
+  // not source code that imports it — see the M1 foundation commit
+  // ("`ajv@^8.13` pin is load-bearing for the build") and memory
+  // `guided-tours-m1-execution-facts`. Nothing in this repo's own source
+  // imports `ajv` directly; it forces a single resolved version for a
+  // transitive dependency inside `@sanity/pkg-utils`/`@sanity/plugin-kit`'s
+  // own toolchain. Removing it because knip calls it "unused" would
+  // silently un-pin that resolution — a real false positive, not dead
+  // code.
+  //
+  // `jscpd`/`madge`: pinned devDependencies (M9 Task 2) invoked only as
+  // CLI binaries from `ci.yml`'s `quality` job (`bunx madge ...`, `bunx
+  // jscpd`), never imported from TS/JS source — knip flags any CLI-only
+  // tool this way. `knip` itself needs no entry here: knip already
+  // exempts its own package from this check.
+  "ignoreDependencies": ["ajv", "jscpd", "madge"],
+  "workspaces": {
+    ".": {
+      "entry": [
+        "src/index.ts",
+        "src/react/index.ts",
+        "src/native/index.ts",
+        "src/queries/index.ts",
+        "package.config.ts",
+        "seed/seed.ts",
+        "scripts/capture-editor-shots/capture.ts",
+        "scripts/capture-editor-shots/entry.tsx",
+        "scripts/capture-editor-shots/sanityShim.ts",
+        "scripts/generate-seed-images.ts",
+        "test/setup/dom.ts",
+        "test/setup/reactNativeStub.ts",
+        "test/support/react-native-stub/index.tsx",
+      ],
+    },
+    "examples/native": {
+      // `app.json`'s Expo SDK 57 config implies these two as standard
+      // config-plugin defaults even though this app.json has no explicit
+      // `"plugins"` array — a knip Expo-plugin heuristic, not an actual
+      // missing dependency: `examples/native` already builds, typechecks,
+      // and `expo export`s clean in `gates.yml` without either package
+      // declared. Targeted ignore, not a real gap.
+      "ignoreDependencies": ["expo-updates", "expo-system-ui"],
+    },
+  },
+}

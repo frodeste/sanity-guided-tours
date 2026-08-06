@@ -304,7 +304,9 @@ function chapterItemMember(chapter: unknown): ArrayOfObjectsItemMember {
   }
 }
 
-export function fixtureMembers(chapters: unknown[]): ArrayOfObjectsMember[] {
+// File-local (M9 Task 2, `bunx knip`): only used by the exported fixture
+// below in this same file — nothing outside this module imports it.
+function fixtureMembers(chapters: unknown[]): ArrayOfObjectsMember[] {
   return chapters.map(chapterItemMember)
 }
 
