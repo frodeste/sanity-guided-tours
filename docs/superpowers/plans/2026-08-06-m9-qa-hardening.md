@@ -20,7 +20,7 @@ All accumulated constraints hold (memory `guided-tours-m1-execution-facts`). Add
 
 **Files:** `bunfig.toml` (`[test]`: coverage on, reporters text+lcov, `coverageSkipTestFiles = true`, `coveragePathIgnorePatterns` for `scripts/**` + `seed/**` + test-support, threshold lines/functions only); new tests for `previewHelpers.ts` and `useUploader.ts` (lift both files to ≥90/≥90 where practical — read what each does first; pure logic paths preferred over UI scaffolding); `.github/workflows/gates.yml` (new reusable `workflow_call` running the full gate sequence: install → lint → typecheck → build → `bun test --coverage` → attw `--pack . --profile esm-only` → verify-package → example builds/typechecks/export, preserving current ci.yml step order incl. build-before-test); `ci.yml` (calls the reusable workflow; job/check names MUST keep producing a stable context — record the final check name for Task 3); `release.yml` (calls the same reusable workflow, then semantic-release; dispatch trigger and concurrency group unchanged).
 
-Threshold: set to measured-baseline-minus-~1pt AFTER the new tests land (expect ≥0.93/0.93; record actuals). Coverage summary appended to `$GITHUB_STEP_SUMMARY`.
+Threshold: set to measured-baseline-minus-~1pt AFTER the new tests land. Amended post-execution: Bun 1.3 enforces `coverageThreshold` **per-file**, not aggregate (verified empirically), so Task 1b lifted every sub-93% file first and the shipped floor is per-file `{lines: 0.94, functions: 0.90}` (aggregate sits at ~98/98). Coverage summary appended to `$GITHUB_STEP_SUMMARY`.
 
 - [ ] TDD the weak files → wire coverage + workflows → gates green locally (incl. act-free reproduction: run each new command) → commit `feat: enforce coverage floor and full release gates`
 
