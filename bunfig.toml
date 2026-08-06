@@ -1,2 +1,2 @@
 [test]
-preload = ["./test/setup/dom.ts"]
+preload = ["./test/setup/dom.ts", "./test/setup/reactNativeStub.ts"]
