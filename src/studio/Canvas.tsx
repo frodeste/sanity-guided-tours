@@ -15,7 +15,7 @@
 // threading the resolved values down keeps `Canvas`/`CanvasElement` free of
 // any `sanity` runtime dependency, so smoke tests can render them with
 // nothing more than `@sanity/ui`'s `ThemeProvider`.
-import {Box, Button, Card, Flex, Inline, Text} from '@sanity/ui'
+import {Badge, Box, Button, Card, Flex, Inline, Text} from '@sanity/ui'
 import type {MouseEvent, ReactNode} from 'react'
 import {useRef, useState} from 'react'
 
@@ -74,6 +74,18 @@ function screenshotAssetRef(image: unknown): string | undefined {
   if (!isRecord(image)) return undefined
   const asset = image.asset
   return isRecord(asset) && typeof asset._ref === 'string' ? asset._ref : undefined
+}
+
+/**
+ * Whether the selected step carries a `video` object at all (M11 Task 3) —
+ * presence alone, not a check that `file`/`url` actually resolves: the
+ * canvas backdrop stays the SCREENSHOT either way (module comment), so this
+ * only decides whether the small "Video" badge below renders, not what
+ * image is shown. Mirrors `screenshotAssetRef`'s own "narrow from `unknown`"
+ * convention.
+ */
+function hasVideoField(step: unknown): boolean {
+  return isRecord(step) && isRecord(step.video)
 }
 
 interface DragPosition {
@@ -294,6 +306,24 @@ export function Canvas(props: CanvasProps): ReactNode {
                   Screenshot: {assetRef}
                 </Text>
               </Card>
+            )}
+            {hasVideoField(props.step) && (
+              // Decorative status marker, not a control — labelled by its
+              // own visible text (same convention `CanvasElement.tsx`'s "M"
+              // mobile-override badge uses: readable text + a `title`, no
+              // `aria-hidden`) rather than absorbing any pointer interaction
+              // of its own. `pointerEvents: 'none'` keeps it out of hit
+              // testing entirely so it can never swallow a click meant for
+              // the click-to-place surface beneath it, on top of never
+              // calling `stopPropagation`.
+              <Badge
+                data-testid="canvas-video-badge"
+                style={{left: 8, pointerEvents: 'none', position: 'absolute', top: 8}}
+                title="This step has a video"
+                tone="primary"
+              >
+                Video
+              </Badge>
             )}
             {elements.map((element) => {
               const elementKeyValue = typeof element._key === 'string' ? element._key : undefined

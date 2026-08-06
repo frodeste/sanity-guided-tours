@@ -589,6 +589,49 @@ When neither `fontFamily` nor a valid `googleFont` is set, `--gt-font-family`
 falls back entirely to the stylesheet's own default stack: `'Inter',
 ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif`.
 
+## Video steps
+
+Any step can play a short video instead of its static screenshot — the same
+hotspots/tooltips/overlays position over it exactly as they do over an image,
+since it fills the same stage. Set it on the step's optional `video` field
+(Studio: below the screenshot):
+
+| Field | Type | Purpose |
+|---|---|---|
+| `source` | `'file' \| 'url'` (default `'file'`) | Where the video comes from. |
+| `file` | Sanity file asset (`video/mp4`, `video/webm`) | Used when `source` is `'file'` — uploaded straight to your dataset like any other asset. |
+| `url` | `https://…` URL | Used when `source` is `'url'` — a direct link to an mp4/webm file, not a page. **https only.** |
+
+Whichever `source` is selected, the matching field is required (schema
+validation) — you can't save a `video` object with no way to actually play
+anything.
+
+**The screenshot stays required, video or not.** It's the poster shown before
+playback starts, the entire experience for a `prefers-reduced-motion` viewer,
+the entire experience on native (below), and the canvas editor's positioning
+backdrop — a video step is never *just* a video with no image behind it.
+
+Playback is deliberately NOT schema-configurable in v1 — every video plays
+`muted`, `loop`s, `playsInline`, with autoplay gated on BOTH
+`prefers-reduced-motion: no-preference` **and** the step actually being ≥50%
+visible (pauses again once it scrolls/steps out of view). A viewer with
+reduced motion enabled gets no autoplay at all — just the poster and a
+standard `controls` scrubber so they can start it themselves. There's no
+audio track story in v1; video is a moving screenshot, not a narrated demo.
+
+**Scope: direct media files only — no YouTube, Vimeo, or other embed
+providers.** The `url` field takes a link to an actual `.mp4`/`.webm` file
+`<video src>` can play natively, not a page URL an iframe would embed. An
+embed provider's iframe can't be positioned under hotspots/tooltips the way
+this plugin's `<video>` element is — see design spec
+[§18](docs/superpowers/specs/2026-08-04-guided-tours-plugin-design.md#18-video-steps-m11-added-2026-08-06)
+for the full rationale.
+
+React Native has no `<video>`-equivalent primitive in core, so the [native
+viewer](#react-native--expo) always renders the screenshot poster, regardless
+of whether `video` is set — see the [Scope](#scope-v1-subset) table below for
+the exact policy and how to add real native playback yourself.
+
 ## React Native / Expo
 
 `sanity-plugin-guided-tours/native` renders the same `guidedTour` documents
@@ -650,6 +693,7 @@ What's different from `/react`:
 | `accent`/`surface`/`text`/`overlay` as `var(--token)` | Falls back to the scheme's built-in default, with a `console.warn` in development — CSS custom properties don't exist in React Native, so a theme meant to [bind to a web site's own design tokens](#binding-to-your-own-design-tokens) has nothing to resolve against here. Set a literal hex color on any theme a native app also renders. |
 | Window chrome (`frame`) | `mac`/`windows` render **no chrome at all** — a title bar with traffic-light dots or caption glyphs is a web-only concept, no RN component exists for it. `simple` still applies: a plain border (`borderWidth`/`borderColor`/`borderRadius`) around the step's screenshot stage. Per-corner radius overrides (`radiusTopLeft` etc.) are web-only — native uses the uniform `borderRadius` only. `frame.borderColor` as `var(--token)` degrades the same way `accent` etc. do, above. |
 | Element design (`elements`) | Fully supported — `elements.button`/`.bubble` style the prev/next/CTA/chip buttons and tooltip bubbles the same way they do on web, with the same accent/surface/text fallback chain. `radius` has no RN `calc()` equivalent, so an unset button radius falls back to a literal full-pill constant (`999`) rather than a formula — same resulting look as web's default, different mechanism. |
+| [Video steps](#video-steps) | Screenshot poster only — RN core has no `<video>`-equivalent primitive, so `StepNative` renders exactly the screenshot, whether or not the step has a `video`. The resolved `step.video` (`source`/`fileUrl`/`url`) is still carried all the way through `queries`' types and into `StepNative`'s own `step` prop, unused by this package — wiring up real playback (e.g. with [`expo-video`](https://docs.expo.dev/versions/latest/sdk/video/)) is a deliberate integration point left to your app, not a gap in the data. |
 | Keyboard navigation | N/A — RN has no keyboard-focus-driven arrow/Home/End equivalent on a touch-primary platform. |
 
 A hotspot's `link` action keeps the same accessibility carve-out the web
@@ -784,11 +828,12 @@ first step, mid-tour with an open tooltip, the lead form, and the outro.
 
 Populate a dataset you control with two tours and a theme:
 
-- **`sample-tour`** — exercises every feature: three steps across two
-  chapters, all three element types, all three step-advance modes,
-  personalization tokens, an outro with CTAs, lead capture configured
-  (disabled by default so seeding doesn't gate anything), and a reference to
-  the branded "Acme" theme below.
+- **`sample-tour`** — exercises every feature: four steps across two
+  chapters, all three element types, all three step-advance modes, a
+  [video step](#video-steps) (URL source, reusing an already-uploaded
+  screenshot as its poster), personalization tokens, an outro with CTAs,
+  lead capture configured (disabled by default so seeding doesn't gate
+  anything), and a reference to the branded "Acme" theme below.
 - **`how-to-build-tours`** — a meta tour that teaches the plugin using the
   plugin: its screenshots are real captures of the Studio's own canvas
   editor (filmstrip, canvas, inspector, bulk upload, live preview) rendered

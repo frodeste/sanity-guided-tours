@@ -113,6 +113,67 @@ describe('Canvas', () => {
   })
 })
 
+// M11 Task 3: video steps keep the screenshot as the positioning backdrop
+// (module comment) — a small "Video" badge is the only visible change on
+// the stage. These cover presence/absence and the "must not intercept
+// pointer events" constraint the plan calls out explicitly.
+describe('Canvas: video badge', () => {
+  function stepWithScreenshot(overrides: Record<string, unknown> = {}) {
+    return {
+      _key: 's1',
+      title: 'Welcome',
+      screenshot: {
+        _type: 'image',
+        asset: {_type: 'reference', _ref: 'image-abc123-800x600-png'},
+        alt: 'Welcome screenshot',
+      },
+      elements: [],
+      ...overrides,
+    }
+  }
+
+  test('renders the "Video" badge when the selected step carries a video object', () => {
+    const step = stepWithScreenshot({video: {source: 'url', url: 'https://example.com/a.mp4'}})
+    renderWithTheme(<Canvas {...baseProps({dataset: 'production', projectId: 'proj123', step})} />)
+
+    expect(screen.getByTestId('canvas-video-badge').textContent).toBe('Video')
+  })
+
+  test('does not render the badge when the step has no video field', () => {
+    const step = stepWithScreenshot()
+    renderWithTheme(<Canvas {...baseProps({dataset: 'production', projectId: 'proj123', step})} />)
+
+    expect(screen.queryByTestId('canvas-video-badge')).toBeNull()
+  })
+
+  test('does not render the badge when there is no step selected at all', () => {
+    renderWithTheme(<Canvas {...baseProps({dataset: 'production', projectId: 'proj123'})} />)
+
+    expect(screen.queryByTestId('canvas-video-badge')).toBeNull()
+  })
+
+  test('the badge is styled non-interactive (pointerEvents none) and never blocks the click-to-place surface beneath it', () => {
+    const onInsertElement = mock((_element: {_type: string; _key: string}) => {})
+    const step = stepWithScreenshot({video: {source: 'file', file: {asset: {_ref: 'file-abc-mp4'}}}})
+    renderWithTheme(
+      <Canvas
+        {...baseProps({dataset: 'production', projectId: 'proj123', step, onInsertElement})}
+      />,
+    )
+
+    const badge = screen.getByTestId('canvas-video-badge')
+    expect(badge.style.pointerEvents).toBe('none')
+
+    // The badge never calls stopPropagation, so a click that lands on it
+    // still bubbles to the surface's click-to-place handler — proving it
+    // doesn't swallow interaction even in an environment (like this test's
+    // happy-dom renderer) that doesn't perform real CSS hit-testing.
+    fireEvent.click(screen.getByTestId('canvas-tool-hotspot'))
+    fireEvent.click(badge)
+    expect(onInsertElement).toHaveBeenCalledTimes(1)
+  })
+})
+
 // Element chip interaction: drag and keyboard nudge. `smoke.test.tsx`
 // already covers ArrowRight/ArrowDown nudges and a full resize gesture
 // (through `CanvasInput`); these cover the remaining gap — a drag gesture

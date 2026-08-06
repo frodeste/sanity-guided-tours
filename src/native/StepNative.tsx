@@ -77,6 +77,20 @@ export function nearestTooltipKeyNative(
  * element's `x`/`y`/`width` percentage resolves against that rect, not the
  * raw measured container, so a hotspot never drifts into letterbox bars.
  *
+ * VIDEO STEPS (M11 Task 3): deliberately renders `step.screenshot` exactly
+ * as any other step, whether or not `step.video` is present — the same
+ * "screenshot is the poster/fallback" policy the web viewer's
+ * reduced-motion path follows (`react/Video.tsx`'s doc comment), just
+ * unconditional here instead of gated on a media-query. React Native's core
+ * has no `<Video>` primitive (unlike the DOM's native `<video>` element),
+ * and this package takes no position on which playback library a consumer
+ * should add — `step.video` (`GuidedTourStep.video`, `queries/types.ts`) is
+ * still carried all the way through the query/projection/type layer
+ * un-narrowed, so an integrator can read it straight off `props.step.video`
+ * and layer their own player (e.g. `expo-video`'s `VideoView`) into this
+ * component, or a fork of it, without any upstream plumbing left to add.
+ * That integration is intentionally out of scope for this package itself.
+ *
  * @public
  */
 export function StepNative({step, onAdvance}: StepNativeProps): ReactNode {
