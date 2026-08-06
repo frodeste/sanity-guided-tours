@@ -78,13 +78,13 @@ describe('createStyles: outro CTAs', () => {
     expect(styles.ctaTextPrimary.color).toBe('#222222')
   })
 
-  test('secondary CTA keeps its pre-M10 overlay background and surface text, picking up ONLY buttonRadius', () => {
-    const styles = createStyles(
-      nativeTheme({overlay: '#777777', surface: '#666666', buttonRadius: 4}),
-    )
-    expect(styles.ctaSecondary.backgroundColor).toBe('#777777')
+  test('secondary CTA is an outline button — transparent fill, accent text/border, ONLY buttonRadius from element controls (web .gt-cta--secondary parity)', () => {
+    const styles = createStyles(nativeTheme({accent: '#555555', buttonRadius: 4}))
+    expect(styles.ctaSecondary.backgroundColor).toBe('transparent')
+    expect(styles.ctaSecondary.borderWidth).toBe(1)
+    expect(styles.ctaSecondary.borderColor).toBe('#555555')
     expect(styles.ctaSecondary.borderRadius).toBe(4)
-    expect(styles.ctaTextSecondary.color).toBe('#666666')
+    expect(styles.ctaTextSecondary.color).toBe('#555555')
   })
 })
 

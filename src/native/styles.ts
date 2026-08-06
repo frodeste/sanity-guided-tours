@@ -187,22 +187,24 @@ export function createStyles(theme: NativeTheme) {
       marginRight: 8,
       marginBottom: 8,
     },
-    // Web parity (`styles.css`'s `.gt-cta--secondary`, M10 Task 2 report):
-    // an outline/secondary CTA picks up ONLY the shared button radius, not
-    // the fill colors — it keeps its own pre-M10 `overlay` background and
-    // `surface` text (`ctaTextSecondary`, below) rather than
-    // `buttonBackground`/`buttonText`, the same "elevation is reserved for
-    // contained buttons" reasoning web's own comment gives.
+    // Web parity (`styles.css`'s `.gt-cta--secondary`): an outline CTA —
+    // transparent fill, accent text, thin accent border, and ONLY the
+    // shared button radius from the element controls ("elevation is
+    // reserved for contained buttons"). RN has no `color-mix()`, so the
+    // border is plain accent instead of web's 35% mix — slightly stronger,
+    // same hue.
     ctaSecondary: {
       paddingHorizontal: 16,
       paddingVertical: 10,
       borderRadius: theme.buttonRadius,
-      backgroundColor: theme.overlay,
+      backgroundColor: 'transparent',
+      borderWidth: 1,
+      borderColor: theme.accent,
       marginRight: 8,
       marginBottom: 8,
     },
     ctaTextPrimary: {color: theme.buttonText, fontFamily, fontWeight: '600', fontSize: 14},
-    ctaTextSecondary: {color: theme.surface, fontFamily, fontWeight: '600', fontSize: 14},
+    ctaTextSecondary: {color: theme.accent, fontFamily, fontWeight: '600', fontSize: 14},
 
     modalBackdrop: {
       flex: 1,
