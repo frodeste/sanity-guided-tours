@@ -9,18 +9,22 @@ covers what we're building and why.
 [Bun](https://bun.sh) is the package manager and test runner.
 
 ```bash
-bun install                  # workspace root — installs plugin + example app
-bun test                     # unit and component tests
+bun install                  # workspace root — installs plugin + example apps
+bun test                     # unit and component tests (coverage-gated)
 bun run build                # build the plugin package
-cd examples/web && bun run dev   # example app with embedded Studio at /studio
+bun run lint                 # oxlint
+bun run typecheck            # tsc --noEmit
+cd examples/web && bun run dev      # example web app with embedded Studio at /studio
+cd examples/native && bunx expo start   # example Expo app (device/simulator)
 ```
 
-There is no root-level `dev` script — the example app's `dev` script lives in
-`examples/web/package.json` and needs the plugin already built (see
-[`examples/web/README.md`](examples/web/README.md) for the full local setup).
-It needs a Sanity dataset to show real content — copy
+There is no root-level `dev` script — each example app's `dev` script lives in
+its own `package.json` and needs the plugin already built (see
+[`examples/web/README.md`](examples/web/README.md) and
+[`examples/native/README.md`](examples/native/README.md) for full local setup).
+The web example needs a Sanity dataset to show real content — copy
 `examples/web/.env.example` to `.env.local`, point it at your own project, and
-run `bun run seed` (from the repository root) to populate a sample tour.
+run `bun run seed` (from the repository root) to populate the sample tours.
 
 ## Branches and pull requests
 
@@ -29,8 +33,18 @@ run `bun run seed` (from the repository root) to populate a sample tour.
   (`Closes #NN`).
 - PRs are squash-merged. **The PR title becomes the commit message on `main`**,
   so it must be a valid Conventional Commit — CI enforces this.
-- Every PR gets an automated review from Claude Code in addition to maintainer
-  review. Treat its findings like any reviewer's: address or rebut.
+- Merging requires green required checks — there is no bypass:
+  - **`gates`** — lint, typecheck, build, tests with a coverage floor,
+    [attw](https://github.com/arethetypeswrong/arethetypeswrong.github.io)
+    type-resolution soundness, `plugin-kit verify-package`, and both example
+    apps (including a two-platform `expo export`).
+  - **`quality`** — [knip](https://knip.dev) (dead exports/dependencies) and
+    [madge](https://github.com/pahen/madge) (circular imports), plus an
+    informational duplication report.
+  - **`Conventional Commit title`**.
+- Every PR also gets an automated review from Claude Code in addition to
+  maintainer review, and all review threads must be resolved before merge.
+  Treat its findings like any reviewer's: address or rebut.
 
 ## Conventional Commits and versioning
 
@@ -45,8 +59,8 @@ chore: bump @sanity/ui
 feat!: rename tokens prop to personalization
 ```
 
-Releases are cut automatically by semantic-release from commits on `main`,
-following [semver 2.0.0](https://semver.org):
+Releases are cut by semantic-release from commits on `main`, following
+[semver 2.0.0](https://semver.org):
 
 | Commit | Release |
 |---|---|
@@ -61,23 +75,40 @@ There is no manual version bumping — never edit `version` in `package.json`.
 
 Test-driven development for all pure logic modules (`geometry`, `patches`,
 `navigation`, `personalize`, `theme`, `bulkUpload`): write the failing test
-first. Viewer components get Testing Library tests including the axe-core
-accessibility assertions; Studio UI gets render smoke tests. A PR that changes
-behavior without touching tests will be asked to add them.
+first. Web viewer components get Testing Library tests including the axe-core
+accessibility assertions; native components render through the lightweight
+React Native stub in `test/support/react-native-stub/` with
+`react-test-renderer`; Studio UI gets render smoke tests.
 
-Two invariants have dedicated regression tests — do not weaken them:
+Coverage is enforced **per file** (`bunfig.toml` sets the floor) — a new file
+that lands under-tested fails `bun test --coverage`. Write tests that pin real
+behavior (an input→output contract, an event, a rendered semantic), not tests
+that merely execute lines.
+
+Invariants with dedicated regression tests — do not weaken them:
 
 1. Personalization tokens are never substituted into `href`, `src` or any
    URL-valued field.
-2. Importing `/react` or `/queries` must not resolve `sanity`,
-   `@sanity/ui` or `styled-components`.
+2. Importing `/react`, `/native` or `/queries` must not resolve `sanity`,
+   `@sanity/ui` or `styled-components`, and `/native` must never import
+   DOM-touching modules.
+3. `dist/react/index.js` carries the `'use client'` banner; no other entry
+   does.
+
+If you spy on the shared React Native stub (e.g. `Linking`), always
+`mockRestore()` — it's a module singleton and a leaked spy breaks other test
+files under CI's file ordering.
 
 ## Issues
 
-Use the issue templates: **Bug report**, **Feature request** or **Task**.
+Use the issue forms: **Bug report**, **Feature request**, **Change request**
+or **Task** — blank issues are disabled so that everything filed is
+actionable. Questions and early ideas belong in
+[Discussions](https://github.com/frodeste/sanity-guided-tours/discussions).
 Features on the [project board](https://github.com/users/frodeste/projects/1)
 are broken into task sub-issues; pick an unassigned task and comment before
-starting work.
+starting work. Issues labeled `good first issue` are scoped to be approachable
+without deep repo knowledge.
 
 ## Code of conduct
 

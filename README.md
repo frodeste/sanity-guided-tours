@@ -1,5 +1,6 @@
 # sanity-plugin-guided-tours
 
+[![CI](https://github.com/frodeste/sanity-guided-tours/actions/workflows/ci.yml/badge.svg)](https://github.com/frodeste/sanity-guided-tours/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-fe5196.svg)](https://www.conventionalcommits.org/en/v1.0.0/)
 [![semver](https://img.shields.io/badge/semver-2.0.0-brightgreen.svg)](https://semver.org)
@@ -803,8 +804,12 @@ the frontend needs them.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Short version: Bun for everything
 (`bun install`, `bun test`), [Conventional Commits](https://www.conventionalcommits.org)
-enforced on PR titles, all changes land through pull requests, releases are cut
-automatically by semantic-release following [semver](https://semver.org).
+enforced on PR titles, all changes land through pull requests behind required
+CI checks, releases are cut by semantic-release following
+[semver](https://semver.org). Report bugs and propose features/changes through
+the [issue forms](https://github.com/frodeste/sanity-guided-tours/issues/new/choose);
+questions and early ideas belong in
+[Discussions](https://github.com/frodeste/sanity-guided-tours/discussions).
 
 ## License
 

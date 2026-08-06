@@ -1,5 +1,5 @@
 name: Feature request
-description: Propose new functionality for the plugin or viewer
+description: Propose new functionality for the plugin or a viewer
 title: "feat: "
 labels: [feature]
 body:
@@ -22,3 +22,9 @@ body:
     attributes:
       label: Alternatives considered
       description: Including "do nothing" — why isn't the current behavior enough?
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: Contribution
+      options:
+        - label: I'd be willing to implement this myself with maintainer guidance

@@ -6,10 +6,9 @@ body:
   - type: input
     id: parent
     attributes:
-      label: Parent feature
+      label: Parent feature or issue
+      description: Leave empty for standalone chores.
       placeholder: "#10"
-    validations:
-      required: true
   - type: textarea
     id: work
     attributes:
@@ -20,5 +19,6 @@ body:
     id: acceptance
     attributes:
       label: Acceptance criteria
+      description: How do we know it's done?
       placeholder: |
         - [ ] …
