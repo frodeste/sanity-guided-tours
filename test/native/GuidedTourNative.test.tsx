@@ -273,7 +273,17 @@ describe('GuidedTourNative: theming and colorScheme', () => {
     const themed = tour({
       theme: theme({
         text: '#light',
-        dark: {accent: null, surface: null, text: '#dark', overlay: null},
+        dark: {
+          accent: null,
+          surface: null,
+          text: '#dark',
+          overlay: null,
+          frameBorder: null,
+          buttonBackground: null,
+          buttonText: null,
+          bubbleBackground: null,
+          bubbleText: null,
+        },
       }),
     })
     const renderer = renderNative(<GuidedTour tour={themed} colorScheme="dark" />)
@@ -285,7 +295,17 @@ describe('GuidedTourNative: theming and colorScheme', () => {
     const themed = tour({
       theme: theme({
         text: '#light',
-        dark: {accent: null, surface: null, text: '#dark', overlay: null},
+        dark: {
+          accent: null,
+          surface: null,
+          text: '#dark',
+          overlay: null,
+          frameBorder: null,
+          buttonBackground: null,
+          buttonText: null,
+          bubbleBackground: null,
+          bubbleText: null,
+        },
       }),
     })
     for (const colorScheme of ['light', 'auto'] as const) {

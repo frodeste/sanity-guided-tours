@@ -1,6 +1,6 @@
 import {describe, expect, test} from 'bun:test'
 
-import {GOOGLE_FONT_NAME_PATTERN, THEME_DEFAULTS} from '../../src/queries/defaults'
+import {FRAME_DEFAULTS, GOOGLE_FONT_NAME_PATTERN, THEME_DEFAULTS} from '../../src/queries/defaults'
 import chapter from '../../src/schema/chapter'
 import {CSS_COLOR_VALUE_PATTERN} from '../../src/schema/cssValue'
 import embed from '../../src/schema/embed'
@@ -295,6 +295,8 @@ describe('guidedTourTheme', () => {
         'text',
         'overlay',
         'dark',
+        'frame',
+        'elements',
         'radius',
         'hotspotSize',
         'fontFamily',
@@ -347,13 +349,125 @@ describe('guidedTourTheme', () => {
     expect(dark.options?.collapsed).toBe(true)
 
     const darkFields = fields(dark)
-    for (const name of ['accent', 'surface', 'text', 'overlay']) {
+    for (const name of [
+      'accent',
+      'surface',
+      'text',
+      'overlay',
+      'frameBorder',
+      'buttonBackground',
+      'buttonText',
+      'bubbleBackground',
+      'bubbleText',
+    ]) {
       const field = fieldByName(darkFields, name)
       expect(field.type).toBe('string')
       expect(field.initialValue).toBeUndefined()
       expect(isRequired(field)).toBe(false)
       const spy = runValidation(field.validation)
       expect(findCall(spy, 'regex')?.args[0]).toEqual(CSS_COLOR_VALUE_PATTERN)
+    }
+  })
+
+  test('frame is a collapsible object; style defaults to "mac" and is never hidden', () => {
+    const frame = fieldByName(fields(theme), 'frame')
+    expect(frame.type).toBe('object')
+    expect(isRequired(frame)).toBe(false)
+    expect(frame.options?.collapsible).toBe(true)
+    expect(frame.options?.collapsed).toBe(false)
+
+    const style = fieldByName(fields(frame), 'style')
+    expect(style.type).toBe('string')
+    expect(style.initialValue).toBe(FRAME_DEFAULTS.style)
+    expect(listValues(style)).toEqual(['mac', 'windows', 'simple', 'none'])
+    expect(callHidden(style, {parent: {style: 'mac'}})).toBe(false)
+  })
+
+  test('frame.borderWidth/.borderColor/.borderRadius have their FRAME_DEFAULTS initial values, valid ranges, and are hidden unless style is "simple"', () => {
+    const frame = fieldByName(fields(theme), 'frame')
+    const frameFields = fields(frame)
+
+    const borderWidth = fieldByName(frameFields, 'borderWidth')
+    expect(borderWidth.type).toBe('number')
+    expect(borderWidth.initialValue).toBe(FRAME_DEFAULTS.borderWidth)
+    expect(findCall(runValidation(borderWidth.validation), 'min')?.args).toEqual([0])
+    expect(findCall(runValidation(borderWidth.validation), 'max')?.args).toEqual([12])
+
+    const borderColor = fieldByName(frameFields, 'borderColor')
+    expect(borderColor.type).toBe('string')
+    expect(borderColor.initialValue).toBe(FRAME_DEFAULTS.borderColor)
+    expect(findCall(runValidation(borderColor.validation), 'regex')?.args[0]).toEqual(
+      CSS_COLOR_VALUE_PATTERN,
+    )
+
+    const borderRadius = fieldByName(frameFields, 'borderRadius')
+    expect(borderRadius.type).toBe('number')
+    expect(borderRadius.initialValue).toBe(FRAME_DEFAULTS.borderRadius)
+    expect(findCall(runValidation(borderRadius.validation), 'min')?.args).toEqual([0])
+    expect(findCall(runValidation(borderRadius.validation), 'max')?.args).toEqual([48])
+
+    for (const name of ['borderWidth', 'borderColor', 'borderRadius']) {
+      const field = fieldByName(frameFields, name)
+      expect(callHidden(field, {parent: {style: 'simple'}})).toBe(false)
+      expect(callHidden(field, {parent: {style: 'mac'}})).toBe(true)
+      expect(callHidden(field, {parent: {style: 'windows'}})).toBe(true)
+      expect(callHidden(field, {parent: {style: 'none'}})).toBe(true)
+      expect(callHidden(field, {parent: undefined})).toBe(true)
+    }
+  })
+
+  test('frame per-corner radius overrides have no initial value, range 0-48, hidden unless style is "simple"', () => {
+    const frame = fieldByName(fields(theme), 'frame')
+    const frameFields = fields(frame)
+
+    for (const name of [
+      'radiusTopLeft',
+      'radiusTopRight',
+      'radiusBottomRight',
+      'radiusBottomLeft',
+    ]) {
+      const field = fieldByName(frameFields, name)
+      expect(field.type).toBe('number')
+      expect(field.initialValue).toBeUndefined()
+      expect(findCall(runValidation(field.validation), 'min')?.args).toEqual([0])
+      expect(findCall(runValidation(field.validation), 'max')?.args).toEqual([48])
+      expect(callHidden(field, {parent: {style: 'simple'}})).toBe(false)
+      expect(callHidden(field, {parent: {style: 'mac'}})).toBe(true)
+    }
+  })
+
+  test('elements is a collapsed, collapsible object of button/bubble style groups', () => {
+    const elements = fieldByName(fields(theme), 'elements')
+    expect(elements.type).toBe('object')
+    expect(isRequired(elements)).toBe(false)
+    expect(elements.options?.collapsible).toBe(true)
+    expect(elements.options?.collapsed).toBe(true)
+
+    const elementsFields = fields(elements)
+    for (const groupName of ['button', 'bubble']) {
+      const group = fieldByName(elementsFields, groupName)
+      expect(group.type).toBe('object')
+      const groupFields = fields(group)
+
+      const background = fieldByName(groupFields, 'background')
+      expect(background.type).toBe('string')
+      expect(background.initialValue).toBeUndefined()
+      expect(findCall(runValidation(background.validation), 'regex')?.args[0]).toEqual(
+        CSS_COLOR_VALUE_PATTERN,
+      )
+
+      const textColor = fieldByName(groupFields, 'textColor')
+      expect(textColor.type).toBe('string')
+      expect(textColor.initialValue).toBeUndefined()
+      expect(findCall(runValidation(textColor.validation), 'regex')?.args[0]).toEqual(
+        CSS_COLOR_VALUE_PATTERN,
+      )
+
+      const radius = fieldByName(groupFields, 'radius')
+      expect(radius.type).toBe('number')
+      expect(radius.initialValue).toBeUndefined()
+      expect(findCall(runValidation(radius.validation), 'min')?.args).toEqual([0])
+      expect(findCall(runValidation(radius.validation), 'max')?.args).toEqual([32])
     }
   })
 
@@ -398,7 +512,7 @@ describe('guidedTourTheme', () => {
   })
 
   test('back-compat: none of the new fields are required', () => {
-    for (const name of ['brand', 'dark', 'googleFont']) {
+    for (const name of ['brand', 'dark', 'googleFont', 'frame', 'elements']) {
       expect(isRequired(fieldByName(fields(theme), name))).toBe(false)
     }
   })

@@ -8,6 +8,8 @@ import {
   type GuidedTourOutroCta,
   type GuidedTourTheme,
   type GuidedTourThemeDark,
+  type GuidedTourThemeElements,
+  type GuidedTourThemeFrame,
   guidedTourBySlugQuery,
   guidedTourEmbedProjection,
   guidedTourSlugsQuery,
@@ -119,6 +121,11 @@ const fixture = {
     text: '#111',
     overlay: 'rgba(0,0,0,.5)',
     dark: null,
+    // M10: null when the theme document has no "frame"/"elements" object
+    // at all — see GuidedTourTheme's doc comment for why, same policy
+    // "dark" already follows above.
+    frame: null,
+    elements: null,
     radius: 8,
     hotspotSize: 24,
     fontFamily: 'Inter',
@@ -240,6 +247,11 @@ const partialDarkOverride = {
   surface: null,
   text: null,
   overlay: null,
+  frameBorder: '#334155',
+  buttonBackground: null,
+  buttonText: null,
+  bubbleBackground: null,
+  bubbleText: null,
 } satisfies GuidedTourThemeDark
 
 const themeWithDark = {
@@ -248,13 +260,72 @@ const themeWithDark = {
 } satisfies GuidedTourTheme
 
 describe('GuidedTourThemeDark fixture', () => {
-  test('a partial override (accent set, the rest absent) is valid', () => {
+  test('a partial override (accent/frameBorder set, the rest absent) is valid', () => {
     expect(themeWithDark.dark?.accent).toBe('#a78bfa')
     expect(themeWithDark.dark?.surface).toBeNull()
+    expect(themeWithDark.dark?.frameBorder).toBe('#334155')
+    expect(themeWithDark.dark?.buttonBackground).toBeNull()
   })
 
   test('a theme with no dark overrides at all stays valid via fixture.theme', () => {
     expect(fixture.theme.dark).toBeNull()
+  })
+})
+
+// Compile-time check: frame's four core fields are non-null (coalesced once
+// a "frame" object exists at all), the four per-corner overrides are each
+// independently optional, and a theme can have a null "frame" (no object at
+// all — see FRAME_DEFAULTS' doc comment in src/queries/defaults.ts for the
+// nested-object policy this follows).
+const partialFrame = {
+  style: 'simple',
+  borderWidth: 4,
+  borderColor: '#ec4899',
+  borderRadius: 20,
+  radiusTopLeft: 4,
+  radiusTopRight: null,
+  radiusBottomRight: null,
+  radiusBottomLeft: null,
+} satisfies GuidedTourThemeFrame
+
+const themeWithFrame = {
+  ...fixture.theme,
+  frame: partialFrame,
+} satisfies GuidedTourTheme
+
+describe('GuidedTourThemeFrame fixture', () => {
+  test('a frame with one per-corner override set (the rest absent) is valid', () => {
+    expect(themeWithFrame.frame?.style).toBe('simple')
+    expect(themeWithFrame.frame?.radiusTopLeft).toBe(4)
+    expect(themeWithFrame.frame?.radiusTopRight).toBeNull()
+  })
+
+  test('a theme with no frame object at all stays valid via fixture.theme', () => {
+    expect(fixture.theme.frame).toBeNull()
+  })
+})
+
+// Compile-time check: elements.button/.bubble are each independently
+// nullable objects, and every member of GuidedTourThemeElementStyle is
+// independently nullable too (no schema initialValue on any of them).
+const themeWithElements = {
+  ...fixture.theme,
+  elements: {
+    button: {background: '#7c3aed', textColor: null, radius: 8},
+    bubble: null,
+  },
+} satisfies GuidedTourTheme
+
+describe('GuidedTourThemeElements fixture', () => {
+  test('button set with bubble absent is valid', () => {
+    const elements = themeWithElements.elements satisfies GuidedTourThemeElements | null
+    expect(elements?.button?.background).toBe('#7c3aed')
+    expect(elements?.button?.textColor).toBeNull()
+    expect(elements?.bubble).toBeNull()
+  })
+
+  test('a theme with no elements object at all stays valid via fixture.theme', () => {
+    expect(fixture.theme.elements).toBeNull()
   })
 })
 

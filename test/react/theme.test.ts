@@ -23,6 +23,8 @@ function theme(overrides: Partial<GuidedTourTheme> = {}): GuidedTourTheme {
     text: '#eeeeee',
     overlay: '#000000',
     dark: null,
+    frame: null,
+    elements: null,
     radius: 12,
     hotspotSize: 30,
     fontFamily: null,
@@ -63,7 +65,19 @@ describe('themeToStyle', () => {
 
   test('a partially-filled dark object resolves each member independently — set ones pass through, unset ones fall back per-field', () => {
     const style = themeToStyle(
-      theme({dark: {accent: '#a78bfa', surface: null, text: null, overlay: null}}),
+      theme({
+        dark: {
+          accent: '#a78bfa',
+          surface: null,
+          text: null,
+          overlay: null,
+          frameBorder: null,
+          buttonBackground: null,
+          buttonText: null,
+          bubbleBackground: null,
+          bubbleText: null,
+        },
+      }),
     )
     expect(style['--gt-dark-accent']).toBe('#a78bfa')
     expect(style['--gt-dark-surface']).toBe(THEME_DARK_DEFAULTS.surface)
@@ -74,7 +88,17 @@ describe('themeToStyle', () => {
   test('a fully-filled dark object passes every member through as-is', () => {
     const style = themeToStyle(
       theme({
-        dark: {accent: '#111111', surface: '#222222', text: '#333333', overlay: '#444444'},
+        dark: {
+          accent: '#111111',
+          surface: '#222222',
+          text: '#333333',
+          overlay: '#444444',
+          frameBorder: null,
+          buttonBackground: null,
+          buttonText: null,
+          bubbleBackground: null,
+          bubbleText: null,
+        },
       }),
     )
     expect(style['--gt-dark-accent']).toBe('#111111')

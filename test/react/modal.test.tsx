@@ -99,6 +99,8 @@ function theme(overrides: Partial<GuidedTourTheme> = {}): GuidedTourTheme {
     text: '#eeeeee',
     overlay: '#000000',
     dark: null,
+    frame: null,
+    elements: null,
     radius: 12,
     hotspotSize: 30,
     fontFamily: null,

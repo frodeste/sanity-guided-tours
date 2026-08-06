@@ -21,6 +21,8 @@ function theme(overrides: Partial<GuidedTourTheme> = {}): GuidedTourTheme {
     text: '#eeeeee',
     overlay: '#000000',
     dark: null,
+    frame: null,
+    elements: null,
     radius: 12,
     hotspotSize: 30,
     fontFamily: null,
@@ -83,7 +85,19 @@ describe('resolveNativeTheme: hex/literal colors pass through unchanged', () => 
 
   test('dark scheme with a fully-filled dark object: every member passes through as-is', () => {
     const resolved = resolveNativeTheme(
-      theme({dark: {accent: '#a1a1a1', surface: '#b2b2b2', text: '#c3c3c3', overlay: '#d4d4d4'}}),
+      theme({
+        dark: {
+          accent: '#a1a1a1',
+          surface: '#b2b2b2',
+          text: '#c3c3c3',
+          overlay: '#d4d4d4',
+          frameBorder: null,
+          buttonBackground: null,
+          buttonText: null,
+          bubbleBackground: null,
+          bubbleText: null,
+        },
+      }),
       'dark',
     )
     expect(resolved.accent).toBe('#a1a1a1')
@@ -94,7 +108,19 @@ describe('resolveNativeTheme: hex/literal colors pass through unchanged', () => 
 
   test('dark scheme with a partially-filled dark object: set members pass through, unset ones fall back per-field', () => {
     const resolved = resolveNativeTheme(
-      theme({dark: {accent: '#a1a1a1', surface: null, text: null, overlay: null}}),
+      theme({
+        dark: {
+          accent: '#a1a1a1',
+          surface: null,
+          text: null,
+          overlay: null,
+          frameBorder: null,
+          buttonBackground: null,
+          buttonText: null,
+          bubbleBackground: null,
+          bubbleText: null,
+        },
+      }),
       'dark',
     )
     expect(resolved.accent).toBe('#a1a1a1')
@@ -125,7 +151,19 @@ describe('resolveNativeTheme: var(--x) colors have no meaning in React Native', 
   test('a var() surface in the dark scheme falls back to THEME_DARK_DEFAULTS.surface, not the light default', () => {
     const warnSpy = spyOn(console, 'warn').mockImplementation(() => {})
     const resolved = resolveNativeTheme(
-      theme({dark: {accent: null, surface: 'var(--brand-surface)', text: null, overlay: null}}),
+      theme({
+        dark: {
+          accent: null,
+          surface: 'var(--brand-surface)',
+          text: null,
+          overlay: null,
+          frameBorder: null,
+          buttonBackground: null,
+          buttonText: null,
+          bubbleBackground: null,
+          bubbleText: null,
+        },
+      }),
       'dark',
     )
     expect(resolved.surface).toBe(THEME_DARK_DEFAULTS.surface)
