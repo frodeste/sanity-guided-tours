@@ -164,3 +164,15 @@ export const SETTINGS_DEFAULTS = {
 
 /** `guidedTourEmbed.displayMode` (src/schema/embed.ts). */
 export const EMBED_DEFAULTS = {displayMode: 'inline'} as const
+
+/**
+ * `guidedTourStep.video.source` (src/schema/step.ts) — the only member of
+ * `video` with an `initialValue`; `file`/`url` are independently-optional
+ * (whichever one the selected `source` doesn't point at is simply absent,
+ * not defaulted), same relationship `theme.dark`'s members have to `dark`
+ * itself, so they aren't here. A single-key object rather than a bare
+ * string constant to match this file's one-object-per-schema-type
+ * convention (`STEP_DEFAULTS`, `HOTSPOT_DEFAULTS`, ...) even though M11
+ * only adds the one field.
+ */
+export const VIDEO_DEFAULTS = {source: 'file'} as const

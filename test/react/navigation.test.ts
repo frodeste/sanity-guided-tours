@@ -35,6 +35,7 @@ function step(key: string): GuidedTourStep {
     duration: null,
     screenshot: image(),
     screenshotMobile: null,
+    video: null,
     elements: null,
   }
 }

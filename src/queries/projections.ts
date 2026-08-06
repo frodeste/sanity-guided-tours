@@ -15,6 +15,7 @@ import {
   THEME_DEFAULTS,
   TOKEN_DEFAULTS,
   TOOLTIP_DEFAULTS,
+  VIDEO_DEFAULTS,
 } from './defaults'
 
 /**
@@ -164,6 +165,26 @@ export const tourProjection = /* groq */ `{
       _key, title, "advance": coalesce(advance, "${STEP_DEFAULTS.advance}"), duration,
       "screenshot": screenshot${imageProjection},
       "screenshotMobile": screenshotMobile${imageProjection},
+      // M11: "video" is a nested object field on step, like theme's
+      // "frame"/"dark"/"elements" — the whole projected value is "null"
+      // when the step has no "video" object at all (module comment above,
+      // "frame"), not an object of coalesced defaults. Once a "video"
+      // object DOES exist, its one initialValue-bearing member ("source",
+      // VIDEO_DEFAULTS) coalesces same as any other initialValue field.
+      // "fileUrl" dereferences the uploaded file asset the same way
+      // imageProjection's "url" dereferences an image asset ("asset->url")
+      // — a sanity.fileAsset document has a top-level "url" field just like
+      // sanity.imageAsset does, so no sub-projection is needed. It's
+      // naturally "null" when "file" itself is absent (source is "url") or
+      // has no resolvable asset, same as any other missing reference deref.
+      // "url" is a plain passthrough, "null" when source is "file" — no
+      // initialValue, so no coalesce, matching every other plain-nullable
+      // member elsewhere in this file (theme.dark's members, etc).
+      "video": video{
+        "source": coalesce(source, "${VIDEO_DEFAULTS.source}"),
+        "fileUrl": file.asset->url,
+        url
+      },
       elements[]${elementProjection}
     }
   },

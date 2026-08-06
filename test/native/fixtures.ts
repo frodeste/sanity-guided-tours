@@ -85,6 +85,7 @@ export function step(overrides: Partial<GuidedTourStep> & {_key: string}): Guide
     duration: null,
     screenshot: image(),
     screenshotMobile: null,
+    video: null,
     elements: null,
     ...overrides,
   }

@@ -8,6 +8,7 @@ import {
   TEXT_OVERLAY_DEFAULTS,
   TOKEN_DEFAULTS,
   TOOLTIP_DEFAULTS,
+  VIDEO_DEFAULTS,
 } from '../queries/defaults'
 import type {
   GuidedTourChapter,
@@ -21,6 +22,7 @@ import type {
   GuidedTourOutroCta,
   GuidedTourSettings,
   GuidedTourStep,
+  GuidedTourStepVideo,
   GuidedTourTextOverlay,
   GuidedTourToken,
   GuidedTourTooltip,
@@ -77,7 +79,7 @@ import type {
 //    in that non-nullable field, so it's dropped from the mapped tour
 //    entirely rather than fabricating one. `droppedStepCount` on the
 //    result is the count, for `PreviewView.tsx`'s visible notice.
-import {assetRefDimensions, assetRefToUrl} from './assetRef'
+import {assetRefDimensions, assetRefToUrl, fileAssetRefToUrl} from './assetRef'
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
@@ -135,6 +137,11 @@ function pickStepAdvance(value: unknown): GuidedTourStep['advance'] {
   return raw === 'hotspot' || raw === 'button' || raw === 'auto' ? raw : STEP_DEFAULTS.advance
 }
 
+function pickVideoSource(value: unknown): GuidedTourStepVideo['source'] {
+  const raw = stringField(value, 'source')
+  return raw === 'url' ? 'url' : VIDEO_DEFAULTS.source
+}
+
 function pickLeadCaptureTrigger(value: unknown): GuidedTourLeadCapture['trigger'] {
   const raw = stringField(value, 'trigger')
   return raw === 'afterStep' || raw === 'atEnd' ? raw : LEAD_CAPTURE_DEFAULTS.trigger
@@ -178,6 +185,51 @@ function mapImage(
     dimensions: {...dimensions, aspectRatio: dimensions.width / dimensions.height},
     lqip: null,
     alt: stringField(image, 'alt'),
+  }
+}
+
+// --- video -----------------------------------------------------------------
+
+/** Reads a `video.file`'s asset `_ref`, mirroring `assetRefOf` above but for the `file` schema type's `{asset: {_ref}}` shape rather than `image`'s. */
+function fileAssetRefOf(video: unknown): string | null {
+  if (!isRecord(video)) return null
+  const file = video.file
+  if (!isRecord(file)) return null
+  const asset = file.asset
+  return isRecord(asset) && typeof asset._ref === 'string' ? asset._ref : null
+}
+
+/**
+ * Maps a step's optional `video` field to `GuidedTourStepVideo`, mirroring
+ * `projections.ts`'s `"video": video{...}` field-for-field: `null` when the
+ * step has no `video` object at all (this module's nested-object
+ * precedent — see `mapSettings`/`mapOutro`/`mapLeadCapture`), `source`
+ * coalesced to `VIDEO_DEFAULTS.source`, `fileUrl` resolved through
+ * `fileAssetRefToUrl` the same way `mapImage` resolves `screenshot` through
+ * `assetRefToUrl` (`null` when the ref is absent/malformed or
+ * `projectId`/`dataset` aren't available), and `url` a plain passthrough.
+ * Unlike `mapImage`/`mapStep`, an unresolvable file never drops the step —
+ * `GuidedTourStepVideo.fileUrl` is nullable, so there is nothing to fall
+ * back to a "drop" for.
+ */
+function mapVideo(
+  value: unknown,
+  projectId: string | null,
+  dataset: string | null,
+): GuidedTourStepVideo | null {
+  const video = isRecord(value) ? value.video : undefined
+  if (!isRecord(video)) return null
+
+  const ref = fileAssetRefOf(video)
+  const fileUrl =
+    ref !== null && projectId !== null && dataset !== null
+      ? fileAssetRefToUrl(ref, projectId, dataset)
+      : null
+
+  return {
+    source: pickVideoSource(video),
+    fileUrl,
+    url: stringField(video, 'url'),
   }
 }
 
@@ -382,6 +434,7 @@ function mapStep(value: unknown, projectId: string | null, dataset: string | nul
       screenshotMobile: isRecord(value)
         ? mapImage(value.screenshotMobile, projectId, dataset)
         : null,
+      video: mapVideo(value, projectId, dataset),
       elements: mapElements(value, 'elements'),
     },
     dropped: false,

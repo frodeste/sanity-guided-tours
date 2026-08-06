@@ -267,7 +267,36 @@ export interface GuidedTourTextOverlay extends GuidedTourElementBase {
 export type GuidedTourElement = GuidedTourHotspot | GuidedTourTooltip | GuidedTourTextOverlay
 
 /**
+ * A step's optional video (M11), taking rendering precedence over
+ * `screenshot` in the web viewer when present — the screenshot itself stays
+ * required regardless (`GuidedTourStep.screenshot`'s doc comment), used as
+ * the poster/reduced-motion/native fallback and the canvas editor backdrop.
+ *
+ * `source` coalesces to `VIDEO_DEFAULTS.source` ("file", `../queries/defaults`)
+ * the same way `GuidedTourStep.advance` coalesces to `STEP_DEFAULTS.advance`.
+ * `fileUrl` is the uploaded file asset's resolved URL — `null` when
+ * `source` is `"url"`, or when `source` is `"file"` but no asset is
+ * actually attached. `url` is the direct link — `null` when `source` is
+ * `"file"`. Exactly one of the two is expected to be non-null once a
+ * `video` object is actually present, matching the schema's own
+ * (`src/schema/step.ts`) object-level validation, though the query itself
+ * doesn't enforce that (same "validation doesn't bind documents written
+ * outside the Studio" caveat as everywhere else in this file).
+ *
+ * @public
+ */
+export interface GuidedTourStepVideo {
+  source: 'file' | 'url'
+  fileUrl: string | null
+  url: string | null
+}
+
+/**
  * One screen of a tour: a screenshot plus the elements positioned on it.
+ * `video` is `null` when the step has no `video` object at all — the same
+ * nested-object policy `theme.frame`/`theme.dark`/etc already follow (see
+ * `../queries/projections`' module comment on `frame` for the full
+ * reasoning).
  *
  * @public
  */
@@ -278,6 +307,7 @@ export interface GuidedTourStep {
   duration: number | null
   screenshot: GuidedTourImage
   screenshotMobile: GuidedTourImage | null
+  video: GuidedTourStepVideo | null
   elements: GuidedTourElement[] | null
 }
 
