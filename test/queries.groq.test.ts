@@ -246,6 +246,60 @@ describe('guidedTourBySlugQuery evaluated with groq-js: step.video', () => {
     const result = (await runQuery([tour, screenshotAsset, videoFileAsset], 'no-source')) as any
     expect(result.chapters[0].steps[0].video.source).toBe(VIDEO_DEFAULTS.source)
   })
+
+  // Regression coverage: the schema (src/schema/step.ts) only *hides* the
+  // non-selected "file"/"url" member while authoring — flipping "source"
+  // back and forth leaves BOTH stored on the document, which is completely
+  // reachable through normal Studio editing (GuidedTourStepVideo's doc
+  // comment, ../src/queries/types.ts). Both branches here populate BOTH
+  // "file" and "url" on the same document and assert the projection's
+  // "fileUrl"/"url" select() pair gates on "source" — never resolving or
+  // passing through the deselected member — rather than the two fields
+  // being computed unconditionally (the bug: an unconditional
+  // "file.asset->url" would have a stale uploaded file win over a
+  // freshly-chosen url source, since <Video>'s `fileUrl ?? url` prefers
+  // fileUrl whenever it's non-null).
+  describe('stale deselected source member: BOTH file and url populated on the same document', () => {
+    test('source "file": fileUrl resolves the asset, url stays null despite a stored url string', async () => {
+      const tour = tourWithStep({
+        _key: 'both-file-wins',
+        video: {
+          _type: 'object',
+          source: 'file',
+          file: {_type: 'file', asset: {_type: 'reference', _ref: videoFileAsset._id}},
+          url: 'https://example.com/stale.mp4',
+        },
+      })
+      const result = (await runQuery(
+        [tour, screenshotAsset, videoFileAsset],
+        'both-file-wins',
+      )) as any
+      const video = result.chapters[0].steps[0].video
+      expect(video.source).toBe('file')
+      expect(video.fileUrl).toBe(videoFileAsset.url)
+      expect(video.url).toBeNull()
+    })
+
+    test('source "url": url passes through, fileUrl stays null despite a stored (stale) file asset ref', async () => {
+      const tour = tourWithStep({
+        _key: 'both-url-wins',
+        video: {
+          _type: 'object',
+          source: 'url',
+          file: {_type: 'file', asset: {_type: 'reference', _ref: videoFileAsset._id}},
+          url: 'https://example.com/fresh.mp4',
+        },
+      })
+      const result = (await runQuery(
+        [tour, screenshotAsset, videoFileAsset],
+        'both-url-wins',
+      )) as any
+      const video = result.chapters[0].steps[0].video
+      expect(video.source).toBe('url')
+      expect(video.url).toBe('https://example.com/fresh.mp4')
+      expect(video.fileUrl).toBeNull()
+    })
+  })
 })
 
 describe('guidedTourBySlugQuery evaluated with groq-js: theme precedence', () => {

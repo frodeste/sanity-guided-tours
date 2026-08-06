@@ -453,6 +453,44 @@ describe('draftToTour: step.video', () => {
     expect(tour.chapters[0].steps).toHaveLength(1)
     expect(droppedStepCount).toBe(0)
   })
+
+  // Regression coverage, mirroring the groq-js matrix in
+  // test/queries.groq.test.ts's "stale deselected source member" describe:
+  // the schema only *hides* the non-selected "file"/"url" member, it never
+  // clears its stored value, so a document can genuinely have both
+  // populated after "source" was flipped through normal Studio editing.
+  // `mapVideo` must gate both `fileUrl`/`url` on the resolved `source`
+  // exactly like the GROQ projection's `select()` pair, not compute either
+  // unconditionally.
+  describe('stale deselected source member: BOTH file and url populated on the same document', () => {
+    test('source "file": fileUrl resolves the asset, url is null despite a stored url string', () => {
+      const doc = docWithVideo({
+        source: 'file',
+        file: fileValue('file-videoAsset123-mp4'),
+        url: 'https://example.com/stale.mp4',
+      })
+      const {tour} = draftToTour(doc, PROJECT_ID, DATASET)
+      expect(tour.chapters[0].steps[0].video).toEqual({
+        source: 'file',
+        fileUrl: 'https://cdn.sanity.io/files/proj123/production/videoAsset123.mp4',
+        url: null,
+      })
+    })
+
+    test('source "url": url passes through, fileUrl is null despite a stored (stale) file asset ref', () => {
+      const doc = docWithVideo({
+        source: 'url',
+        file: fileValue('file-videoAsset123-mp4'),
+        url: 'https://example.com/fresh.mp4',
+      })
+      const {tour} = draftToTour(doc, PROJECT_ID, DATASET)
+      expect(tour.chapters[0].steps[0].video).toEqual({
+        source: 'url',
+        fileUrl: null,
+        url: 'https://example.com/fresh.mp4',
+      })
+    })
+  })
 })
 
 describe('draftToTour: mobile override — explicit null members, not undefined', () => {

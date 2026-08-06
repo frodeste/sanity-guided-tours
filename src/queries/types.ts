@@ -277,11 +277,25 @@ export type GuidedTourElement = GuidedTourHotspot | GuidedTourTooltip | GuidedTo
  * `fileUrl` is the uploaded file asset's resolved URL — `null` when
  * `source` is `"url"`, or when `source` is `"file"` but no asset is
  * actually attached. `url` is the direct link — `null` when `source` is
- * `"file"`. Exactly one of the two is expected to be non-null once a
- * `video` object is actually present, matching the schema's own
- * (`src/schema/step.ts`) object-level validation, though the query itself
- * doesn't enforce that (same "validation doesn't bind documents written
- * outside the Studio" caveat as everywhere else in this file).
+ * `"file"`.
+ *
+ * At most one of `fileUrl`/`url` is ever non-null — but that's a guarantee
+ * this type's TWO producers each make by construction (gating both fields
+ * on the coalesced `source`, mirroring each other field-for-field:
+ * `"video": video{...}`'s `select()` pair in `../queries/projections.ts`,
+ * and `draftToTour.ts`'s `mapVideo`), not something the schema's object-level
+ * validation (`src/schema/step.ts`) enforces on the stored document. The
+ * schema only *hides* the non-selected member's field while editing —
+ * `hidden: ({parent}) => ...` doesn't clear the hidden field's stored
+ * value — so flipping `source` back and forth after both a file was
+ * uploaded and a URL was entered is completely reachable through normal
+ * Studio editing, and leaves BOTH `file` and `url` populated on the
+ * document underneath. Making the schema clear the deselected member on
+ * every source switch was considered and deliberately rejected (keeps
+ * authoring friction low — no risk of a `useMutator` field-clearing bug, or
+ * accidentally destroying a value the author flips back to); the two
+ * producers compensate by ignoring the deselected member entirely rather
+ * than trusting it to already be absent.
  *
  * @public
  */

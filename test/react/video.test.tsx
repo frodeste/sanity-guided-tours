@@ -372,6 +372,85 @@ describe('Video: autoplay gating', () => {
     }
   })
 
+  test('src change on an already-mounted, visible, motion-allowed video: play() is called again for the new source', () => {
+    // Mirrors how `Step.tsx` renders `<Video>` without a `key` — navigating
+    // between two consecutive video steps updates `fileUrl`/`url` props on
+    // the SAME mounted `<Video>` rather than remounting it. Regression
+    // coverage for the bug where the playback effect's deps
+    // (`[visible, reducedMotion]`) never included the resolved source, so a
+    // step-to-step source change never re-triggered `.play()`.
+    const mm = installMatchMedia()
+    const io = installIntersectionObserver()
+    const playSpy = spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(() =>
+      Promise.resolve(),
+    )
+    const pauseSpy = spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
+
+    try {
+      const {rerender} = render(
+        <Video
+          {...videoProps({fileUrl: 'https://cdn.sanity.io/files/proj/ds/a.mp4', url: null})}
+        />,
+      )
+
+      act(() => {
+        io.latest()?.fire(true)
+      })
+      expect(playSpy).toHaveBeenCalledTimes(1)
+
+      rerender(
+        <Video
+          {...videoProps({fileUrl: 'https://cdn.sanity.io/files/proj/ds/b.mp4', url: null})}
+        />,
+      )
+
+      expect(playSpy).toHaveBeenCalledTimes(2)
+    } finally {
+      playSpy.mockRestore()
+      pauseSpy.mockRestore()
+      io.restore()
+      mm.restore()
+    }
+  })
+
+  test('src change while reduced motion is on: play() is still never called for the new source', () => {
+    const mm = installMatchMedia()
+    const io = installIntersectionObserver()
+    const playSpy = spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(() =>
+      Promise.resolve(),
+    )
+    const pauseSpy = spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
+
+    try {
+      const {rerender} = render(
+        <Video
+          {...videoProps({fileUrl: 'https://cdn.sanity.io/files/proj/ds/a.mp4', url: null})}
+        />,
+      )
+
+      act(() => {
+        mm.setMatches(REDUCED_MOTION_QUERY, true)
+      })
+      act(() => {
+        io.latest()?.fire(true)
+      })
+      expect(playSpy).not.toHaveBeenCalled()
+
+      rerender(
+        <Video
+          {...videoProps({fileUrl: 'https://cdn.sanity.io/files/proj/ds/b.mp4', url: null})}
+        />,
+      )
+
+      expect(playSpy).not.toHaveBeenCalled()
+    } finally {
+      playSpy.mockRestore()
+      pauseSpy.mockRestore()
+      io.restore()
+      mm.restore()
+    }
+  })
+
   test('IntersectionObserver unsupported: the video is treated as visible unconditionally (no permanent gate deadlock)', () => {
     const mm = installMatchMedia()
     const playSpy = spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(() =>

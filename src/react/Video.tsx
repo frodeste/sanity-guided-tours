@@ -81,7 +81,13 @@ export interface VideoProps {
  *
  * Whenever either condition stops holding, `.pause()` is called instead —
  * covers both directions (scrolled off-stage, OR reduced-motion flips on
- * mid-playback) with the same effect, keyed on `[visible, reducedMotion]`.
+ * mid-playback) with the same effect, keyed on `[visible, reducedMotion,
+ * src]` — `src` (the resolved `fileUrl ?? url`) is a dep too, not just the
+ * two gates, so that a same-mount source change (`Step` renders `<Video>`
+ * without a `key`, so consecutive video steps update props on the same
+ * `<video>` rather than remounting it) re-evaluates and calls `.play()`
+ * again for the new source instead of leaving a silently-loaded-but-never-
+ * played video behind.
  *
  * Two happy-dom accommodations (plan Task 2, both load-bearing for the test
  * suite, not just defensive production code):
@@ -108,6 +114,7 @@ export function Video({fileUrl, url, posterUrl, ariaLabel, className}: VideoProp
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const reducedMotion = useReducedMotionMedia()
   const [visible, setVisible] = useState(false)
+  const src = fileUrl ?? url ?? undefined
 
   useEffect(() => {
     const node = videoRef.current
@@ -150,7 +157,15 @@ export function Video({fileUrl, url, posterUrl, ariaLabel, className}: VideoProp
     }
 
     if (typeof node.pause === 'function') node.pause()
-  }, [visible, reducedMotion])
+    // `src` is a dep, not just `visible`/`reducedMotion`: `<Step>` renders
+    // `<Video>` without a `key` (`Step.tsx`), so navigating between two
+    // consecutive video steps re-renders this SAME mounted component with
+    // new `fileUrl`/`url` props rather than remounting it — React DOM does
+    // issue a fresh `load()` when the `src` attribute changes underneath,
+    // but nothing here would call `.play()` again for it without `src` in
+    // this array, since `visible`/`reducedMotion` can both stay unchanged
+    // across that transition (already-visible, motion already allowed).
+  }, [visible, reducedMotion, src])
 
   return (
     <video
@@ -161,7 +176,7 @@ export function Video({fileUrl, url, posterUrl, ariaLabel, className}: VideoProp
       playsInline
       preload="metadata"
       poster={posterUrl}
-      src={fileUrl ?? url ?? undefined}
+      src={src}
       aria-label={ariaLabel}
       controls={reducedMotion}
     />

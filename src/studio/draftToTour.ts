@@ -204,13 +204,21 @@ function fileAssetRefOf(video: unknown): string | null {
  * `projections.ts`'s `"video": video{...}` field-for-field: `null` when the
  * step has no `video` object at all (this module's nested-object
  * precedent — see `mapSettings`/`mapOutro`/`mapLeadCapture`), `source`
- * coalesced to `VIDEO_DEFAULTS.source`, `fileUrl` resolved through
+ * coalesced to `VIDEO_DEFAULTS.source`, `fileUrl`/`url` both gated on that
+ * same coalesced source (mirroring the projection's `select()` pair) rather
+ * than computed unconditionally: the schema (`../schema/step.ts`) only
+ * *hides* the non-selected member, it never clears its stored value, so a
+ * document can genuinely have both `file` and `url` populated (source
+ * switched after one was already set). `fileUrl` resolves through
  * `fileAssetRefToUrl` the same way `mapImage` resolves `screenshot` through
- * `assetRefToUrl` (`null` when the ref is absent/malformed or
- * `projectId`/`dataset` aren't available), and `url` a plain passthrough.
- * Unlike `mapImage`/`mapStep`, an unresolvable file never drops the step —
- * `GuidedTourStepVideo.fileUrl` is nullable, so there is nothing to fall
- * back to a "drop" for.
+ * `assetRefToUrl`, but ONLY when `source` is `"file"` — `"url"`'s branch
+ * skips the deref entirely (stays `null`) even if a stale `file` ref is
+ * still present, matching the projection's `select()` short-circuit rather
+ * than resolving-then-discarding. `url` mirrors this the other way: a plain
+ * passthrough only when `source` is `"url"`, `null` otherwise (even if a
+ * stale `url` string is still stored). Unlike `mapImage`/`mapStep`, an
+ * unresolvable file never drops the step — `GuidedTourStepVideo.fileUrl` is
+ * nullable, so there is nothing to fall back to a "drop" for.
  */
 function mapVideo(
   value: unknown,
@@ -220,16 +228,18 @@ function mapVideo(
   const video = isRecord(value) ? value.video : undefined
   if (!isRecord(video)) return null
 
-  const ref = fileAssetRefOf(video)
+  const source = pickVideoSource(video)
+
+  const ref = source === 'file' ? fileAssetRefOf(video) : null
   const fileUrl =
     ref !== null && projectId !== null && dataset !== null
       ? fileAssetRefToUrl(ref, projectId, dataset)
       : null
 
   return {
-    source: pickVideoSource(video),
+    source,
     fileUrl,
-    url: stringField(video, 'url'),
+    url: source === 'url' ? stringField(video, 'url') : null,
   }
 }
 
