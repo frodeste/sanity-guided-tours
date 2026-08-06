@@ -49,7 +49,11 @@ export function OutroNative({outro}: OutroNativeProps): ReactNode {
                   void Linking.openURL(cta.href)
                 }}
               >
-                <Text style={styles.ctaText}>{label}</Text>
+                <Text
+                  style={cta.style === 'primary' ? styles.ctaTextPrimary : styles.ctaTextSecondary}
+                >
+                  {label}
+                </Text>
               </Pressable>
             )
           })}

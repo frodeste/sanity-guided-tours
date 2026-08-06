@@ -3,7 +3,7 @@ import {describe, expect, test} from 'bun:test'
 import {evaluate, parse} from 'groq-js'
 
 import {guidedTourBySlugQuery, guidedTourEmbedProjection} from '../src/queries'
-import {THEME_DEFAULTS} from '../src/queries/defaults'
+import {FRAME_DEFAULTS, THEME_DEFAULTS} from '../src/queries/defaults'
 
 // This file is the repeatable version of the manual groq-js verification
 // the PR review did by hand. It runs the real `guidedTourBySlugQuery`
@@ -120,6 +120,21 @@ describe('guidedTourBySlugQuery evaluated with groq-js: minimal document', () =>
     expect(result.theme.dark).toBeNull()
   })
 
+  // M10: "frame" and "elements" are nested object fields, following the
+  // same "absent object -> null, not defaults" policy "dark" already
+  // established above — see FRAME_DEFAULTS' doc comment in
+  // src/queries/defaults.ts for why this deliberately doesn't match the
+  // M10 plan's literal "absent frame object -> defaults" wording.
+  test('theme.frame is null when the theme has no "frame" object at all', async () => {
+    const result = (await runQuery(dataset, 'minimal-tour')) as any
+    expect(result.theme.frame).toBeNull()
+  })
+
+  test('theme.elements is null when the theme has no "elements" object at all', async () => {
+    const result = (await runQuery(dataset, 'minimal-tour')) as any
+    expect(result.theme.elements).toBeNull()
+  })
+
   test('theme.googleFont and theme.brand stay null — neither has a schema initialValue', async () => {
     const result = (await runQuery(dataset, 'minimal-tour')) as any
     expect(result.theme.googleFont).toBeNull()
@@ -230,11 +245,12 @@ describe('guidedTourBySlugQuery evaluated with groq-js: theme precedence', () =>
 })
 
 describe('guidedTourBySlugQuery evaluated with groq-js: dark/googleFont/brand', () => {
-  // A theme with `dark` present but only PARTIALLY filled in (accent set,
-  // the rest left empty), plus googleFont and brand set. Proves dark's
-  // members project individually as explicit nulls when unset — never
-  // coalesced to THEME_DARK_DEFAULTS, and never simply absent — and that
-  // googleFont/brand pass through untouched when an author does set them.
+  // A theme with `dark` present but only PARTIALLY filled in (accent and
+  // the M10 frameBorder set, the rest left empty), plus googleFont and
+  // brand set. Proves dark's members project individually as explicit
+  // nulls when unset — never coalesced to THEME_DARK_DEFAULTS, and never
+  // simply absent — and that googleFont/brand pass through untouched when
+  // an author does set them.
   const brandedTheme = {
     _id: 'theme-branded',
     _type: 'guidedTourTheme',
@@ -242,7 +258,7 @@ describe('guidedTourBySlugQuery evaluated with groq-js: dark/googleFont/brand', 
     isDefault: false,
     brand: 'Acme',
     googleFont: 'Inter',
-    dark: {accent: '#a78bfa'},
+    dark: {accent: '#a78bfa', frameBorder: '#334155'},
   }
 
   const tourWithBrandedTheme = {
@@ -269,13 +285,18 @@ describe('guidedTourBySlugQuery evaluated with groq-js: dark/googleFont/brand', 
 
   const dataset = [tourWithBrandedTheme, brandedTheme, screenshotAsset]
 
-  test('a partially filled dark object projects the set member as-is and the rest as explicit null', async () => {
+  test('a partially filled dark object projects the set members as-is and the rest as explicit null', async () => {
     const result = (await runQuery(dataset, 'branded-tour')) as any
     expect(result.theme.dark).toEqual({
       accent: '#a78bfa',
       surface: null,
       text: null,
       overlay: null,
+      frameBorder: '#334155',
+      buttonBackground: null,
+      buttonText: null,
+      bubbleBackground: null,
+      bubbleText: null,
     })
   })
 
@@ -284,12 +305,157 @@ describe('guidedTourBySlugQuery evaluated with groq-js: dark/googleFont/brand', 
     expect(result.theme.dark.surface).toBeNull()
     expect(result.theme.dark.text).toBeNull()
     expect(result.theme.dark.overlay).toBeNull()
+    expect(result.theme.dark.buttonBackground).toBeNull()
+    expect(result.theme.dark.buttonText).toBeNull()
+    expect(result.theme.dark.bubbleBackground).toBeNull()
+    expect(result.theme.dark.bubbleText).toBeNull()
   })
 
   test('googleFont and brand pass through untouched, without a coalesce', async () => {
     const result = (await runQuery(dataset, 'branded-tour')) as any
     expect(result.theme.googleFont).toBe('Inter')
     expect(result.theme.brand).toBe('Acme')
+  })
+})
+
+describe('guidedTourBySlugQuery evaluated with groq-js: frame/elements (M10)', () => {
+  // frame present but EMPTY — proves the four initialValue-bearing fields
+  // coalesce to FRAME_DEFAULTS once a "frame" object exists at all (as
+  // opposed to the "frame" object being entirely absent, covered by the
+  // "theme.frame is null..." test in the minimal-document block above),
+  // and that the four per-corner overrides project as plain null (no
+  // schema initialValue to coalesce to).
+  const themeWithEmptyFrame = {
+    _id: 'theme-empty-frame',
+    _type: 'guidedTourTheme',
+    name: 'Empty frame theme',
+    isDefault: false,
+    frame: {},
+  }
+
+  // frame fully populated, including a "simple" style and every per-corner
+  // override — proves author-set values pass through untouched rather than
+  // being clobbered by the coalesce defaults.
+  const themeWithFullFrame = {
+    _id: 'theme-full-frame',
+    _type: 'guidedTourTheme',
+    name: 'Full frame theme',
+    isDefault: false,
+    frame: {
+      style: 'simple',
+      borderWidth: 4,
+      borderColor: '#ec4899',
+      borderRadius: 20,
+      radiusTopLeft: 4,
+      radiusTopRight: 4,
+      radiusBottomRight: 0,
+      radiusBottomLeft: 0,
+    },
+  }
+
+  // elements.button partially set, elements.bubble present but empty —
+  // proves each member of button/bubble projects independently (set
+  // values pass through, unset ones are explicit null) and that a present
+  // but empty bubble object still projects its members as null rather
+  // than the whole "bubble" being absent.
+  const themeWithElements = {
+    _id: 'theme-elements',
+    _type: 'guidedTourTheme',
+    name: 'Elements theme',
+    isDefault: false,
+    elements: {
+      button: {background: '#7c3aed', radius: 8},
+      bubble: {},
+    },
+  }
+
+  // elements present, but neither "button" nor "bubble" set — proves an
+  // absent nested sub-object (button/bubble) projects to null as a whole,
+  // the same "dark"/"settings" precedent "frame" and "elements" themselves
+  // follow one level up.
+  const themeWithElementsNoSubObjects = {
+    _id: 'theme-elements-empty',
+    _type: 'guidedTourTheme',
+    name: 'Elements theme with no button/bubble',
+    isDefault: false,
+    elements: {},
+  }
+
+  function tourFor(theme: {_id: string}) {
+    return {
+      _id: `tour-for-${theme._id}`,
+      _type: 'guidedTour',
+      title: 'Tour',
+      slug: {_type: 'slug', current: `slug-${theme._id}`},
+      theme: {_type: 'reference', _ref: theme._id},
+      chapters: [
+        {
+          _key: 'chapter-1',
+          _type: 'guidedTourChapter',
+          title: 'Chapter one',
+          steps: [
+            {
+              _key: 'step-1',
+              _type: 'guidedTourStep',
+              screenshot: screenshotField('Screenshot'),
+            },
+          ],
+        },
+      ],
+    }
+  }
+
+  const dataset = [
+    tourFor(themeWithEmptyFrame),
+    themeWithEmptyFrame,
+    tourFor(themeWithFullFrame),
+    themeWithFullFrame,
+    tourFor(themeWithElements),
+    themeWithElements,
+    tourFor(themeWithElementsNoSubObjects),
+    themeWithElementsNoSubObjects,
+    screenshotAsset,
+  ]
+
+  test('a present-but-empty frame object coalesces its four core fields to FRAME_DEFAULTS', async () => {
+    const result = (await runQuery(dataset, `slug-${themeWithEmptyFrame._id}`)) as any
+    expect(result.theme.frame).toEqual({
+      style: FRAME_DEFAULTS.style,
+      borderWidth: FRAME_DEFAULTS.borderWidth,
+      borderColor: FRAME_DEFAULTS.borderColor,
+      borderRadius: FRAME_DEFAULTS.borderRadius,
+      radiusTopLeft: null,
+      radiusTopRight: null,
+      radiusBottomRight: null,
+      radiusBottomLeft: null,
+    })
+  })
+
+  test('a fully populated frame object passes every field through untouched, never the coalesce default', async () => {
+    const result = (await runQuery(dataset, `slug-${themeWithFullFrame._id}`)) as any
+    expect(result.theme.frame).toEqual({
+      style: 'simple',
+      borderWidth: 4,
+      borderColor: '#ec4899',
+      borderRadius: 20,
+      radiusTopLeft: 4,
+      radiusTopRight: 4,
+      radiusBottomRight: 0,
+      radiusBottomLeft: 0,
+    })
+  })
+
+  test('elements.button/.bubble project set members as-is and unset members as explicit null', async () => {
+    const result = (await runQuery(dataset, `slug-${themeWithElements._id}`)) as any
+    expect(result.theme.elements).toEqual({
+      button: {background: '#7c3aed', textColor: null, radius: 8},
+      bubble: {background: null, textColor: null, radius: null},
+    })
+  })
+
+  test('elements present with neither button nor bubble set projects both as null', async () => {
+    const result = (await runQuery(dataset, `slug-${themeWithElementsNoSubObjects._id}`)) as any
+    expect(result.theme.elements).toEqual({button: null, bubble: null})
   })
 })
 

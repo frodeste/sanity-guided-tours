@@ -4,6 +4,7 @@
 
 import {
   EMBED_DEFAULTS,
+  FRAME_DEFAULTS,
   HOTSPOT_DEFAULTS,
   LEAD_CAPTURE_DEFAULTS,
   LEAD_CAPTURE_FIELD_DEFAULTS,
@@ -111,8 +112,44 @@ export const tourProjection = /* groq */ `{
     // "set to this exact value". Projecting dark{...} instead of a bare
     // "dark" also guarantees each member is an explicit null (not simply
     // absent) when the whole "dark" object itself is unset, matching this
-    // file's "null, never undefined" invariant.
-    "dark": dark{accent, surface, text, overlay},
+    // file's "null, never undefined" invariant. M10 adds frameBorder/
+    // button*/bubble* alongside the M7 accent/surface/text/overlay —
+    // same policy, same reasoning.
+    "dark": dark{accent, surface, text, overlay, frameBorder, buttonBackground, buttonText, bubbleBackground, bubbleText},
+    // "frame" and "elements" are nested object fields, like "dark" above —
+    // when the theme document has no "frame"/"elements" object AT ALL,
+    // the whole projected value is "null" (GROQ's "path{...}" on a
+    // nonexistent path evaluates to null, not an object of nulled
+    // members — see test/queries.groq.test.ts's "is null when the theme
+    // has no ... object at all" cases for the established precedent this
+    // follows: dark, settings, leadCapture, outro). This is a deliberate
+    // deviation from the M10 plan's literal "absent frame object →
+    // defaults" wording (see FRAME_DEFAULTS' doc comment in ./defaults for
+    // the full reasoning) — consistency with that existing nested-object
+    // policy won out, and resolving a fully-absent "frame"/"elements" to
+    // their defaults is left to the consumer (web viewer / native theme
+    // resolver, M10 Tasks 2-3) the same way a fully-absent "dark" already
+    // is. Once a "frame" object DOES exist, its four initialValue-bearing
+    // fields (style/borderWidth/borderColor/borderRadius) coalesce same as
+    // any other initialValue field; the four per-corner overrides have no
+    // initialValue and so project as plain nullable numbers, same
+    // treatment "dark"'s members get.
+    "frame": frame{
+      "style": coalesce(style, "${FRAME_DEFAULTS.style}"),
+      "borderWidth": coalesce(borderWidth, ${FRAME_DEFAULTS.borderWidth}),
+      "borderColor": coalesce(borderColor, "${FRAME_DEFAULTS.borderColor}"),
+      "borderRadius": coalesce(borderRadius, ${FRAME_DEFAULTS.borderRadius}),
+      radiusTopLeft, radiusTopRight, radiusBottomRight, radiusBottomLeft
+    },
+    // elements.button/.bubble have no initialValue on any member (M10
+    // plan: they fall back to accent/surface/global radius at consumption
+    // time, not a query-side coalesce), so every field here is a plain
+    // nullable passthrough — the same treatment "dark"'s members get, for
+    // the same reason.
+    "elements": elements{
+      "button": button{background, textColor, radius},
+      "bubble": bubble{background, textColor, radius}
+    },
     "radius": coalesce(radius, ${THEME_DEFAULTS.radius}),
     "hotspotSize": coalesce(hotspotSize, ${THEME_DEFAULTS.hotspotSize}),
     fontFamily,

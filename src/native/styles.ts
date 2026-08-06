@@ -33,6 +33,23 @@ import type {NativeTheme} from './nativeTheme'
 export function createStyles(theme: NativeTheme) {
   const fontFamily = theme.fontFamily ?? undefined
   const half = theme.hotspotSize / 2
+  // M10 Task 3: `mac`/`windows` render NO chrome on native at all (design
+  // spec §17 — a title bar with traffic lights/caption glyphs is a web-only
+  // concept, no RN component exists for it in v1); `simple` is the one
+  // style with a real native effect — a plain border applied to the STEP
+  // STAGE (`stage`, below — the screenshot + positioned-elements box
+  // `StepNative.tsx` renders), not the outer `container` — narrower scope
+  // than web's `<Frame>` (which wraps the whole step/outro/lead swap
+  // region), a deliberate v1 simplification since native's per-step
+  // `stage` is the one View this codebase already calls "the stage."
+  const simpleFrameBorder =
+    theme.frame.style === 'simple'
+      ? {
+          borderWidth: theme.frame.borderWidth,
+          borderColor: theme.frame.borderColor,
+          borderRadius: theme.frame.borderRadius,
+        }
+      : undefined
 
   return StyleSheet.create({
     container: {
@@ -58,19 +75,20 @@ export function createStyles(theme: NativeTheme) {
     chapterChip: {
       paddingHorizontal: 12,
       paddingVertical: 6,
-      borderRadius: 999,
+      borderRadius: theme.buttonRadius,
       backgroundColor: theme.overlay,
       marginRight: 8,
     },
-    chapterChipActive: {backgroundColor: theme.accent},
+    chapterChipActive: {backgroundColor: theme.buttonBackground},
     chapterChipText: {color: theme.text, fontFamily, fontSize: 13},
-    chapterChipTextActive: {color: theme.surface, fontFamily, fontSize: 13},
+    chapterChipTextActive: {color: theme.buttonText, fontFamily, fontSize: 13},
 
     stage: {
       width: '100%',
       aspectRatio: 16 / 9,
       position: 'relative',
       backgroundColor: theme.overlay,
+      ...simpleFrameBorder,
     },
     screenshot: {width: '100%', height: '100%'},
     elementsLayer: {...StyleSheet.absoluteFill},
@@ -110,8 +128,8 @@ export function createStyles(theme: NativeTheme) {
     },
     tooltipPanel: {
       position: 'absolute',
-      backgroundColor: theme.surface,
-      borderRadius: theme.radius,
+      backgroundColor: theme.bubbleBackground,
+      borderRadius: theme.bubbleRadius,
       padding: 12,
       borderWidth: 1,
       borderColor: theme.overlay,
@@ -123,7 +141,7 @@ export function createStyles(theme: NativeTheme) {
     // is a concrete pixel number by the time this is applied.
     tooltipPanelBelow: {top: half + 8},
     tooltipPanelAbove: {bottom: half + 8},
-    tooltipText: {color: theme.text, fontFamily, fontSize: 14},
+    tooltipText: {color: theme.bubbleText, fontFamily, fontSize: 14},
 
     overlayBase: {
       position: 'absolute',
@@ -141,10 +159,10 @@ export function createStyles(theme: NativeTheme) {
     button: {
       paddingHorizontal: 16,
       paddingVertical: 8,
-      borderRadius: theme.radius,
-      backgroundColor: theme.accent,
+      borderRadius: theme.buttonRadius,
+      backgroundColor: theme.buttonBackground,
     },
-    buttonText: {color: theme.surface, fontFamily, fontWeight: '600', fontSize: 14},
+    buttonText: {color: theme.buttonText, fontFamily, fontWeight: '600', fontSize: 14},
     counterText: {marginHorizontal: 12, color: theme.text, fontFamily, fontSize: 13},
 
     dotsRow: {flexDirection: 'row', marginLeft: 'auto'},
@@ -164,20 +182,29 @@ export function createStyles(theme: NativeTheme) {
     ctaPrimary: {
       paddingHorizontal: 16,
       paddingVertical: 10,
-      borderRadius: theme.radius,
-      backgroundColor: theme.accent,
+      borderRadius: theme.buttonRadius,
+      backgroundColor: theme.buttonBackground,
       marginRight: 8,
       marginBottom: 8,
     },
+    // Web parity (`styles.css`'s `.gt-cta--secondary`): an outline CTA —
+    // transparent fill, accent text, thin accent border, and ONLY the
+    // shared button radius from the element controls ("elevation is
+    // reserved for contained buttons"). RN has no `color-mix()`, so the
+    // border is plain accent instead of web's 35% mix — slightly stronger,
+    // same hue.
     ctaSecondary: {
       paddingHorizontal: 16,
       paddingVertical: 10,
-      borderRadius: theme.radius,
-      backgroundColor: theme.overlay,
+      borderRadius: theme.buttonRadius,
+      backgroundColor: 'transparent',
+      borderWidth: 1,
+      borderColor: theme.accent,
       marginRight: 8,
       marginBottom: 8,
     },
-    ctaText: {color: theme.surface, fontFamily, fontWeight: '600', fontSize: 14},
+    ctaTextPrimary: {color: theme.buttonText, fontFamily, fontWeight: '600', fontSize: 14},
+    ctaTextSecondary: {color: theme.accent, fontFamily, fontWeight: '600', fontSize: 14},
 
     modalBackdrop: {
       flex: 1,

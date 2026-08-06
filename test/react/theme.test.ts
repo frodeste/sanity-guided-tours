@@ -2,9 +2,20 @@ import {describe, expect, test} from 'bun:test'
 import {readFileSync} from 'node:fs'
 import {join} from 'node:path'
 
-import {FONT_STACK, THEME_DARK_DEFAULTS, THEME_DEFAULTS} from '../../src/queries/defaults'
-import type {GuidedTourImage, GuidedTourTheme} from '../../src/queries/types'
-import {themeToStyle} from '../../src/react/theme'
+import {
+  FONT_STACK,
+  FRAME_DEFAULTS,
+  THEME_DARK_DEFAULTS,
+  THEME_DEFAULTS,
+} from '../../src/queries/defaults'
+import type {
+  GuidedTourImage,
+  GuidedTourTheme,
+  GuidedTourThemeDark,
+  GuidedTourThemeElements,
+  GuidedTourThemeFrame,
+} from '../../src/queries/types'
+import {frameRadiusShorthand, resolveFrame, themeToStyle} from '../../src/react/theme'
 
 function image(overrides: Partial<GuidedTourImage> = {}): GuidedTourImage {
   return {
@@ -23,6 +34,8 @@ function theme(overrides: Partial<GuidedTourTheme> = {}): GuidedTourTheme {
     text: '#eeeeee',
     overlay: '#000000',
     dark: null,
+    frame: null,
+    elements: null,
     radius: 12,
     hotspotSize: 30,
     fontFamily: null,
@@ -32,6 +45,111 @@ function theme(overrides: Partial<GuidedTourTheme> = {}): GuidedTourTheme {
     ...overrides,
   }
 }
+
+function frameFixture(overrides: Partial<GuidedTourThemeFrame> = {}): GuidedTourThemeFrame {
+  return {
+    style: 'windows',
+    borderWidth: 2,
+    borderColor: '#123456',
+    borderRadius: 8,
+    radiusTopLeft: null,
+    radiusTopRight: null,
+    radiusBottomRight: null,
+    radiusBottomLeft: null,
+    ...overrides,
+  }
+}
+
+function darkFixture(overrides: Partial<GuidedTourThemeDark> = {}): GuidedTourThemeDark {
+  return {
+    accent: null,
+    surface: null,
+    text: null,
+    overlay: null,
+    frameBorder: null,
+    buttonBackground: null,
+    buttonText: null,
+    bubbleBackground: null,
+    bubbleText: null,
+    ...overrides,
+  }
+}
+
+function elementsFixture(
+  overrides: Partial<GuidedTourThemeElements> = {},
+): GuidedTourThemeElements {
+  return {
+    button: null,
+    bubble: null,
+    ...overrides,
+  }
+}
+
+describe('resolveFrame', () => {
+  test('a null theme resolves to FRAME_DEFAULTS — mac chrome, all corners null', () => {
+    expect(resolveFrame(null)).toEqual({
+      style: FRAME_DEFAULTS.style,
+      borderWidth: FRAME_DEFAULTS.borderWidth,
+      borderColor: FRAME_DEFAULTS.borderColor,
+      borderRadius: FRAME_DEFAULTS.borderRadius,
+      radiusTopLeft: null,
+      radiusTopRight: null,
+      radiusBottomRight: null,
+      radiusBottomLeft: null,
+    })
+  })
+
+  test('a theme with frame: null (no frame object authored) resolves to the SAME FRAME_DEFAULTS', () => {
+    expect(resolveFrame(theme({frame: null}))).toEqual(resolveFrame(null))
+  })
+
+  test('a theme with a frame object returns it verbatim, corners included', () => {
+    const authoredFrame = frameFixture({
+      radiusTopLeft: 0,
+      radiusTopRight: 4,
+      radiusBottomRight: null,
+      radiusBottomLeft: null,
+    })
+    expect(resolveFrame(theme({frame: authoredFrame}))).toEqual(authoredFrame)
+  })
+
+  test('an authored frame with style "none" and "simple" both pass through untouched', () => {
+    expect(resolveFrame(theme({frame: frameFixture({style: 'none'})})).style).toBe('none')
+    expect(resolveFrame(theme({frame: frameFixture({style: 'simple'})})).style).toBe('simple')
+  })
+})
+
+describe('frameRadiusShorthand', () => {
+  test('no per-corner override set: the plain borderRadius, one value', () => {
+    expect(frameRadiusShorthand(frameFixture({borderRadius: 20}))).toBe('20px')
+  })
+
+  test('every corner overridden: the full four-value shorthand in CSS corner order (TL TR BR BL)', () => {
+    const shorthand = frameRadiusShorthand(
+      frameFixture({
+        borderRadius: 12,
+        radiusTopLeft: 0,
+        radiusTopRight: 4,
+        radiusBottomRight: 8,
+        radiusBottomLeft: 16,
+      }),
+    )
+    expect(shorthand).toBe('0px 4px 8px 16px')
+  })
+
+  test('a single corner overridden: the other three fall back to borderRadius individually, not 0', () => {
+    const shorthand = frameRadiusShorthand(
+      frameFixture({
+        borderRadius: 10,
+        radiusTopLeft: 0,
+        radiusTopRight: null,
+        radiusBottomRight: null,
+        radiusBottomLeft: null,
+      }),
+    )
+    expect(shorthand).toBe('0px 10px 10px 10px')
+  })
+})
 
 describe('themeToStyle', () => {
   test('null theme produces no custom properties — the stylesheet defaults rule', () => {
@@ -63,7 +181,19 @@ describe('themeToStyle', () => {
 
   test('a partially-filled dark object resolves each member independently — set ones pass through, unset ones fall back per-field', () => {
     const style = themeToStyle(
-      theme({dark: {accent: '#a78bfa', surface: null, text: null, overlay: null}}),
+      theme({
+        dark: {
+          accent: '#a78bfa',
+          surface: null,
+          text: null,
+          overlay: null,
+          frameBorder: null,
+          buttonBackground: null,
+          buttonText: null,
+          bubbleBackground: null,
+          bubbleText: null,
+        },
+      }),
     )
     expect(style['--gt-dark-accent']).toBe('#a78bfa')
     expect(style['--gt-dark-surface']).toBe(THEME_DARK_DEFAULTS.surface)
@@ -74,7 +204,17 @@ describe('themeToStyle', () => {
   test('a fully-filled dark object passes every member through as-is', () => {
     const style = themeToStyle(
       theme({
-        dark: {accent: '#111111', surface: '#222222', text: '#333333', overlay: '#444444'},
+        dark: {
+          accent: '#111111',
+          surface: '#222222',
+          text: '#333333',
+          overlay: '#444444',
+          frameBorder: null,
+          buttonBackground: null,
+          buttonText: null,
+          bubbleBackground: null,
+          bubbleText: null,
+        },
       }),
     )
     expect(style['--gt-dark-accent']).toBe('#111111')
@@ -92,6 +232,143 @@ describe('themeToStyle', () => {
   test('logo is never present in the compiled style — GuidedTour renders it as an <img> instead', () => {
     const style = themeToStyle(theme({logo: image()}))
     expect(Object.keys(style).some((key) => key.toLowerCase().includes('logo'))).toBe(false)
+  })
+})
+
+// M10: frame/elements are independently-nullable theme sub-objects with no
+// schema default of their own (unlike accent/surface/text/overlay above) —
+// every prop below is emitted ONLY when the underlying field is actually
+// authored; `styles.css`'s scheme-mapping rules supply the fallback chain
+// for anything omitted (this module's `themeToStyle` doc comment).
+describe('themeToStyle: frame', () => {
+  test('theme.frame === null: no frame-related prop is emitted at all', () => {
+    const style = themeToStyle(theme({frame: null}))
+    expect(style).not.toHaveProperty('--gt-light-frame-border')
+    expect(style).not.toHaveProperty('--gt-frame-border-width')
+    expect(style).not.toHaveProperty('--gt-frame-radius')
+  })
+
+  test('theme.frame set: border color/width and the composed radius shorthand are all emitted', () => {
+    const style = themeToStyle(
+      theme({
+        frame: frameFixture({
+          borderColor: '#abcdef',
+          borderWidth: 3,
+          borderRadius: 16,
+        }),
+      }),
+    )
+    expect(style['--gt-light-frame-border']).toBe('#abcdef')
+    expect(style['--gt-frame-border-width']).toBe('3px')
+    expect(style['--gt-frame-radius']).toBe('16px')
+  })
+
+  test('theme.frame set with per-corner overrides: --gt-frame-radius is the four-value shorthand', () => {
+    const style = themeToStyle(
+      theme({
+        frame: frameFixture({borderRadius: 10, radiusTopLeft: 0, radiusBottomRight: 20}),
+      }),
+    )
+    expect(style['--gt-frame-radius']).toBe('0px 10px 20px 10px')
+  })
+
+  test('dark.frameBorder unset: --gt-dark-frame-border is omitted, not defaulted here', () => {
+    const style = themeToStyle(theme({frame: frameFixture(), dark: darkFixture()}))
+    expect(style).not.toHaveProperty('--gt-dark-frame-border')
+  })
+
+  test('dark.frameBorder set: passed through verbatim', () => {
+    const style = themeToStyle(
+      theme({frame: frameFixture(), dark: darkFixture({frameBorder: '#334455'})}),
+    )
+    expect(style['--gt-dark-frame-border']).toBe('#334455')
+  })
+})
+
+describe('themeToStyle: elements (button/bubble)', () => {
+  test('theme.elements === null: no button/bubble prop is emitted at all', () => {
+    const style = themeToStyle(theme({elements: null}))
+    for (const key of Object.keys(style)) {
+      expect(key).not.toContain('button')
+      expect(key).not.toContain('bubble')
+    }
+  })
+
+  test('elements.button/.bubble present but both null: still nothing emitted', () => {
+    const style = themeToStyle(theme({elements: elementsFixture()}))
+    for (const key of Object.keys(style)) {
+      expect(key).not.toContain('button')
+      expect(key).not.toContain('bubble')
+    }
+  })
+
+  test('elements.button fully authored: background/textColor/radius each become their own prop', () => {
+    const style = themeToStyle(
+      theme({
+        elements: elementsFixture({
+          button: {background: '#111111', textColor: '#eeeeee', radius: 6},
+        }),
+      }),
+    )
+    expect(style['--gt-light-button-bg']).toBe('#111111')
+    expect(style['--gt-light-button-text']).toBe('#eeeeee')
+    expect(style['--gt-button-radius']).toBe('6px')
+  })
+
+  test('elements.button partially authored: only the set fields become props, independently', () => {
+    const style = themeToStyle(
+      theme({
+        elements: elementsFixture({
+          button: {background: '#111111', textColor: null, radius: null},
+        }),
+      }),
+    )
+    expect(style['--gt-light-button-bg']).toBe('#111111')
+    expect(style).not.toHaveProperty('--gt-light-button-text')
+    expect(style).not.toHaveProperty('--gt-button-radius')
+  })
+
+  test('elements.button.radius: 0 is a genuinely authored value, not treated as unset', () => {
+    const style = themeToStyle(
+      theme({elements: elementsFixture({button: {background: null, textColor: null, radius: 0}})}),
+    )
+    expect(style['--gt-button-radius']).toBe('0px')
+  })
+
+  test('elements.bubble fully authored: background/textColor/radius each become their own prop', () => {
+    const style = themeToStyle(
+      theme({
+        elements: elementsFixture({
+          bubble: {background: '#222222', textColor: '#dddddd', radius: 10},
+        }),
+      }),
+    )
+    expect(style['--gt-light-bubble-bg']).toBe('#222222')
+    expect(style['--gt-light-bubble-text']).toBe('#dddddd')
+    expect(style['--gt-bubble-radius']).toBe('10px')
+  })
+
+  test('dark.buttonBackground/buttonText/bubbleBackground/bubbleText: emitted only when set, independently', () => {
+    const unset = themeToStyle(theme({dark: darkFixture()}))
+    expect(unset).not.toHaveProperty('--gt-dark-button-bg')
+    expect(unset).not.toHaveProperty('--gt-dark-button-text')
+    expect(unset).not.toHaveProperty('--gt-dark-bubble-bg')
+    expect(unset).not.toHaveProperty('--gt-dark-bubble-text')
+
+    const set = themeToStyle(
+      theme({
+        dark: darkFixture({
+          buttonBackground: '#a1a1a1',
+          buttonText: '#b2b2b2',
+          bubbleBackground: '#c3c3c3',
+          bubbleText: '#d4d4d4',
+        }),
+      }),
+    )
+    expect(set['--gt-dark-button-bg']).toBe('#a1a1a1')
+    expect(set['--gt-dark-button-text']).toBe('#b2b2b2')
+    expect(set['--gt-dark-bubble-bg']).toBe('#c3c3c3')
+    expect(set['--gt-dark-bubble-text']).toBe('#d4d4d4')
   })
 })
 
@@ -239,6 +516,38 @@ describe('styles.css / THEME_DEFAULTS + THEME_DARK_DEFAULTS parity', () => {
     expect(readVarFallback(mediaBody, '--gt-overlay', '--gt-dark-overlay')).toBe(
       THEME_DARK_DEFAULTS.overlay,
     )
+    expect(readVarFallback(mediaBody, '--gt-frame-border', '--gt-dark-frame-border')).toBe(
+      THEME_DARK_DEFAULTS.frameBorder,
+    )
+  })
+
+  // M10: --gt-frame-border has a literal stylesheet default (there's no
+  // existing --gt-* color it should visually inherit) — same
+  // readVarFallback check as the base four colors above. --gt-button-bg/
+  // --gt-button-text/--gt-bubble-bg/--gt-bubble-text instead fall back to
+  // the ALREADY-scheme-resolved --gt-accent/--gt-surface/--gt-text (a
+  // nested var(), not a literal) — this module's `themeToStyle` doc
+  // comment explains why — so those are asserted via direct string
+  // containment rather than `readVarFallback`, which assumes a literal.
+  test('frame border color default matches FRAME_DEFAULTS/THEME_DARK_DEFAULTS', () => {
+    expect(readVarFallback(lightBody, '--gt-frame-border', '--gt-light-frame-border')).toBe(
+      FRAME_DEFAULTS.borderColor,
+    )
+    expect(readVarFallback(darkBody, '--gt-frame-border', '--gt-dark-frame-border')).toBe(
+      THEME_DARK_DEFAULTS.frameBorder,
+    )
+  })
+
+  test('button/bubble color defaults fall back to the already-resolved accent/surface/text, in both light and dark bodies', () => {
+    expect(lightBody).toContain('--gt-button-bg: var(--gt-light-button-bg, var(--gt-accent));')
+    expect(lightBody).toContain('--gt-button-text: var(--gt-light-button-text, var(--gt-surface));')
+    expect(lightBody).toContain('--gt-bubble-bg: var(--gt-light-bubble-bg, var(--gt-surface));')
+    expect(lightBody).toContain('--gt-bubble-text: var(--gt-light-bubble-text, var(--gt-text));')
+
+    expect(darkBody).toContain('--gt-button-bg: var(--gt-dark-button-bg, var(--gt-accent));')
+    expect(darkBody).toContain('--gt-button-text: var(--gt-dark-button-text, var(--gt-surface));')
+    expect(darkBody).toContain('--gt-bubble-bg: var(--gt-dark-bubble-bg, var(--gt-surface));')
+    expect(darkBody).toContain('--gt-bubble-text: var(--gt-dark-bubble-text, var(--gt-text));')
   })
 
   test('size defaults match, with the px suffix the custom properties are consumed with', () => {
@@ -332,5 +641,18 @@ describe('styles.css: modal + embed surfaces — every var(--gt-*) reference car
     expect(section).toContain(`var(--gt-surface, ${THEME_DEFAULTS.surface})`)
     expect(section).toContain(`var(--gt-text, ${THEME_DEFAULTS.text})`)
     expect(section).toContain(`var(--gt-accent, ${THEME_DEFAULTS.accent})`)
+  })
+
+  // M10: `.gt-embed-start` is the same "filled Material button" as
+  // `.gt-cta--primary`/`.gt-prev`/`.gt-next` (`--gt-button-bg`/
+  // `--gt-button-text`) but sits OUTSIDE `.gt-tour`'s scope (`.gt-embed`'s
+  // sibling relationship to a nested `<GuidedTourModal>`, this section's
+  // own top comment) — so its own literal fallback for those two custom
+  // properties needs to match THEME_DEFAULTS.accent/surface directly, the
+  // same belt-and-suspenders reasoning the rest of this section already
+  // documents.
+  test('.gt-embed-start button-bg/button-text fallbacks match THEME_DEFAULTS', () => {
+    expect(section).toContain(`var(--gt-button-bg, ${THEME_DEFAULTS.accent})`)
+    expect(section).toContain(`var(--gt-button-text, ${THEME_DEFAULTS.surface})`)
   })
 })

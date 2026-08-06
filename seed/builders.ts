@@ -300,6 +300,31 @@ interface ThemeDarkDoc {
   overlay?: string
 }
 
+/** `guidedTourTheme.frame`'s fields (`src/schema/theme.ts`, M10) — `style`/`borderWidth`/`borderColor`/`borderRadius` carry `initialValue`s in the schema, so a document can omit any of them; the four per-corner overrides never have one and only matter when `style === 'simple'`. */
+interface ThemeFrameDoc {
+  style?: 'mac' | 'windows' | 'simple' | 'none'
+  borderWidth?: number
+  borderColor?: string
+  borderRadius?: number
+  radiusTopLeft?: number
+  radiusTopRight?: number
+  radiusBottomRight?: number
+  radiusBottomLeft?: number
+}
+
+/** One `elements.button`/`elements.bubble` group (`src/schema/theme.ts`, M10) — every field independently optional, no schema default. */
+interface ThemeElementStyleDoc {
+  background?: string
+  textColor?: string
+  radius?: number
+}
+
+/** `guidedTourTheme.elements` (M10) — `button`/`bubble` groups, each independently optional. */
+interface ThemeElementsDoc {
+  button?: ThemeElementStyleDoc
+  bubble?: ThemeElementStyleDoc
+}
+
 export interface ThemeDoc {
   _id: string
   _type: 'guidedTourTheme'
@@ -311,6 +336,8 @@ export interface ThemeDoc {
   text?: string
   overlay?: string
   dark?: ThemeDarkDoc
+  frame?: ThemeFrameDoc
+  elements?: ThemeElementsDoc
   radius?: number
   hotspotSize?: number
   fontFamily?: string
@@ -336,12 +363,31 @@ export const SAMPLE_THEME_ID = 'guided-tours-sample-theme'
  * consumer opts out) plus a `radius` distinct from the schema default (14,
  * not 12).
  *
+ * M10 additions, same "showcase it in the seeded dataset, not just a unit
+ * test" spirit: a `frame` in `style: 'simple'` — a 2px brand-pink
+ * (`#db2777`, matching `accent`) border, rounded on the TOP two corners
+ * only (`radiusTopLeft`/`radiusTopRight: 16`) and square on the bottom two
+ * (`radiusBottomRight`/`radiusBottomLeft: 0`) — deliberately omitting the
+ * base `borderRadius` (its schema `initialValue`, 12, coalesces in when a
+ * document is written directly like this one is, same as every other
+ * `initialValue`-bearing field this builder already leaves unset elsewhere)
+ * so the seeded document ALSO proves per-corner overrides win over an
+ * unauthored base radius, not just an authored one. `elements` sets ONLY
+ * `bubble.radius`/`button.radius` (4 and 999 — a tight tooltip bubble next
+ * to a fully-pilled button), deliberately leaving every button/bubble COLOR
+ * unset — the seeded dataset's third demonstration of the "partial object,
+ * missing members fall back individually" pattern `dark` above already
+ * shows twice (`overlay` here, `radius` there): button/bubble colors fall
+ * back to the theme's own resolved accent/surface/text, matching the
+ * scoped "Buttons" title's own description in the schema.
+ *
  * `isDefault` is explicitly `false` (not merely omitted) so this reads as a
  * deliberate choice, not an oversight: setting it `true` would make
  * `tourProjection`'s `coalesce(theme->, *[_type == "guidedTourTheme" &&
  * isDefault == true][0])` fallback apply this theme to EVERY themeless tour
  * in the dataset, including the meta tour below — which is built to stay
- * theme-less on purpose, showing the viewer's own built-in modern defaults.
+ * theme-less on purpose, showing the viewer's own built-in modern defaults
+ * (mac chrome, filled pill buttons, `--gt-radius`-scaled bubbles).
  * Referenced by `buildSampleTourDocument`'s `theme` field via `SAMPLE_THEME_ID`.
  * No `logo` — the seed script uploads no image asset for the theme document.
  */
@@ -361,6 +407,20 @@ export function buildSampleThemeDocument(): ThemeDoc {
       surface: '#1c1917',
       text: '#fafaf9',
       // overlay deliberately unset — see this function's doc comment.
+    },
+    frame: {
+      style: 'simple',
+      borderWidth: 2,
+      borderColor: '#db2777',
+      radiusTopLeft: 16,
+      radiusTopRight: 16,
+      radiusBottomRight: 0,
+      radiusBottomLeft: 0,
+      // borderRadius deliberately unset — see this function's doc comment.
+    },
+    elements: {
+      bubble: {radius: 4},
+      button: {radius: 999},
     },
     radius: 14,
     googleFont: 'Manrope',

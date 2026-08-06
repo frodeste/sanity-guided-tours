@@ -17,6 +17,8 @@ import type {
   GuidedTourSettings,
   GuidedTourStep,
   GuidedTourTextOverlay,
+  GuidedTourTheme,
+  GuidedTourThemeFrame,
   GuidedTourTooltip,
 } from '../../src/queries/types'
 import {GuidedTour} from '../../src/react/GuidedTour'
@@ -146,6 +148,39 @@ function chapter(steps: GuidedTourStep[]): GuidedTourChapter {
 
 function settings(overrides: Partial<GuidedTourSettings> = {}): GuidedTourSettings {
   return {showProgress: true, showChapterMenu: true, showStepDots: true, ...overrides}
+}
+
+function frame(overrides: Partial<GuidedTourThemeFrame> = {}): GuidedTourThemeFrame {
+  return {
+    style: 'mac',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 12,
+    radiusTopLeft: null,
+    radiusTopRight: null,
+    radiusBottomRight: null,
+    radiusBottomLeft: null,
+    ...overrides,
+  }
+}
+
+function theme(overrides: Partial<GuidedTourTheme> = {}): GuidedTourTheme {
+  return {
+    accent: '#7c3aed',
+    surface: '#ffffff',
+    text: '#0f172a',
+    overlay: '#1e1b4b',
+    dark: null,
+    frame: null,
+    elements: null,
+    radius: 12,
+    hotspotSize: 24,
+    fontFamily: null,
+    googleFont: null,
+    brand: null,
+    logo: null,
+    ...overrides,
+  }
 }
 
 function tour(overrides: Partial<GuidedTourDoc> = {}): GuidedTourDoc {
@@ -404,6 +439,52 @@ describe('axe: accessibility states', () => {
     const {container} = render(<GuidedTourEmbed value={embedValue({displayMode: 'modal'})} />)
     fireEvent.click(queryButton(container, '.gt-embed-start'))
     expect(query(container, '.gt-modal').getAttribute('role')).toBe('dialog')
+
+    await assertNoAxeViolations(container)
+  })
+})
+
+// M10: window chrome (`Frame.tsx`) wraps every step/outro/lead render — one
+// state per style is enough here (the four states above already cover
+// step/tooltip/overlay/outro/lead content thoroughly); this describe block
+// is specifically about the CHROME itself never introducing a violation of
+// its own (the mac dots / windows glyphs being `aria-hidden` + `inert`,
+// never a focusable fake control — Global Constraint).
+describe('axe: frame styles', () => {
+  test('mac chrome (the default — no theme at all) has no violations', async () => {
+    const {container} = render(<GuidedTour tour={fixtureTour()} />)
+    expect(query(container, '.gt-frame').classList.contains('gt-frame--mac')).toBe(true)
+
+    await assertNoAxeViolations(container)
+  })
+
+  test('windows chrome has no violations', async () => {
+    const {container} = render(
+      <GuidedTour
+        tour={tour({...fixtureTour(), theme: theme({frame: frame({style: 'windows'})})})}
+      />,
+    )
+    expect(query(container, '.gt-frame').classList.contains('gt-frame--windows')).toBe(true)
+
+    await assertNoAxeViolations(container)
+  })
+
+  test('simple border chrome has no violations', async () => {
+    const {container} = render(
+      <GuidedTour
+        tour={tour({...fixtureTour(), theme: theme({frame: frame({style: 'simple'})})})}
+      />,
+    )
+    expect(query(container, '.gt-frame').classList.contains('gt-frame--simple')).toBe(true)
+
+    await assertNoAxeViolations(container)
+  })
+
+  test('no chrome ("none") has no violations', async () => {
+    const {container} = render(
+      <GuidedTour tour={tour({...fixtureTour(), theme: theme({frame: frame({style: 'none'})})})} />,
+    )
+    expect(container.querySelector('.gt-frame')).toBeNull()
 
     await assertNoAxeViolations(container)
   })

@@ -49,7 +49,17 @@ import type {
 //    `GuidedTour.tsx`'s module comment), so this is a real, currently-
 //    unavoidable preview gap (the author's actual theme colors won't show)
 //    rather than a crash or a wrong value. `PreviewView.tsx` surfaces this
-//    as a visible notice.
+//    as a visible notice. This blanket gap covers M10's `frame`/`elements`/
+//    extended-`dark` theme fields too, for the same reason — they live on
+//    the same dereferenced `guidedTourTheme` document, so there is nothing
+//    for this pure, reference-blind mapper to resolve for them either.
+//    `FRAME_DEFAULTS`/`THEME_DARK_DEFAULTS` (`../queries/defaults`) are
+//    therefore NOT imported here — there is no coalesce/mapping call site
+//    that would use them, unlike every other `*_DEFAULTS` constant this
+//    module does import. See `test/studio/draftToTour.test.ts`'s "theme
+//    always maps to null" case, extended in M10 to also cover a draft
+//    theme reference carrying `frame`/`elements`/dark button/bubble
+//    fields, proving the limitation holds for those too.
 // 2. LQIP: the projection resolves `asset->metadata.lqip`, a base64 blur
 //    placeholder computed server-side at upload time. `assetRefDimensions`
 //    (./assetRef) recovers width/height from the ref string alone, but the

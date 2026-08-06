@@ -914,3 +914,149 @@ demo, and `expo export`'s default platform list otherwise includes it).
 Runtime verification on a real device/simulator remains impossible on a
 CI runner or this box — recorded as an owner-verification ask (`cd
 examples/native && npx expo start`, then Expo Go or a simulator).
+
+## 17. Frames & element design — theming v3 (M10, added 2026-08-06)
+
+Editors choose the window chrome around a tour — **Mac** (new default),
+**Windows**, **simple** (a configurable border), or **none** — and style
+buttons and tooltip bubbles per element. Purely a theming extension: no new
+document types, no new dependencies. "Material-inspired" means our own CSS
+(filled buttons, subtle elevation, hover lift/active press) — never a
+component library; `styles.css`/`src/native/styles.ts` remain the only two
+places any of this is implemented.
+
+- **Schema.** `guidedTourTheme` gains two object fields. `frame` — `style`
+  (list `mac`/`windows`/`simple`/`none`, `initialValue: 'mac'`),
+  `borderWidth` (0–12, `initialValue: 1`), `borderColor` (`cssColorValue`,
+  `initialValue: '#e2e8f0'`), `borderRadius` (0–48, `initialValue: 12`),
+  and four independently-optional per-corner overrides
+  (`radiusTopLeft`/`radiusTopRight`/`radiusBottomRight`/`radiusBottomLeft`,
+  0–48, no `initialValue`). The border/radius fields are `hidden` unless
+  `style === 'simple'` (the same `hidden: ({parent}) => ...` convention
+  `step.duration`/`leadCapture.afterStepIndex` already use, not a new UX
+  pattern). `elements` — `button`/`bubble`, each `{background, textColor,
+  radius}` (`cssColorValue`/0–32, all independently optional, no
+  `initialValue` — an unset field falls back at consumption time, not via a
+  schema default). `dark` gains five more independently-optional overrides:
+  `frameBorder`, `buttonBackground`, `buttonText`, `bubbleBackground`,
+  `bubbleText`.
+- **Absent-object policy.** `frame`/`elements` are *nested* object fields —
+  the same shape `dark`/`settings`/`leadCapture`/`outro` already are — so a
+  theme document with no `frame` object at all projects `theme.frame` as
+  `null`, not a coalesced-defaults object, matching the established,
+  tested precedent those siblings already have (`frame`'s own four
+  `initialValue`-bearing fields DO coalesce to `FRAME_DEFAULTS` once a
+  `frame` object exists but leaves them unset — same distinction `dark`
+  already draws between "object absent" and "object present, field
+  unset"). Resolving the fully-absent case to `FRAME_DEFAULTS` is a
+  consumer responsibility, not the query's: `resolveFrame`
+  (`src/react/theme.ts`, shared by the web viewer AND
+  `src/native/nativeTheme.ts`'s `resolveNativeTheme`) is the one place that
+  decision lives, so it's made exactly once and reused rather than
+  reimplemented per runtime.
+- **Defaults.** `FRAME_DEFAULTS` (`src/queries/defaults.ts`) —
+  `{style: 'mac', borderWidth: 1, borderColor: '#e2e8f0', borderRadius:
+  12}`. `THEME_DARK_DEFAULTS` gains `frameBorder: '#334155'`,
+  `buttonBackground: '#a78bfa'` (the dark accent, reused directly — a
+  filled button just reads as "the accent color"), `buttonText: '#0f172a'`
+  (dark text on a light-toned accent clears contrast more reliably than
+  white), `bubbleBackground: '#1e293b'` (one step lighter than the
+  `#0f172a` surface — the same subtle-elevation relationship a white bubble
+  has over a light surface), `bubbleText: '#f1f5f9'` (the existing dark
+  `text` default, reused — bubble copy is body copy).
+- **Web viewer.** `src/react/Frame.tsx` renders the chrome around whatever
+  occupies the step/outro/lead swap slot in `GuidedTour.tsx` (the swap
+  region, not `.gt-stage` alone — wrapping only the stage would make the
+  chrome pop in and out at the lead/outro transition, which reads as a bug).
+  `mac` is a title bar with three `aria-hidden`, inert traffic-light dots
+  (fixed macOS hex values, not theme colors — meant to read as "a mac
+  window") and the personalized tour title, centered; `windows` is a title
+  bar with the title left-aligned and three `aria-hidden`, inert caption
+  glyphs (`−`/`□`/`×`, plain `<span>`s, never `<button>`s) on the right;
+  `simple` is a bare bordered wrapper, no title bar; `none` renders
+  `children` unwrapped, no extra DOM node at all. Every decoration is
+  `aria-hidden` and inert by construction — never a focusable fake control,
+  so none of it trips `axe-core`. `themeToStyle` (`src/react/theme.ts`)
+  emits `frame`/`elements` colors as the same paired
+  `--gt-light-*`/`--gt-dark-*` custom properties `accent`/`surface`/`text`/
+  `overlay` use, but — unlike those four, which are required theme fields —
+  ONLY when the underlying value is actually authored, since `frame` and
+  `elements` are independently-nullable sub-objects with no schema default;
+  `styles.css`'s scheme-mapping rules supply the fallback for whichever
+  half (or both) is missing. Button/bubble colors fall back to the
+  ALREADY-scheme-resolved `--gt-accent`/`--gt-surface`/`--gt-text` (e.g.
+  "button bg falls back to whatever accent is actually active"), not a
+  second independently-authored literal; `frame`'s border color has no
+  natural color to inherit, so it falls back to the literal
+  `FRAME_DEFAULTS.borderColor`/`THEME_DARK_DEFAULTS.frameBorder` instead.
+  `--gt-button-radius` defaults to `calc(var(--gt-radius) * 2)`, which
+  clamps into a true pill at `--gt-radius`'s own 12px default (CSS
+  `border-radius` can't exceed half a box's rendered height) — so the
+  unthemed look is pixel-identical to pre-M10, while a smaller `--gt-radius`
+  now produces a visibly less pill-like button instead of an unconditional
+  pill. `--gt-bubble-radius` defaults to `var(--gt-radius)` directly, a
+  literal continuation of `.gt-tooltip`'s pre-M10 behavior. Filled-button
+  treatment (resting shadow, hover lift, active press) applies to
+  `.gt-cta--primary`, prev/next, the lead-submit button and the embed-start
+  button; outline buttons (`.gt-cta--secondary`, the lead-skip button) pick
+  up only the shared radius, not the fill colors — Material reserves
+  elevation for contained buttons, an outline button's label stays
+  accent-colored. `elements.button` targets those pill buttons specifically
+  — NOT the round hotspot/tooltip-trigger markers, kept on
+  `--gt-accent`/`--gt-surface` directly as a deliberately distinct visual
+  language. `frameRadiusShorthand` composes the four per-corner overrides
+  into a CSS `border-radius` shorthand: the plain `borderRadius` alone when
+  no corner is overridden, else the full four-value shorthand with each
+  unset corner falling back to `borderRadius` individually (never `0`), so
+  overriding one corner never squares off the other three.
+- **Native viewer policy.** Chrome is web-only: `mac`/`windows` render NO
+  visible chrome on native at all (a title bar with dots/glyphs has no RN
+  component in v1) — `NativeTheme.frame.style` is still carried through so
+  a consumer can inspect what was authored, even though nothing renders it.
+  `simple` is the one style with a real native effect: a plain border
+  (`borderWidth`/`borderColor`/`borderRadius`) applied to the STEP STAGE
+  (`src/native/styles.ts`'s `stage` — the screenshot + positioned-elements
+  box `StepNative.tsx` renders), not the outer container — narrower scope
+  than web's `<Frame>` (which wraps the whole step/outro/lead swap region),
+  a deliberate v1 simplification since native's per-step `stage` is the one
+  view this codebase already calls "the stage." Per-corner radius overrides
+  are NOT surfaced on `NativeTheme.frame` in v1 — RN's `borderTopLeftRadius`
+  etc. exist, but nothing downstream on native ever needed a per-corner
+  frame border (the only native consumer is the stage's single uniform
+  `borderRadius`), so `resolveNativeTheme` doesn't grow `NativeTheme.frame`
+  past what is actually read; `resolveFrame`'s full, per-corner-aware shape
+  is still resolved internally and nothing about that data is lost, it is
+  simply not threaded further. `elements.button`/`.bubble` ARE fully
+  supported on native — same accent/surface/text fallback chain as web,
+  resolved for ONE scheme up front (native has no CSS light/dark pair to
+  defer to) via `resolveNativeTheme`'s `resolveElements` helper, which
+  `resolveFrame` (`src/react/theme.ts`) is reused by directly rather than
+  reimplemented. `buttonRadius`'s unset fallback is a literal `999` (a
+  guaranteed full pill), reusing this codebase's own pre-existing
+  `chapterChip.borderRadius: 999` precedent rather than inventing a second
+  constant — RN has no `calc()`/percentage-of-box-height mechanism to
+  derive a pill from `theme.radius` the way web's CSS formula does, so the
+  two runtimes reach the same default LOOK (an unthemed button/CTA/chip
+  renders as a pill) through different mechanisms. `bubbleRadius`'s unset
+  fallback is the theme's own `radius`, matching web's literal continuation
+  of `.gt-tooltip`'s pre-M10 behavior. `var(--token)` frame/element colors
+  degrade the same documented way `accent`/`surface`/`text`/`overlay`
+  already do on native: fall back to the scheme default, `console.warn` in
+  development only.
+- **Seed content.** `seed/builders.ts`'s `buildSampleThemeDocument` ("Acme
+  brand") showcases `frame`/`elements` in the bundled dataset: a `simple`
+  frame with a 2px brand-pink (`#db2777`, matching the theme's own accent)
+  border, rounded on the top two corners only
+  (`radiusTopLeft`/`radiusTopRight: 16`) and square on the bottom two
+  (`radiusBottomRight`/`radiusBottomLeft: 0`) — deliberately omitting the
+  base `borderRadius` so the seeded document also proves a per-corner
+  override wins over an UNAUTHORED base radius, not just an authored one 
+  — and `elements` setting only `bubble.radius: 4`/`button.radius: 999`,
+  deliberately leaving every button/bubble color unset so the seeded
+  dataset demonstrates the accent/surface/text fallback chain a third time
+  (`dark.overlay` and `radius` already demonstrate the same "partial
+  object, missing members fall back individually" pattern once each).
+  `sample-tour` references this theme; the meta tour (`how-to-build-tours`)
+  stays theme-less, so a freshly seeded dataset shows both the Acme simple
+  frame AND the viewer's own mac-chrome, pill-button, Material-inspired
+  built-in defaults side by side.

@@ -15,6 +15,7 @@ import type {GuidedTourDoc} from '../queries/types'
 import {GuidedTourContext} from './context'
 import type {GuidedTourEventHandler} from './events'
 import {ensureGoogleFont} from './fontLoader'
+import {Frame} from './Frame'
 import {isNavigationExempt} from './helpers'
 import {defaultLabels, formatLabel, type GuidedTourLabels} from './labels'
 import {LeadForm} from './LeadForm'
@@ -760,6 +761,12 @@ export function GuidedTour({
   const flatStep = flat[currentIndex]
   if (!flatStep) return null // Unreachable: flat is non-empty and currentIndex is clamped into range.
 
+  // Computed once and reused by both the header's `<h2>` and `Frame`'s
+  // mac/windows title bar (M10) — the same personalized string, not two
+  // independent calls that could drift if `resolveTokens`/`personalizeText`
+  // ever became non-idempotent.
+  const personalizedTitle = personalizeText(tour.title, resolvedTokens)
+
   const counterText = formatLabel(labels.stepCounter, {
     current: currentIndex + 1,
     total: flat.length,
@@ -839,7 +846,7 @@ export function GuidedTour({
             height={tour.theme.logo.dimensions.height}
           />
         )}
-        <h2 className="gt-title">{personalizeText(tour.title, resolvedTokens)}</h2>
+        <h2 className="gt-title">{personalizedTitle}</h2>
         {settings.showProgress && (
           // A native <progress> can't be styled through the --gt-*
           // custom-property scheme (its fill is UA-specific and largely
@@ -873,44 +880,52 @@ export function GuidedTour({
         )}
       </div>
       <GuidedTourContext.Provider value={contextValue}>
-        {showOutro && tour.outro ? (
-          // Replaces `.gt-stage` entirely (a sibling swap, not nested
-          // inside it) — same "own tabIndex={-1}, own ref" keyboard-focus
-          // idiom `.gt-stage` itself uses (plan Task 8), so the outro
-          // keeps working as the target `navigate()`'s post-navigation
-          // `stageRef.current?.focus()` expects. `tour.outro` is
-          // re-checked here (not just trusted from `showOutro`) purely to
-          // satisfy the type — `GuidedTourOutro | null` — without an `as`
-          // cast; `showOutro` can only be `true` when `handleNext` already
-          // saw a non-null `tour.outro`.
-          <div className="gt-outro" tabIndex={-1} ref={stageRef}>
-            <Outro outro={tour.outro} />
-          </div>
-        ) : showLeadForm && leadCapture ? (
-          // Same "own tabIndex={-1}, own ref" idiom as `.gt-outro`/
-          // `.gt-stage` above (M4 Task 3). `leadCapture` is re-checked here
-          // (not just trusted from `showLeadForm`) purely to satisfy the
-          // type without an `as` cast — `showLeadForm` can only be `true`
-          // when `leadCapture` was already non-null above.
-          <div className="gt-lead" tabIndex={-1} ref={stageRef}>
-            <LeadForm
-              leadCapture={leadCapture}
-              onLeadSubmit={onLeadSubmit}
-              onDismiss={handleLeadDismiss}
-              onPendingChange={setLeadPending}
-            />
-          </div>
-        ) : (
-          <div className="gt-stage" tabIndex={-1} ref={stageRef}>
-            <Step
-              step={flatStep.step}
-              onAdvance={handleNext}
-              previousStep={flat[currentIndex - 1]?.step ?? null}
-              nextStep={flat[currentIndex + 1]?.step ?? null}
-              renderImage={renderImage}
-            />
-          </div>
-        )}
+        {/* M10: window chrome wraps the whole step/outro/lead swap region
+            (not `.gt-stage` alone) so it stays visually stable across
+            those transitions instead of popping in and out — see
+            `Frame.tsx`'s own doc comment. Resolves `tour.theme` itself
+            (`./theme.ts`'s `resolveFrame`), so it needs no prop beyond the
+            theme and the already-personalized title computed above. */}
+        <Frame theme={tour.theme} title={personalizedTitle}>
+          {showOutro && tour.outro ? (
+            // Replaces `.gt-stage` entirely (a sibling swap, not nested
+            // inside it) — same "own tabIndex={-1}, own ref" keyboard-focus
+            // idiom `.gt-stage` itself uses (plan Task 8), so the outro
+            // keeps working as the target `navigate()`'s post-navigation
+            // `stageRef.current?.focus()` expects. `tour.outro` is
+            // re-checked here (not just trusted from `showOutro`) purely to
+            // satisfy the type — `GuidedTourOutro | null` — without an `as`
+            // cast; `showOutro` can only be `true` when `handleNext` already
+            // saw a non-null `tour.outro`.
+            <div className="gt-outro" tabIndex={-1} ref={stageRef}>
+              <Outro outro={tour.outro} />
+            </div>
+          ) : showLeadForm && leadCapture ? (
+            // Same "own tabIndex={-1}, own ref" idiom as `.gt-outro`/
+            // `.gt-stage` above (M4 Task 3). `leadCapture` is re-checked here
+            // (not just trusted from `showLeadForm`) purely to satisfy the
+            // type without an `as` cast — `showLeadForm` can only be `true`
+            // when `leadCapture` was already non-null above.
+            <div className="gt-lead" tabIndex={-1} ref={stageRef}>
+              <LeadForm
+                leadCapture={leadCapture}
+                onLeadSubmit={onLeadSubmit}
+                onDismiss={handleLeadDismiss}
+                onPendingChange={setLeadPending}
+              />
+            </div>
+          ) : (
+            <div className="gt-stage" tabIndex={-1} ref={stageRef}>
+              <Step
+                step={flatStep.step}
+                onAdvance={handleNext}
+                previousStep={flat[currentIndex - 1]?.step ?? null}
+                nextStep={flat[currentIndex + 1]?.step ?? null}
+                renderImage={renderImage}
+              />
+            </div>
+          )}
+        </Frame>
       </GuidedTourContext.Provider>
       <div className="gt-controls">
         <button type="button" className="gt-prev" onClick={handlePrev}>

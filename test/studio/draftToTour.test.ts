@@ -99,6 +99,33 @@ describe('draftToTour: document-level fields', () => {
     expect(tour.theme).toBeNull()
   })
 
+  // M10: frame/elements/the extended dark member set are all just more
+  // fields on the same dereferenced `guidedTourTheme` document — the
+  // limitation above covers them too, since there is still nothing for a
+  // reference-blind mapper to resolve. This is here to prove that holds
+  // for the new fields specifically, not just fields that existed when the
+  // "theme always maps to null" test above was written — a value on
+  // `doc.theme` (the reference object itself, not the dereferenced theme
+  // document) can never carry frame/elements/dark data regardless, but a
+  // future refactor that starts reading fields off `doc.theme` should
+  // still trip this if it forgets frame/elements.
+  test('theme still maps to null even when the reference is annotated with frame/elements/dark-shaped data', () => {
+    const {tour} = draftToTour(
+      minimalDoc({
+        theme: {
+          _type: 'reference',
+          _ref: 'theme-1',
+          frame: {style: 'simple', borderWidth: 4, borderColor: '#ec4899', borderRadius: 20},
+          elements: {button: {background: '#7c3aed'}},
+          dark: {frameBorder: '#334155'},
+        },
+      }),
+      PROJECT_ID,
+      DATASET,
+    )
+    expect(tour.theme).toBeNull()
+  })
+
   test('chapters absent maps to an empty array (not null — GuidedTourDoc.chapters is non-nullable)', () => {
     const {tour} = draftToTour({_id: 'x', title: 'x', slug: {current: 'x'}}, PROJECT_ID, DATASET)
     expect(tour.chapters).toEqual([])

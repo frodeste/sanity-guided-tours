@@ -79,10 +79,12 @@ export interface GuidedTourImage {
 
 /**
  * Independently optional dark-mode overrides for a theme's `accent`,
- * `surface`, `text` and `overlay`. Each member is `null` (rather than
- * defaulted) when the author left it empty — GROQ does not coalesce these,
- * so the viewer can fall back to `THEME_DARK_DEFAULTS` per field, only when
- * a dark color scheme is actually active (design brief, M7 plan).
+ * `surface`, `text`, `overlay` (M7) and, since M10, `frameBorder`,
+ * `buttonBackground`, `buttonText`, `bubbleBackground` and `bubbleText`.
+ * Each member is `null` (rather than defaulted) when the author left it
+ * empty — GROQ does not coalesce these, so the viewer can fall back to
+ * `THEME_DARK_DEFAULTS` per field, only when a dark color scheme is
+ * actually active (design brief, M7 plan; M10 plan for the five additions).
  *
  * @public
  */
@@ -91,11 +93,75 @@ export interface GuidedTourThemeDark {
   surface: string | null
   text: string | null
   overlay: string | null
+  frameBorder: string | null
+  buttonBackground: string | null
+  buttonText: string | null
+  bubbleBackground: string | null
+  bubbleText: string | null
+}
+
+/**
+ * Window chrome rendered around the tour stage in the web viewer (M10
+ * plan, native apps ignore this). `style`, `borderWidth`, `borderColor`
+ * and `borderRadius` coalesce to `FRAME_DEFAULTS` (`../queries/defaults`)
+ * whenever the theme has a `frame` object at all; the whole `frame` value
+ * is `null` instead when the theme has no `frame` object at all —
+ * `theme.frame`'s own doc comment on `GuidedTourTheme` covers why. The
+ * four per-corner overrides have no schema default and are always
+ * independently nullable, whether or not `frame` itself is set.
+ *
+ * @public
+ */
+export interface GuidedTourThemeFrame {
+  style: 'mac' | 'windows' | 'simple' | 'none'
+  borderWidth: number
+  borderColor: string
+  borderRadius: number
+  radiusTopLeft: number | null
+  radiusTopRight: number | null
+  radiusBottomRight: number | null
+  radiusBottomLeft: number | null
+}
+
+/**
+ * Per-element color/radius overrides for a theme's buttons or tooltip
+ * bubbles (`GuidedTourThemeElements.button`/`.bubble`, M10 plan). Every
+ * member has no schema default and is always independently nullable — an
+ * unset field falls back to the theme's accent/surface color or global
+ * `radius` at consumption time (the web viewer / native theme resolver),
+ * never a query-side coalesce.
+ *
+ * @public
+ */
+export interface GuidedTourThemeElementStyle {
+  background: string | null
+  textColor: string | null
+  radius: number | null
+}
+
+/**
+ * Per-element design overrides for a theme's buttons and tooltip bubbles
+ * (M10 plan). `button`/`bubble` are each `null` when the theme has no
+ * corresponding object at all, same as `frame` (see
+ * `GuidedTourTheme.elements`'s doc comment).
+ *
+ * @public
+ */
+export interface GuidedTourThemeElements {
+  button: GuidedTourThemeElementStyle | null
+  bubble: GuidedTourThemeElementStyle | null
 }
 
 /**
  * A resolved `guidedTourTheme`, compiled by the viewer into `--gt-*` CSS
  * custom properties.
+ *
+ * `frame` and `elements` are each `null` when the theme document has no
+ * corresponding object at all — the same nested-object policy `dark`
+ * already follows (`../queries/projections`' module comment on `frame`
+ * covers the full reasoning, including where this deviates from the M10
+ * plan's literal wording). Consumers resolve a `null` `frame`/`elements`
+ * against `FRAME_DEFAULTS`/no-override-at-all respectively.
  *
  * @public
  */
@@ -105,6 +171,8 @@ export interface GuidedTourTheme {
   text: string
   overlay: string
   dark: GuidedTourThemeDark | null
+  frame: GuidedTourThemeFrame | null
+  elements: GuidedTourThemeElements | null
   radius: number
   hotspotSize: number
   fontFamily: string | null
