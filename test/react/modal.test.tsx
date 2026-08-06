@@ -69,6 +69,7 @@ function step(overrides: Partial<GuidedTourStep> & {_key: string}): GuidedTourSt
     duration: null,
     screenshot: image(),
     screenshotMobile: null,
+    video: null,
     elements: null,
     ...overrides,
   }

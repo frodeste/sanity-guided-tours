@@ -1060,3 +1060,134 @@ places any of this is implemented.
   stays theme-less, so a freshly seeded dataset shows both the Acme simple
   frame AND the viewer's own mac-chrome, pill-button, Material-inspired
   built-in defaults side by side.
+
+## 18. Video steps (M11, added 2026-08-06)
+
+A step's backdrop can be a short video instead of its static screenshot —
+uploaded to Sanity as a file asset, or referenced by direct URL — across
+schema, canvas editor, projection, web viewer, native, and docs
+(issues #146–#148). Backwards compatible by construction: `screenshot` is
+unchanged and stays required; `video` is a new, wholly optional object on
+`step` that takes rendering precedence when present. No migration, no union
+rewrite — existing tours are untouched.
+
+- **Schema.** `guidedTourStep` gains one optional object field, `video`:
+  `source` (list `'file'`/`'url'`, `initialValue: 'file'`), `file` (type
+  `file`, `options.accept: 'video/mp4,video/webm'`, `hidden` unless
+  `source === 'file'`), `url` (type `url`, `rule.uri({scheme: ['https']})`
+  — **https only**, deliberately narrower than `hotspot.href`'s http/https/
+  mailto/tel, since a video URL is always fetched programmatically by
+  `<video src>`, never navigated to by a person who might reasonably type
+  `http://`). An object-level `rule.custom` on `video` itself requires
+  whichever member `source` selects to actually be present — a `video`
+  object with `source: 'url'` and no `url`, or `source: 'file'` and no
+  uploaded `file`, fails validation; the same `hidden: ({parent}) => ...`
+  conditional-field convention `step.duration`/`leadCapture.afterStepIndex`/
+  `theme.frame`'s border fields already use, not a new UX pattern. Both
+  `video`'s and `screenshot`'s field descriptions say the screenshot stays
+  required regardless — it is the poster, the reduced-motion fallback, the
+  native fallback, and the canvas editor's positioning backdrop, video or
+  not.
+- **Precedence, not stacking.** `src/react/Step.tsx`: when `step.video` is
+  non-null, the `<Video>` element renders **in place of** the screenshot
+  `<img>` — never both at once, never a fade/crossfade between them. A step
+  without `video` renders exactly as it did before this milestone (a
+  regression the test suite pins directly). The video element fills the
+  exact same box the screenshot `<img>` does (`.gt-video` joins
+  `.gt-screenshot`'s sizing rule in `styles.css`), so every hotspot/tooltip/
+  overlay's percent-based `x`/`y`/`width` positioning is unaffected by which
+  one is actually rendered underneath it — positioning math has no branch
+  on "is this step a video step."
+- **Projection.** `"video": video{"source": coalesce(source, "file"),
+  "fileUrl": file.asset->url, url}`, following the established nested-object
+  absent-policy `theme.frame`/`.dark`/`.elements` already set: a step with no
+  `video` object at all projects `GuidedTourStep.video` as `null`, not a
+  coalesced-defaults object — resolving "should this even attempt to render
+  as a video step" is a single null check, not a heuristic over partially
+  authored fields. `fileUrl` dereferences a `sanity.fileAsset` document's own
+  top-level `url` the same way `imageProjection`'s screenshot deref does; it
+  resolves `null` whenever `file` is absent or unresolvable, same as any
+  other missing-reference deref, and never drops the step (unlike an
+  unresolvable `screenshot`, which does drop it — see §6) — a broken video
+  degrades to "no video," not "no step."
+- **Playback is fixed, not schema-configurable, in v1.** Every video plays
+  `muted`, `loop`s, `playsInline`, `preload="metadata"`. Autoplay is gated on
+  BOTH `prefers-reduced-motion: no-preference` (a live `matchMedia`
+  subscription, not a one-shot check — the preference can change while a
+  `<Video>` stays mounted on the same step) AND the stage being ≥50% visible
+  (`IntersectionObserver`, feature-detected, degrade-permissive — treated as
+  visible when absent, matching what a browser without the API would force
+  anyway) — losing either condition pauses playback, regaining both resumes
+  it, so scrolling a video step out of view (embed/modal contexts) or a user
+  toggling their OS-level motion preference mid-tour both behave correctly
+  without a page reload. A `play()` promise rejection (autoplay denied by
+  browser policy) is swallowed, not surfaced — expected, not actionable.
+  Reduced motion never autoplays at all; instead the browser's own
+  `controls` scrubber is shown so a viewer can start it themselves. There is
+  no audio track story in v1 (`muted` is unconditional) — a video step is
+  positioned as a moving screenshot, not a narrated walkthrough; the latter
+  is a real future feature but a different one (captions, transcript,
+  volume control, an entirely different a11y posture), deliberately out of
+  scope here rather than half-built.
+- **Deliberate rejection: no YouTube/Vimeo/embed-provider support.** `url`
+  accepts only a direct link to an actual media file `<video src>` can play
+  natively (mp4/webm) — never a page URL an embed provider's iframe would
+  load. This was considered and dropped, not merely unconsidered: an
+  embed-provider iframe is opaque to the page around it by cross-origin
+  design — hotspots/tooltips/text overlays can be positioned with percent
+  coordinates over a `<video>` element (or an `<img>`) because both are
+  ordinary same-document DOM nodes the stage's own `position: relative`
+  ancestor lays out; an iframe's *internal* player chrome (its own play
+  button, seek bar, captions toggle) cannot be reached, styled, or
+  positioned against from outside, and the iframe itself would have to be
+  stretched to fill the stage exactly like the screenshot/video does — at
+  which point hotspots would be fighting the embedded player's own click
+  targets for the same pixels, breaking the hotspot/overlay authoring model
+  this entire plugin is built around. Direct-file playback also matches the
+  demo-loop use case this feature targets (a short, silent, looping product
+  clip standing in for a screenshot) far better than a full external
+  player's UI ever would. Revisiting embed-provider support, if ever
+  requested, would need a materially different interaction model (a video
+  step that suspends hotspot placement entirely, or a `displayMode` that
+  swaps the whole stage rather than layering elements over it) — not a
+  variant of `source`.
+- **Accessibility stance.** A muted, captionless, looping demo clip is
+  treated as decorative — the same rationale a muted GIF replacement would
+  get — not as narrated content requiring captions/transcript in v1 (see the
+  audio-track note above for why that's a distinct, deferred feature).
+  `aria-label` is set from the step's own `title` (falling back to a
+  generic `"Video"` when the step is untitled — an empty `aria-label` on a
+  `<video>` would be worse than none, unlike an image's `alt=""` blank-on-
+  purpose convention) so assistive tech still announces what the video
+  is *of*, even muted and uncaptioned. Reduced-motion's `controls` fallback
+  is itself an accessibility mechanism, not just a autoplay-policy dodge:
+  the standard scrubber is screen-reader- and keyboard-operable out of the
+  box, so a reduced-motion viewer isn't just denied autoplay — they get a
+  fully operable alternative. Verified with the same `axe-core` assertion
+  suite (see §10/README's Accessibility section) extended to a video-step
+  fixture: zero violations.
+- **Native policy.** React Native core has no `<video>`-equivalent
+  primitive (unlike the DOM's native element web relies on), so
+  `StepNative` renders the screenshot poster unconditionally — whether or
+  not `step.video` is set, with no video-rendering branch at all in v1. This
+  package takes no position on which native playback library a consumer
+  should add (`expo-video` is the natural fit for an Expo app, but not the
+  only option); `step.video` is still carried all the way through
+  `queries/types.ts` (`GuidedTourStepVideo`) and into `StepNative`'s own
+  `step` prop unnarrowed, so an integrator can read `step.video.source`/
+  `.fileUrl`/`.url` directly and layer their own player in without any
+  upstream plumbing left to add. Recorded in the native Scope table
+  (README) as a v1 limitation with an explicit integration point, the same
+  documentation posture every other native-vs-web gap in §16 already gets.
+- **Seed content.** `seed/builders.ts`'s `buildSampleTourDocument` adds one
+  video step (`source: 'url'`) to the bundled `sample-tour` — no `ffmpeg`
+  available in the plugin's own dev environment to generate a tiny sample
+  clip, and the URL variant needs no upload at all. The URL itself was
+  hand-verified (`curl -sI`, 200 response, `content-type: video/mp4`) rather
+  than assumed, pointing at MDN's own `interactive-examples` CC0 sample
+  video library — a stable, public, directly-served `.mp4` this project
+  doesn't host itself, but that MDN's own documentation depends on serving
+  reliably. The step's `screenshot` (still required) reuses an
+  already-uploaded capture from an earlier step rather than shipping a
+  bespoke additional PNG, so the seed adds a video step without adding any
+  new binary asset to the repo or the upload step.

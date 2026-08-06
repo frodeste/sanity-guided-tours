@@ -179,15 +179,47 @@ export type ElementDoc = HotspotDoc | TooltipDoc | TextOverlayDoc
 
 // --- Step / chapter (src/schema/step.ts, src/schema/chapter.ts) ------------
 
+/**
+ * `step.video`'s raw author-side shape (`src/schema/step.ts`'s `video`
+ * object field) — a discriminated-by-convention `source`, with `file`/`url`
+ * independently optional the same way the schema's own validation reads
+ * them (only the member matching `source` needs to be present). No `_type`
+ * on the object itself: `video` is a plain inline `type: 'object'` field,
+ * not a registered array-member type like `guidedTourHotspot`, so nothing
+ * downstream (the projection, `draftToTour.ts`) expects one either.
+ */
+interface VideoDoc {
+  source: 'file' | 'url'
+  file?: {asset: {_type: 'reference'; _ref: string}}
+  url?: string
+}
+
 interface StepDoc {
   _key: string
   _type: 'guidedTourStep'
   title?: string
   screenshot: ImageAssetField
+  video?: VideoDoc
   elements?: ElementDoc[]
   advance: 'hotspot' | 'button' | 'auto'
   duration?: number
 }
+
+/**
+ * The sample tour's one video step (M11 Task 3, `buildSampleTourDocument`)
+ * uses the URL source variant, not an uploaded file — `ffmpeg` isn't
+ * available in this environment to produce a tiny sample clip, and the URL
+ * variant needs no upload step at all. Picked and hand-verified (`curl -sI`
+ * — 200, `content-type: video/mp4`, ~1.1 MB; see the task report for the
+ * full response) rather than assumed: MDN's own `interactive-examples`
+ * CC0-licensed video library, served directly off MDN's documentation CDN
+ * — a stable, public, direct `.mp4` this project doesn't host, but that MDN
+ * itself depends on for its own published docs, which is as durable a
+ * "someone else keeps this online" bet as a v1 seed URL gets without
+ * standing up first-party video hosting.
+ */
+export const SAMPLE_VIDEO_URL =
+  'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4'
 
 function buildStep(keyGen: KeyGen, fields: Omit<StepDoc, '_key' | '_type'>): StepDoc {
   return {_key: keyGen(), _type: 'guidedTourStep', ...fields}
@@ -459,11 +491,26 @@ export interface SampleTourAssetIds {
 }
 
 /**
- * Builds the bundled sample tour: 3 steps across 2 chapters, all three
- * element types, all three step-advance modes (one per step), a
- * personalization token, an outro with 2 CTAs, and lead capture configured
- * but disabled (`enabled: false`) — see README's "Seeding your own
- * dataset" section, which this document is built to match exactly.
+ * Builds the bundled sample tour: 4 steps across 2 chapters, all three
+ * element types, all three step-advance modes, a personalization token, an
+ * outro with 2 CTAs, and lead capture configured but disabled (`enabled:
+ * false`) — see README's "Seeding your own dataset" section, which this
+ * document is built to match exactly.
+ *
+ * M11 Task 3: the 4th step (`step4`, "See it in motion") is the one video
+ * step in the bundled dataset — `video: {source: 'url', ...}`, NOT a
+ * `file` upload. `ffmpeg` isn't available in this environment to generate a
+ * tiny sample clip, and there is no video asset to upload here anyway: the
+ * URL variant needs no upload at all, just a direct, stable, public HTTPS
+ * `.mp4` (chosen and hand-verified — see the task report for the `curl -sI`
+ * evidence — the MDN interactive-examples CC0 sample library's
+ * `flower.mp4`, an asset this project doesn't control but that MDN's own
+ * docs serve directly and durably). `screenshot` reuses `assetIds.step2`
+ * (no new image upload either) — the schema requires a screenshot on every
+ * step, video or not, and it doubles as this step's poster; reusing an
+ * already-uploaded capture instead of shipping a bespoke 4th PNG keeps the
+ * "video steps need no new binary assets in this seed" story true for the
+ * image half too, not just the video half.
  *
  * References `buildSampleThemeDocument`'s "Acme brand" theme by `_id`
  * (`SAMPLE_THEME_ID`) — a fresh dataset renders this tour branded (pink
@@ -537,6 +584,17 @@ export function buildSampleTourDocument(
     ],
   })
 
+  // The one video step in the bundled dataset (M11 Task 3) — URL source,
+  // reusing step2's already-uploaded screenshot as the poster. See
+  // `SAMPLE_VIDEO_URL`'s own doc comment for why this is a URL, not a file,
+  // and which URL was chosen.
+  const step4 = buildStep(keyGen, {
+    title: 'See it in motion',
+    screenshot: imageField(assetIds.step2, 'Dashboard overview with key metrics'),
+    video: {source: 'url', url: SAMPLE_VIDEO_URL},
+    advance: 'button',
+  })
+
   const chapters: ChapterDoc[] = [
     buildChapter(keyGen, {
       title: 'Getting started',
@@ -546,7 +604,7 @@ export function buildSampleTourDocument(
     buildChapter(keyGen, {
       title: 'Wrap-up',
       description: 'Confirming setup and pointing to what is next.',
-      steps: [step3],
+      steps: [step3, step4],
     }),
   ]
 
@@ -607,7 +665,7 @@ export function buildSampleTourDocument(
     title: 'Sample guided tour',
     slug: {_type: 'slug', current: SAMPLE_TOUR_SLUG},
     description:
-      'A sample tour bundled with sanity-plugin-guided-tours, exercising every feature: chapters, all three element types, every step-advance mode, a personalization token, an outro with CTAs, lead capture (configured, disabled), and a branded theme (light + dark).',
+      'A sample tour bundled with sanity-plugin-guided-tours, exercising every feature: chapters, all three element types, every step-advance mode, a video step, a personalization token, an outro with CTAs, lead capture (configured, disabled), and a branded theme (light + dark).',
     theme: {_type: 'reference', _ref: SAMPLE_THEME_ID},
     tokens,
     chapters,

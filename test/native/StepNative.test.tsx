@@ -228,6 +228,35 @@ describe('StepNative', () => {
     )
   })
 
+  // M11 Task 3: `step.video` is carried through `GuidedTourStep` but native
+  // has no `<Video>` primitive of its own (StepNative.tsx's doc comment) —
+  // this is the regression that a video step still renders the screenshot
+  // poster, unchanged, and never crashes just because `video` is present.
+  test('a step with video still renders exactly the screenshot poster, unchanged (no crash, no video element)', () => {
+    const context = buildContext()
+    const videoStep = step({
+      _key: 's1',
+      video: {source: 'url', fileUrl: null, url: 'https://example.com/clip.mp4'},
+    })
+
+    // If StepNative ever grows a video-rendering branch that crashes on
+    // this shape (or on the `fileUrl: null`/url-only variant), the render
+    // itself throws and fails this test — no separate `.not.toThrow()`
+    // wrapper needed on top of that.
+    const renderer = renderNative(
+      withContext(context, <StepNative step={videoStep} onAdvance={() => {}} />),
+    )
+    const image = renderer.root.findByType(Image)
+    expect(image.props.source).toEqual({
+      uri: 'https://cdn.sanity.io/images/proj/ds/abc-100x100.png',
+    })
+    expect(image.props.resizeMode).toBe('contain')
+    // Exactly one Image renders — the screenshot poster — no second
+    // element for the video itself; StepNative has no video-rendering
+    // branch at all in v1.
+    expect(renderer.root.findAllByType(Image)).toHaveLength(1)
+  })
+
   test('onLayout measures the stage and resolves the hotspot marker against the real computeContainRect (not the {0,0,0,0} pre-measurement fallback)', () => {
     const context = buildContext()
     const renderer = renderNative(

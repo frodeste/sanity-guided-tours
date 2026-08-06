@@ -16,6 +16,10 @@ import {Image} from './Image'
 import {TextOverlay} from './TextOverlay'
 import {Tooltip} from './Tooltip'
 import type {GuidedTourImageProps} from './types'
+import {Video} from './Video'
+
+/** `<Video>`'s `aria-label` fallback for a video step with no authored title (`GuidedTourStep.title` is `null`) — an empty `aria-label` would be worse than a generic one (see `renderScreenshot`'s `alt ?? ''` for the same coalesce done differently for a decorative screenshot, which an accessible-name-bearing `<video>` is not). */
+const UNTITLED_VIDEO_LABEL = 'Video'
 
 export interface StepProps {
   step: GuidedTourStep
@@ -132,6 +136,17 @@ export function nearestTooltipKey(
  * `<Image>` (Task 7); `previousStep`/`nextStep`'s screenshots render
  * alongside it as hidden `.gt-preload` siblings so the browser has already
  * fetched them before Next/Prev needs them.
+ *
+ * When `step.video` is non-null (M11), a `<Video>` REPLACES the current
+ * step's screenshot entirely — never stacked alongside it, and never
+ * routed through `renderImage` (video has no consumer-override channel of
+ * its own in v1). `screenshot.url` still feeds `<Video>`'s `poster`, so
+ * the `renderImage`-bypass costs nothing visually before playback starts;
+ * `previousStep`/`nextStep`'s `.gt-preload` siblings always stay screenshot
+ * `<img>`s regardless of whether THEY have a `video` — only the current
+ * step's own render is affected, and prefetching a video's bytes a step
+ * early would be considerably more expensive than the image prefetch this
+ * mechanism was built for.
  *
  * Owns the single-open-tooltip mechanism (design spec §6, plan Tasks 5-6):
  * `openTooltipKey` holds at most one tooltip `_key`, so opening any
@@ -259,7 +274,17 @@ export function Step({
 
   return (
     <figure className="gt-step">
-      {renderScreenshot(screenshot, {className: 'gt-screenshot', priority: true})}
+      {step.video ? (
+        <Video
+          fileUrl={step.video.fileUrl}
+          url={step.video.url}
+          posterUrl={screenshot.url}
+          ariaLabel={step.title ?? UNTITLED_VIDEO_LABEL}
+          className="gt-video"
+        />
+      ) : (
+        renderScreenshot(screenshot, {className: 'gt-screenshot', priority: true})
+      )}
       {previousStep && (
         // `aria-hidden` on this wrapper (rather than needing a dedicated
         // prop on `GuidedTourImageProps`) hides the preload from assistive

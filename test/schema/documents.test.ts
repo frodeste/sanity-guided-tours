@@ -1,6 +1,11 @@
 import {describe, expect, test} from 'bun:test'
 
-import {FRAME_DEFAULTS, GOOGLE_FONT_NAME_PATTERN, THEME_DEFAULTS} from '../../src/queries/defaults'
+import {
+  FRAME_DEFAULTS,
+  GOOGLE_FONT_NAME_PATTERN,
+  THEME_DEFAULTS,
+  VIDEO_DEFAULTS,
+} from '../../src/queries/defaults'
 import chapter from '../../src/schema/chapter'
 import {CSS_COLOR_VALUE_PATTERN} from '../../src/schema/cssValue'
 import embed from '../../src/schema/embed'
@@ -30,6 +35,7 @@ interface FieldLike {
     maxLength?: number
     collapsible?: boolean
     collapsed?: boolean
+    accept?: string
   }
 }
 
@@ -112,6 +118,7 @@ describe('guidedTourStep', () => {
         'title',
         'screenshot',
         'screenshotMobile',
+        'video',
         'elements',
         'advance',
         'duration',
@@ -144,6 +151,66 @@ describe('guidedTourStep', () => {
     const alt = fieldByName(fieldList(mobile.fields), 'alt')
     expect(alt.type).toBe('string')
     expect(isRequired(alt)).toBe(false)
+  })
+
+  test('video is an optional object; its description notes the screenshot stays required as poster/fallback', () => {
+    const video = fieldByName(fields(step), 'video')
+    expect(video.type).toBe('object')
+    expect(isRequired(video)).toBe(false)
+    expect(video.description).toMatch(/screenshot/i)
+    expect(video.description).toMatch(/required/i)
+  })
+
+  test('video.source is a list of file/url, initially "file"', () => {
+    const video = fieldByName(fields(step), 'video')
+    const source = fieldByName(fields(video), 'source')
+    expect(source.type).toBe('string')
+    expect(source.initialValue).toBe(VIDEO_DEFAULTS.source)
+    expect(listValues(source)).toEqual(['file', 'url'])
+  })
+
+  test('video.file accepts mp4/webm and is hidden unless source is "file"', () => {
+    const video = fieldByName(fields(step), 'video')
+    const file = fieldByName(fields(video), 'file')
+    expect(file.type).toBe('file')
+    expect(file.options?.accept).toBe('video/mp4,video/webm')
+    expect(callHidden(file, {parent: {source: 'file'}})).toBe(false)
+    expect(callHidden(file, {parent: {source: 'url'}})).toBe(true)
+    expect(callHidden(file, {parent: undefined})).toBe(true)
+  })
+
+  test('video.url is https-only and is hidden unless source is "url"', () => {
+    const video = fieldByName(fields(step), 'video')
+    const url = fieldByName(fields(video), 'url')
+    expect(url.type).toBe('url')
+    expect(findCall(runValidation(url.validation), 'uri')?.args).toEqual([{scheme: ['https']}])
+    expect(callHidden(url, {parent: {source: 'url'}})).toBe(false)
+    expect(callHidden(url, {parent: {source: 'file'}})).toBe(true)
+    expect(callHidden(url, {parent: undefined})).toBe(true)
+  })
+
+  test("video object-level validation requires the selected source's member to be present", () => {
+    const video = fieldByName(fields(step), 'video')
+    const validate = customValidator(runValidation(video.validation))
+
+    // Not a record at all (video field left entirely empty) — always valid,
+    // the whole object is optional.
+    expect(validate(undefined)).toBe(true)
+
+    // source defaults to "file" (VIDEO_DEFAULTS.source) when absent, same
+    // as the query's own coalesce — so an object with neither `source` nor
+    // `file` set still demands a file.
+    expect(validate({})).not.toBe(true)
+    expect(validate({file: {asset: {_ref: 'file-abc-mp4'}}})).toBe(true)
+
+    expect(validate({source: 'file'})).not.toBe(true)
+    expect(validate({source: 'file', file: {asset: {_ref: 'file-abc-mp4'}}})).toBe(true)
+    expect(validate({source: 'file', file: {}})).not.toBe(true)
+    expect(typeof validate({source: 'file'})).toBe('string')
+
+    expect(validate({source: 'url'})).not.toBe(true)
+    expect(validate({source: 'url', url: 'https://example.com/clip.mp4'})).toBe(true)
+    expect(typeof validate({source: 'url'})).toBe('string')
   })
 
   test('elements is an array of hotspot, tooltip, and text overlay', () => {

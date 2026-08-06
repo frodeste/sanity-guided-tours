@@ -14,6 +14,7 @@ import {
   SAMPLE_THEME_ID,
   SAMPLE_TOUR_ID,
   SAMPLE_TOUR_SLUG,
+  SAMPLE_VIDEO_URL,
   SECTION_PAGE_ID,
   SECTION_PAGE_SLUG,
   type ElementDoc,
@@ -62,11 +63,11 @@ describe('buildSampleTourDocument', () => {
     expect(doc.slug).toEqual({_type: 'slug', current: SAMPLE_TOUR_SLUG})
   })
 
-  test('has 3 steps across 2 chapters', () => {
+  test('has 4 steps across 2 chapters', () => {
     const doc = buildSampleTourDocument(ASSET_IDS, createKeyGen())
     expect(doc.chapters).toHaveLength(2)
     const stepCount = doc.chapters.reduce((total, chapter) => total + chapter.steps.length, 0)
-    expect(stepCount).toBe(3)
+    expect(stepCount).toBe(4)
   })
 
   test('every chapter and step carries its schema _type alongside a _key', () => {
@@ -81,7 +82,7 @@ describe('buildSampleTourDocument', () => {
     }
   })
 
-  test('exercises all three step-advance modes, one per step', () => {
+  test('exercises all three step-advance modes across the tour', () => {
     const doc = buildSampleTourDocument(ASSET_IDS, createKeyGen())
     const steps = doc.chapters.flatMap((chapter) => chapter.steps)
     const advanceModes = steps.map((step) => step.advance)
@@ -171,6 +172,46 @@ describe('buildSampleTourDocument', () => {
   test('references the sample theme document by id (M7 theming v2)', () => {
     const doc = buildSampleTourDocument(ASSET_IDS, createKeyGen())
     expect(doc.theme).toEqual({_type: 'reference', _ref: SAMPLE_THEME_ID})
+  })
+
+  // M11 Task 3: the one video step in the bundled dataset — URL source
+  // (no ffmpeg in this environment, no upload needed either way), reusing
+  // an already-uploaded screenshot as its poster rather than a bespoke 5th
+  // image asset.
+  describe('the video step', () => {
+    function videoStep() {
+      const doc = buildSampleTourDocument(ASSET_IDS, createKeyGen())
+      const steps = doc.chapters.flatMap((chapter) => chapter.steps)
+      const step = steps.find((candidate) => candidate.video !== undefined)
+      if (!step) throw new Error('expected a step with a video field')
+      return step
+    }
+
+    test('exactly one step carries a video field', () => {
+      const doc = buildSampleTourDocument(ASSET_IDS, createKeyGen())
+      const steps = doc.chapters.flatMap((chapter) => chapter.steps)
+      const withVideo = steps.filter((step) => step.video !== undefined)
+      expect(withVideo).toHaveLength(1)
+    })
+
+    test('uses the URL source (no file asset — ffmpeg is unavailable, no upload needed)', () => {
+      const step = videoStep()
+      expect(step.video?.source).toBe('url')
+      expect(step.video?.file).toBeUndefined()
+    })
+
+    test('the URL is a direct, stable, public https .mp4, matching the exported constant', () => {
+      const step = videoStep()
+      expect(step.video?.url).toBe(SAMPLE_VIDEO_URL)
+      expect(step.video?.url).toMatch(/^https:\/\//)
+      expect(step.video?.url).toMatch(/\.mp4$/)
+    })
+
+    test('still carries a required screenshot (the poster), reused from an existing capture', () => {
+      const step = videoStep()
+      expect(step.screenshot.asset._ref).toBe(ASSET_IDS.step2)
+      expect(step.screenshot.alt.length).toBeGreaterThan(0)
+    })
   })
 })
 

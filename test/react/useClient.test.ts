@@ -37,6 +37,7 @@ const COMPONENT_FILES = [
   'TextOverlay.tsx',
   'PortableText.tsx',
   'Image.tsx',
+  'Video.tsx',
 ]
 
 describe('"use client" directive', () => {

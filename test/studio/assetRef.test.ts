@@ -1,6 +1,6 @@
 import {describe, expect, test} from 'bun:test'
 
-import {assetRefDimensions, assetRefToUrl} from '../../src/studio/assetRef'
+import {assetRefDimensions, assetRefToUrl, fileAssetRefToUrl} from '../../src/studio/assetRef'
 
 // `assetRefToUrl`/`assetRefDimensions` parse a Sanity image asset `_ref`
 // (`image-<assetId>-<width>x<height>-<extension>`) into a CDN URL/its
@@ -44,5 +44,28 @@ describe('assetRefDimensions', () => {
 
   test('returns null for a malformed ref', () => {
     expect(assetRefDimensions('garbage')).toBeNull()
+  })
+})
+
+// `fileAssetRefToUrl` mirrors `assetRefToUrl` for the M11 `video.file`
+// field's `_ref` — a Sanity FILE asset ref (`file-<assetId>-<extension>`,
+// no `WxH` component since a file asset carries no image dimensions) —
+// resolving to the `cdn.sanity.io/files/...` URL space, not `/images/...`.
+describe('fileAssetRefToUrl', () => {
+  test('builds a cdn.sanity.io/files URL from a well-formed file ref', () => {
+    const url = fileAssetRefToUrl('file-Tb9Ew8CX-mp4', 'proj123', 'production')
+    expect(url).toBe('https://cdn.sanity.io/files/proj123/production/Tb9Ew8CX.mp4')
+  })
+
+  test('returns null for a malformed ref (e.g. an image ref, which has an extra WxH component)', () => {
+    expect(fileAssetRefToUrl('image-abc-800x600-png', 'proj123', 'production')).toBeNull()
+  })
+
+  test('returns null for a ref missing the extension', () => {
+    expect(fileAssetRefToUrl('file-abc123', 'proj123', 'production')).toBeNull()
+  })
+
+  test('returns null for an empty string', () => {
+    expect(fileAssetRefToUrl('', 'proj123', 'production')).toBeNull()
   })
 })

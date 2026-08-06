@@ -1,6 +1,8 @@
 import type {PreviewConfig} from 'sanity'
 import {defineField, defineType} from 'sanity'
 
+import {VIDEO_DEFAULTS} from '../queries/defaults'
+
 const preview: PreviewConfig = {
   select: {title: 'title'},
   prepare(selection) {
@@ -14,6 +16,22 @@ function parentAdvance(parent: unknown): unknown {
   return typeof parent === 'object' && parent !== null && 'advance' in parent
     ? parent.advance
     : undefined
+}
+
+/** Reads `parent.source` off a validation/conditional-property context's `parent`, within the `video` object's own fields. */
+function parentSource(parent: unknown): unknown {
+  return typeof parent === 'object' && parent !== null && 'source' in parent
+    ? parent.source
+    : undefined
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+/** Whether a `file` field's value carries a resolvable asset reference. */
+function hasFileAsset(value: unknown): boolean {
+  return isRecord(value) && isRecord(value.asset)
 }
 
 export default defineType({
@@ -32,7 +50,8 @@ export default defineType({
       name: 'screenshot',
       title: 'Screenshot',
       type: 'image',
-      description: 'The screenshot elements are positioned over.',
+      description:
+        'The screenshot elements are positioned over. Always required, even on a step with a video below — it doubles as the video poster, the reduced-motion fallback, and the canvas editor backdrop.',
       options: {hotspot: true},
       fields: [
         defineField({
@@ -56,6 +75,56 @@ export default defineType({
           type: 'string',
         }),
       ],
+    }),
+    defineField({
+      name: 'video',
+      title: 'Video',
+      type: 'object',
+      description:
+        'Optional short video shown instead of the screenshot in the web viewer when present. The screenshot above is still required — it remains the poster image, the reduced-motion/native fallback, and the canvas editor backdrop.',
+      fields: [
+        defineField({
+          name: 'source',
+          title: 'Source',
+          type: 'string',
+          description: 'Where the video comes from.',
+          options: {
+            list: [
+              {title: 'Uploaded file', value: 'file'},
+              {title: 'Direct URL', value: 'url'},
+            ],
+          },
+          initialValue: VIDEO_DEFAULTS.source,
+        }),
+        defineField({
+          name: 'file',
+          title: 'Video file',
+          type: 'file',
+          description: 'An mp4 or webm file, played muted and looped in the web viewer.',
+          options: {accept: 'video/mp4,video/webm'},
+          hidden: ({parent}) => parentSource(parent) !== 'file',
+        }),
+        defineField({
+          name: 'url',
+          title: 'Video URL',
+          type: 'url',
+          description:
+            'Direct link to an mp4 or webm file (https only). Embed providers such as YouTube or Vimeo are not supported.',
+          hidden: ({parent}) => parentSource(parent) !== 'url',
+          validation: (rule) => rule.uri({scheme: ['https']}),
+        }),
+      ],
+      validation: (rule) =>
+        rule.custom((value) => {
+          if (!isRecord(value)) return true
+          const source = value.source === 'url' ? 'url' : VIDEO_DEFAULTS.source
+          if (source === 'url') {
+            return value.url ? true : 'A video URL is required when the source is "Direct URL".'
+          }
+          return hasFileAsset(value.file)
+            ? true
+            : 'A video file is required when the source is "Uploaded file".'
+        }),
     }),
     defineField({
       name: 'elements',

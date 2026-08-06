@@ -152,6 +152,7 @@ const fixture = {
             alt: null,
           },
           screenshotMobile: null,
+          video: null,
           // `elements` is an optional array in the schema (no required/min
           // rule), so GROQ's `elements[]{...}` projects to `null` — never an
           // empty array — when the field is absent. A step with no elements
@@ -171,6 +172,7 @@ const fixture = {
             alt: null,
           },
           screenshotMobile: null,
+          video: null,
           elements: [
             {
               _key: 'el-1',

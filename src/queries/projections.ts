@@ -15,6 +15,7 @@ import {
   THEME_DEFAULTS,
   TOKEN_DEFAULTS,
   TOOLTIP_DEFAULTS,
+  VIDEO_DEFAULTS,
 } from './defaults'
 
 /**
@@ -164,6 +165,34 @@ export const tourProjection = /* groq */ `{
       _key, title, "advance": coalesce(advance, "${STEP_DEFAULTS.advance}"), duration,
       "screenshot": screenshot${imageProjection},
       "screenshotMobile": screenshotMobile${imageProjection},
+      // M11: "video" is a nested object field on step, like theme's
+      // "frame"/"dark"/"elements" — the whole projected value is "null"
+      // when the step has no "video" object at all (module comment above,
+      // "frame"), not an object of coalesced defaults. Once a "video"
+      // object DOES exist, its one initialValue-bearing member ("source",
+      // VIDEO_DEFAULTS) coalesces same as any other initialValue field.
+      //
+      // "fileUrl"/"url" are BOTH gated on that same coalesced source, not
+      // computed unconditionally — the schema (src/schema/step.ts) only
+      // ever *hides* the non-selected member when authoring through the
+      // Studio, it never clears its stored value, so switching "source"
+      // from "file" back to "url" (or vice versa) after a file was once
+      // uploaded / a url once entered leaves BOTH "file" and "url"
+      // populated on the document. An unconditional "file.asset->url"
+      // (dereferencing regardless of source) would then have Video.tsx's
+      // (../react/Video.tsx) fileUrl ?? url silently keep playing a
+      // stale uploaded file instead of the author's newly chosen URL, or
+      // vice versa. select()'s no-matching-branch case evaluates to null
+      // (verified against the pinned groq-js in test/queries.groq.test.ts),
+      // which is exactly the "other member is null" half of
+      // GuidedTourStepVideo's contract — so each field's select() has only
+      // the one branch that applies to it, no explicit "=> null" default
+      // needed.
+      "video": video{
+        "source": coalesce(source, "${VIDEO_DEFAULTS.source}"),
+        "fileUrl": select(coalesce(source, "${VIDEO_DEFAULTS.source}") == "file" => file.asset->url),
+        "url": select(coalesce(source, "${VIDEO_DEFAULTS.source}") == "url" => url)
+      },
       elements[]${elementProjection}
     }
   },

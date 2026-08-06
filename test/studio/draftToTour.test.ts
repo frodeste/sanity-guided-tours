@@ -15,6 +15,7 @@ import {
   TEXT_OVERLAY_DEFAULTS,
   TOKEN_DEFAULTS,
   TOOLTIP_DEFAULTS,
+  VIDEO_DEFAULTS,
 } from '../../src/queries/defaults'
 import {draftToTour} from '../../src/studio/draftToTour'
 
@@ -28,6 +29,10 @@ function image(ref: string, alt?: string): Record<string, unknown> {
   }
   if (alt !== undefined) base.alt = alt
   return base
+}
+
+function fileValue(ref: string): Record<string, unknown> {
+  return {_type: 'file', asset: {_type: 'reference', _ref: ref}}
 }
 
 function step(overrides: Record<string, unknown>): Record<string, unknown> {
@@ -374,6 +379,117 @@ describe('draftToTour: coalesced defaults are IDENTICAL to the GROQ projection (
   test('outro absent maps to null', () => {
     const {tour} = draftToTour(minimalDoc(), PROJECT_ID, DATASET)
     expect(tour.outro).toBeNull()
+  })
+})
+
+// M11: step.video mirrors the GROQ projection's "video" field
+// (src/queries/projections.ts) field-for-field, including reusing
+// VIDEO_DEFAULTS for the "source" coalesce — same convention as every
+// other *_DEFAULTS-driven case in this file.
+describe('draftToTour: step.video', () => {
+  function docWithVideo(video: unknown): Record<string, unknown> {
+    return minimalDoc({
+      chapters: [
+        chapter({
+          steps: [
+            step({
+              screenshot: image('image-aaa-800x600-png', 'Alt'),
+              video,
+            }),
+          ],
+        }),
+      ],
+    })
+  }
+
+  test('absent video maps to null', () => {
+    const {tour} = draftToTour(minimalDoc(), PROJECT_ID, DATASET)
+    expect(tour.chapters[0].steps[0].video).toBeNull()
+  })
+
+  test('"file" variant: source passes through, fileUrl resolves via fileAssetRefToUrl, url is null', () => {
+    const doc = docWithVideo({
+      source: 'file',
+      file: fileValue('file-videoAsset123-mp4'),
+    })
+    const {tour} = draftToTour(doc, PROJECT_ID, DATASET)
+    expect(tour.chapters[0].steps[0].video).toEqual({
+      source: 'file',
+      fileUrl: 'https://cdn.sanity.io/files/proj123/production/videoAsset123.mp4',
+      url: null,
+    })
+  })
+
+  test('"url" variant: url passes through, fileUrl is null (no file to resolve)', () => {
+    const doc = docWithVideo({source: 'url', url: 'https://example.com/clip.mp4'})
+    const {tour} = draftToTour(doc, PROJECT_ID, DATASET)
+    expect(tour.chapters[0].steps[0].video).toEqual({
+      source: 'url',
+      fileUrl: null,
+      url: 'https://example.com/clip.mp4',
+    })
+  })
+
+  test('source coalesces to VIDEO_DEFAULTS.source ("file") when the video object omits it', () => {
+    const doc = docWithVideo({file: fileValue('file-videoAsset123-mp4')})
+    const {tour} = draftToTour(doc, PROJECT_ID, DATASET)
+    expect(tour.chapters[0].steps[0].video?.source).toBe(VIDEO_DEFAULTS.source)
+  })
+
+  test('a malformed file ref resolves fileUrl to null rather than throwing', () => {
+    const doc = docWithVideo({source: 'file', file: fileValue('not-a-real-file-ref')})
+    const {tour} = draftToTour(doc, PROJECT_ID, DATASET)
+    expect(tour.chapters[0].steps[0].video?.fileUrl).toBeNull()
+  })
+
+  // Note: unlike `screenshot`, an unresolvable video never drops the whole
+  // step by itself — but `projectId`/`dataset` being unavailable ALSO
+  // blocks `screenshot` from resolving (`mapImage`'s own null-propagation),
+  // so that specific combination drops the step regardless of video, per
+  // the "every step is dropped when projectId/dataset are null" case above.
+  test('a video step is never dropped for lacking a resolvable file — only a missing/malformed screenshot drops a step', () => {
+    const doc = docWithVideo({source: 'url', url: 'https://example.com/clip.mp4'})
+    const {tour, droppedStepCount} = draftToTour(doc, PROJECT_ID, DATASET)
+    expect(tour.chapters[0].steps).toHaveLength(1)
+    expect(droppedStepCount).toBe(0)
+  })
+
+  // Regression coverage, mirroring the groq-js matrix in
+  // test/queries.groq.test.ts's "stale deselected source member" describe:
+  // the schema only *hides* the non-selected "file"/"url" member, it never
+  // clears its stored value, so a document can genuinely have both
+  // populated after "source" was flipped through normal Studio editing.
+  // `mapVideo` must gate both `fileUrl`/`url` on the resolved `source`
+  // exactly like the GROQ projection's `select()` pair, not compute either
+  // unconditionally.
+  describe('stale deselected source member: BOTH file and url populated on the same document', () => {
+    test('source "file": fileUrl resolves the asset, url is null despite a stored url string', () => {
+      const doc = docWithVideo({
+        source: 'file',
+        file: fileValue('file-videoAsset123-mp4'),
+        url: 'https://example.com/stale.mp4',
+      })
+      const {tour} = draftToTour(doc, PROJECT_ID, DATASET)
+      expect(tour.chapters[0].steps[0].video).toEqual({
+        source: 'file',
+        fileUrl: 'https://cdn.sanity.io/files/proj123/production/videoAsset123.mp4',
+        url: null,
+      })
+    })
+
+    test('source "url": url passes through, fileUrl is null despite a stored (stale) file asset ref', () => {
+      const doc = docWithVideo({
+        source: 'url',
+        file: fileValue('file-videoAsset123-mp4'),
+        url: 'https://example.com/fresh.mp4',
+      })
+      const {tour} = draftToTour(doc, PROJECT_ID, DATASET)
+      expect(tour.chapters[0].steps[0].video).toEqual({
+        source: 'url',
+        fileUrl: null,
+        url: 'https://example.com/fresh.mp4',
+      })
+    })
   })
 })
 

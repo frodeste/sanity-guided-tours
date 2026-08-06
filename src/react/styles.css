@@ -351,7 +351,15 @@
   line-height: 0;
 }
 
-.gt-screenshot {
+/* `.gt-video` (M11) sizes identically to `.gt-screenshot` — it REPLACES
+   the screenshot `<img>` on a step that has one (`Step.tsx`), filling the
+   same slot inside `.gt-step` so `.gt-elements`' percent-based hotspot/
+   tooltip/overlay positioning (which positions against `.gt-step`, the
+   nearer `position: relative` ancestor — see `.gt-stage`'s doc comment
+   above — not the screenshot/video element itself) is unaffected either
+   way. */
+.gt-screenshot,
+.gt-video {
   display: block;
   width: 100%;
   height: auto;

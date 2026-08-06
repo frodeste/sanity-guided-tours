@@ -3,7 +3,7 @@ import {describe, expect, test} from 'bun:test'
 import {evaluate, parse} from 'groq-js'
 
 import {guidedTourBySlugQuery, guidedTourEmbedProjection} from '../src/queries'
-import {FRAME_DEFAULTS, THEME_DEFAULTS} from '../src/queries/defaults'
+import {FRAME_DEFAULTS, THEME_DEFAULTS, VIDEO_DEFAULTS} from '../src/queries/defaults'
 
 // This file is the repeatable version of the manual groq-js verification
 // the PR review did by hand. It runs the real `guidedTourBySlugQuery`
@@ -163,6 +163,142 @@ describe('guidedTourBySlugQuery evaluated with groq-js: minimal document', () =>
     expect(result.chapters[0].steps[0].title).toBeNull()
     expect(result.chapters[0].steps[0].duration).toBeNull()
     expect(result.chapters[0].steps[0].screenshotMobile).toBeNull()
+    // M11: "video" is a nested object field, same "absent object -> null"
+    // policy as theme.frame/theme.dark/theme.elements above — the minimal
+    // step here has no "video" object at all.
+    expect(result.chapters[0].steps[0].video).toBeNull()
+  })
+})
+
+// M11: guidedTourStep.video — a nested object field like theme.frame/.dark
+// (see this file's "theme.frame is null when absent" case, and
+// src/queries/projections.ts's module comment on "video" for the full
+// nested-object policy this follows). Covers all four Task 1 cases: absent
+// -> null, the "file" variant's asset deref, the "url" variant's
+// passthrough, and source's coalesce to VIDEO_DEFAULTS.source.
+describe('guidedTourBySlugQuery evaluated with groq-js: step.video', () => {
+  const videoFileAsset = {
+    _id: 'file-videoAsset123-mp4',
+    _type: 'sanity.fileAsset',
+    url: 'https://cdn.sanity.io/files/proj/ds/videoAsset123.mp4',
+  }
+
+  function tourWithStep(step: Record<string, unknown>) {
+    const key = String(step._key)
+    return {
+      _id: `tour-${key}`,
+      _type: 'guidedTour',
+      title: 'Video tour',
+      slug: {_type: 'slug', current: key},
+      chapters: [
+        {
+          _key: 'chapter-1',
+          _type: 'guidedTourChapter',
+          title: 'Chapter one',
+          steps: [{_type: 'guidedTourStep', screenshot: screenshotField('Alt'), ...step}],
+        },
+      ],
+    }
+  }
+
+  test('is null when the step has no "video" object at all', async () => {
+    const tour = tourWithStep({_key: 'no-video'})
+    const result = (await runQuery([tour, screenshotAsset], 'no-video')) as any
+    expect(result.chapters[0].steps[0].video).toBeNull()
+  })
+
+  test('"file" variant: source passes through and fileUrl derefs the file asset; url is null', async () => {
+    const tour = tourWithStep({
+      _key: 'file-video',
+      video: {
+        _type: 'object',
+        source: 'file',
+        file: {_type: 'file', asset: {_type: 'reference', _ref: videoFileAsset._id}},
+      },
+    })
+    const result = (await runQuery([tour, screenshotAsset, videoFileAsset], 'file-video')) as any
+    const video = result.chapters[0].steps[0].video
+    expect(video.source).toBe('file')
+    expect(video.fileUrl).toBe(videoFileAsset.url)
+    expect(video.url).toBeNull()
+  })
+
+  test('"url" variant: url passes through and fileUrl is null (no file asset to deref)', async () => {
+    const tour = tourWithStep({
+      _key: 'url-video',
+      video: {_type: 'object', source: 'url', url: 'https://example.com/clip.mp4'},
+    })
+    const result = (await runQuery([tour, screenshotAsset], 'url-video')) as any
+    const video = result.chapters[0].steps[0].video
+    expect(video.source).toBe('url')
+    expect(video.url).toBe('https://example.com/clip.mp4')
+    expect(video.fileUrl).toBeNull()
+  })
+
+  test('source coalesces to VIDEO_DEFAULTS.source ("file") when the video object omits it', async () => {
+    const tour = tourWithStep({
+      _key: 'no-source',
+      video: {
+        _type: 'object',
+        file: {_type: 'file', asset: {_type: 'reference', _ref: videoFileAsset._id}},
+      },
+    })
+    const result = (await runQuery([tour, screenshotAsset, videoFileAsset], 'no-source')) as any
+    expect(result.chapters[0].steps[0].video.source).toBe(VIDEO_DEFAULTS.source)
+  })
+
+  // Regression coverage: the schema (src/schema/step.ts) only *hides* the
+  // non-selected "file"/"url" member while authoring — flipping "source"
+  // back and forth leaves BOTH stored on the document, which is completely
+  // reachable through normal Studio editing (GuidedTourStepVideo's doc
+  // comment, ../src/queries/types.ts). Both branches here populate BOTH
+  // "file" and "url" on the same document and assert the projection's
+  // "fileUrl"/"url" select() pair gates on "source" — never resolving or
+  // passing through the deselected member — rather than the two fields
+  // being computed unconditionally (the bug: an unconditional
+  // "file.asset->url" would have a stale uploaded file win over a
+  // freshly-chosen url source, since <Video>'s `fileUrl ?? url` prefers
+  // fileUrl whenever it's non-null).
+  describe('stale deselected source member: BOTH file and url populated on the same document', () => {
+    test('source "file": fileUrl resolves the asset, url stays null despite a stored url string', async () => {
+      const tour = tourWithStep({
+        _key: 'both-file-wins',
+        video: {
+          _type: 'object',
+          source: 'file',
+          file: {_type: 'file', asset: {_type: 'reference', _ref: videoFileAsset._id}},
+          url: 'https://example.com/stale.mp4',
+        },
+      })
+      const result = (await runQuery(
+        [tour, screenshotAsset, videoFileAsset],
+        'both-file-wins',
+      )) as any
+      const video = result.chapters[0].steps[0].video
+      expect(video.source).toBe('file')
+      expect(video.fileUrl).toBe(videoFileAsset.url)
+      expect(video.url).toBeNull()
+    })
+
+    test('source "url": url passes through, fileUrl stays null despite a stored (stale) file asset ref', async () => {
+      const tour = tourWithStep({
+        _key: 'both-url-wins',
+        video: {
+          _type: 'object',
+          source: 'url',
+          file: {_type: 'file', asset: {_type: 'reference', _ref: videoFileAsset._id}},
+          url: 'https://example.com/fresh.mp4',
+        },
+      })
+      const result = (await runQuery(
+        [tour, screenshotAsset, videoFileAsset],
+        'both-url-wins',
+      )) as any
+      const video = result.chapters[0].steps[0].video
+      expect(video.source).toBe('url')
+      expect(video.url).toBe('https://example.com/fresh.mp4')
+      expect(video.fileUrl).toBeNull()
+    })
   })
 })
 
