@@ -37,8 +37,18 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # M9 QA hardening (issues #134/#136/#138): the same lint/typecheck/build/
+  # test-with-coverage/attw/verify/examples sequence PRs are gated on, run
+  # again here as a defense-in-depth check before a publish — see
+  # `.superpowers/sdd/qa-research.md` §6 and `gates.yml`'s own comment. This
+  # changes what a release VERIFIES, never WHEN it runs — the dispatch-only
+  # trigger and `release` concurrency group above are unchanged.
+  gates:
+    uses: ./.github/workflows/gates.yml
+
   release:
     name: semantic-release
+    needs: gates
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -56,6 +66,13 @@ jobs:
 
       - run: bun install --frozen-lockfile
 
+      # `dist/` is what `@semantic-release/npm` actually publishes — this
+      # job's own build, not an artifact from the `gates` job above (a
+      # separate runner/filesystem): `gates` passing is the QUALITY gate,
+      # this build is what gets packed and shipped. `bun test` (no
+      # `--coverage`; the threshold already ran in `gates`) is kept as a
+      # last correctness check immediately before publish, unchanged from
+      # this job's pre-M9 shape.
       - run: bun run build
 
       - run: bun test

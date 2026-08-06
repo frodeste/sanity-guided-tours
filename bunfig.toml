@@ -1,2 +1,39 @@
 [test]
 preload = ["./test/setup/dom.ts", "./test/setup/reactNativeStub.ts"]
+coverage = true
+coverageReporter = ["text", "lcov"]
+coverageSkipTestFiles = true
+# `scripts/**`/`seed/**` are dev/build-time helpers (playwright capture
+# harness, one-off content seeder), not part of the shipped plugin, and
+# their thin exercise-by-happenstance coverage would otherwise skew the
+# repo-wide floor. `test/setup/matchMedia.ts` and `test/support/**` are
+# test-only harness code (a `matchMedia` stub, the react-native-stub +
+# renderNative test double) — the SAME rationale, they're infra for tests,
+# not code under test.
+coveragePathIgnorePatterns = ["scripts/**", "seed/**", "test/setup/matchMedia.ts", "test/support/**"]
+
+# Repo-wide baseline measured after M9 Task 1's new tests landed: 98.28%
+# funcs / 98.19% lines (`bun test --coverage`, scripts/**, seed/**,
+# test/setup/matchMedia.ts, and test/support/** excluded above).
+#
+# IMPORTANT — this is NOT an aggregate-only gate: empirically verified
+# (bunfig.toml swapped through several values, `bun test --coverage` rerun
+# after each — the aggregate stayed pinned at 98.28/98.19 throughout while
+# the exit code flipped) that Bun 1.3.14 enforces `coverageThreshold`
+# PER FILE, not just against the "All files" row — undocumented on
+# bun.com/docs/test/coverage as of this check, but reproducible. That makes
+# the weakest individual file the real ceiling for this setting, not the
+# repo-wide average: today's worst are `src/schema/guidedTour.ts` (75.00%
+# funcs) and `src/native/PortableTextNative.tsx` (69.23% lines) — both
+# pre-existing, out of this task's scope (previewHelpers.ts/useUploader.ts
+# only). A threshold near the originally-anticipated ~0.93 would fail on
+# every run today regardless of the two files this task actually raised to
+# 100%. Set ~1pt below those two per-file floors instead, so this still
+# catches real regressions (a file dropping further, or a wholesale-
+# untested new file landing at or near 0%) without being permanently red.
+# Ratchet up once a follow-up task raises coverage on the weak
+# Canvas/CanvasInput/CanvasElement/Filmstrip/guidedTour/native-component
+# files (flagged to the controller, not addressed here — that's UI
+# scaffolding this task's plan says to avoid for previewHelpers/useUploader,
+# and is a materially bigger scope than this task's two named files).
+coverageThreshold = { lines = 0.68, functions = 0.74 }

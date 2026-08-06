@@ -5,48 +5,14 @@ on:
   push:
     branches: [main]
 
+# M9 QA hardening (issues #134/#136/#138): the actual gate sequence
+# (lint/typecheck/build/test-with-coverage/attw/verify/examples) now lives
+# in the shared `gates.yml` reusable workflow so `release.yml` can call the
+# exact same checks before a publish rather than drifting from what PRs are
+# gated on — see `.superpowers/sdd/qa-research.md` §6. GitHub renders a
+# called-workflow's job as `<this job id> / <called job's name>`, so this
+# job's id (`gates`) is part of the resulting required-status-check context;
+# see `gates.yml`'s own comment for the exact string.
 jobs:
-  ci:
-    name: lint · typecheck · build · test · verify
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-      - run: bun install --frozen-lockfile
-      - run: bun run lint
-      - run: bun run typecheck
-      - run: bun run build
-      # Must run AFTER `bun run build` above, not before: three tests in
-      # test/react/useClient.test.ts read the real dist/react|index|queries
-      # output (the "use client" directive guard) and self-skip when dist/
-      # doesn't exist yet — with the old lint/typecheck/test/build order,
-      # those tests never actually ran in CI, only locally after a manual
-      # `bun run build`. Moving the build step first makes CI exercise the
-      # same guard a local `rm -rf dist && bun run build && bun test` does.
-      - run: bun test
-      - name: build example app
-        # env vars intentionally unset — this is the no-env build guard
-        # (examples/web must build without NEXT_PUBLIC_SANITY_* configured).
-        # Must run after `bun run build` above: the example app resolves
-        # sanity-plugin-guided-tours through dist/, not src/.
-        run: cd examples/web && bun run build
-      - name: typecheck native example app
-        # Same dist/-not-src/ ordering requirement as examples/web above.
-        run: cd examples/native && bun run typecheck
-      - name: export native example app
-        # M8 Task 4's plan text expected this to need network/EAS and to be
-        # skipped in favor of typecheck-only — measured locally instead:
-        # `expo export --platform ios --platform android` is a pure local
-        # Metro bundle of already-installed node_modules (~9s, no EAS
-        # login, no network call of its own), a real check `tsc --noEmit`
-        # alone can't give — every import in the module graph (including
-        # `sanity-plugin-guided-tours/native` + `/queries`'s dist output)
-        # actually resolves and bundles for both platforms, not just
-        # typechecks. `web` is deliberately excluded — this example has no
-        # `react-native-web`/`react-dom` dependency (out of scope for a
-        # native-only demo) and `expo export`'s default platform list
-        # includes web unless told otherwise.
-        run: cd examples/native && bunx expo export --platform ios --platform android
-      - run: bunx @sanity/plugin-kit verify-package
+  gates:
+    uses: ./.github/workflows/gates.yml
