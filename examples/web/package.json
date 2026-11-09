@@ -15,10 +15,10 @@
     "next-sanity": "^11",
     "react": "^19",
     "react-dom": "^19",
-    "sanity": "^6.8",
+    "sanity": "6.16.0",
     "sanity-plugin-guided-tours": "file:../..",
     "styled-components": "^6.1",
-    "@sanity/ui": "^3.5"
+    "@sanity/ui": "4.2.7"
   },
   "devDependencies": {
     "@types/node": "^24",

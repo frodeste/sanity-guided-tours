@@ -24,9 +24,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.19.0
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: 1.4.2
       - run: bun install --frozen-lockfile
       - run: bun run lint
       - run: bun run typecheck
@@ -77,8 +80,8 @@ jobs:
       # `no-resolution` failure on an actual module with a blanket
       # `--ignore-rules no-resolution`.
       - name: Type-export soundness (attw)
-        run: bunx --bun @arethetypeswrong/cli --pack . --profile esm-only --exclude-entrypoints ./react/styles.css
-      - run: bunx @sanity/plugin-kit verify-package
+        run: bunx --no-install --bun @arethetypeswrong/cli --pack . --profile esm-only --exclude-entrypoints ./react/styles.css
+      - run: bun run verify
       - name: build example app
         # env vars intentionally unset — this is the no-env build guard
         # (examples/web must build without NEXT_PUBLIC_SANITY_* configured).

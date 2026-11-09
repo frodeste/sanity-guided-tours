@@ -60,6 +60,17 @@ for the Studio plugin entry point (`sanity-plugin-guided-tours`),
 Expo](#react-native--expo)). An app that imports only `/react` and
 `/queries` — a plain web app — never pulls in any of them.
 
+## Compatibility
+
+The Studio plugin supports Sanity 6.16 or later in the 6.x line, Sanity UI
+4.2.7 or later in the 4.x line, and React 19.2 or later. Sanity UI 3 is not
+supported. Upgrade the Studio dependencies together before installing the
+plugin. The Studio requires Node.js 22.12 or later; contributors use Node 24.19.0
+and Bun 1.4.2.
+
+The standalone `/react` viewer continues to support React 18.3 and 19 and
+does not require Studio dependencies.
+
 ## Studio setup
 
 Register the plugin in `sanity.config.ts`:
@@ -93,6 +104,9 @@ Nothing is wired up by default; register it yourself via `structureTool`'s
 `defaultDocumentNode`:
 
 ```ts
+import '@sanity/ui/styles.css'
+import 'sanity-plugin-guided-tours/react/styles.css'
+
 import {defineConfig} from 'sanity'
 import {structureTool} from 'sanity/structure'
 import {guidedTours, GuidedTourPreviewView} from 'sanity-plugin-guided-tours'
@@ -113,9 +127,35 @@ export default defineConfig({
 })
 ```
 
+Import both stylesheets in the Studio entry point, as shown above. The web
+example includes this view and its styles at `/studio`.
+
 The preview can't faithfully render everything a published, queried tour can
 — theme, LQIP placeholders, and any step without a resolvable screenshot are
 approximated from the draft rather than the real GROQ projection.
+
+### Canvas editor
+
+Start with **Add first chapter**, then upload screenshots into that chapter;
+each image becomes a step. **Edit chapter** opens its title and description.
+Select a step and use **Edit step** in Details to edit screenshots, alt text,
+and advancement settings. If the screenshot is missing, **Add screenshot**
+opens the step form directly.
+
+Choose **Hotspot**, **Tooltip**, or **Text overlay**, then click the screenshot
+to place it. **Place in center** provides a keyboard alternative: select the
+element and use arrow keys to position it, or Shift + arrow for a larger move.
+The element list in Details also lets you select small or overlapping elements.
+**Edit hotspot**, **Edit tooltip**, or **Edit text overlay** opens Sanity's
+content and settings form. **Remove element** deletes the selected element.
+Hotspots use circular markers; tooltip and text-overlay boxes show their width.
+Tooltip width is an authoring guide; use Preview to check the rendered result.
+
+When the document pane is narrow, switch between **Steps**, **Canvas**, and
+**Details**; the expanded editor shows all three when space allows. **Edit
+layout: Mobile** changes mobile position and width overrides. It uses the
+desktop screenshot until a mobile screenshot is added in the step's fields.
+**All chapter and step fields** opens Sanity's standard array editor.
 
 ## Next.js usage
 

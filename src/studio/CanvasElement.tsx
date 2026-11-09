@@ -7,16 +7,16 @@
 // live-drag-aware); this component only renders them and reports pointer/
 // keyboard intent upward. No `sanity` import — testable with plain
 // `fireEvent.pointerDown`/`keyDown`.
-import {Badge, Box} from '@sanity/ui'
+import {Badge, Box, Card, Text} from '@sanity/ui'
 import type {KeyboardEvent, PointerEvent, ReactNode} from 'react'
 import {useState} from 'react'
 
 import type {ElementKind} from './canvasHandlers'
 
-const KIND_ABBREVIATION: Record<ElementKind, string> = {
-  hotspot: 'H',
-  tooltip: 'T',
-  textOverlay: 'O',
+const KIND_LABEL: Record<ElementKind, string> = {
+  hotspot: 'Hotspot',
+  tooltip: 'Tooltip',
+  textOverlay: 'Text overlay',
 }
 
 export interface CanvasElementProps {
@@ -32,6 +32,7 @@ export interface CanvasElementProps {
   /** Whether this element carries a `mobile` position/width override — shown as a small badge. */
   hasOverride: boolean
   accessibleName: string
+  describedBy?: string
   onSelect: () => void
   onDeselect: () => void
   onDragMove: (clientX: number, clientY: number) => void
@@ -47,6 +48,19 @@ export interface CanvasElementProps {
 export function CanvasElement(props: CanvasElementProps): ReactNode {
   const [dragging, setDragging] = useState(false)
   const [resizing, setResizing] = useState(false)
+  // Keep the editing control reachable at the image edges without changing
+  // the stored anchor. Tooltip pixels are an authoring guide; overlays use
+  // the screenshot's percentage width.
+  const halfWidth =
+    props.kind === 'hotspot'
+      ? '14px'
+      : props.kind === 'textOverlay'
+        ? `${(props.width ?? 30) / 2}%`
+        : `${(props.width ?? 300) / 2}px`
+  const anchorStyle: Record<string, string> = {
+    '--gt-anchor-x': `${props.x}%`,
+    '--gt-anchor-y': `${props.y}%`,
+  }
 
   function handlePointerDown(event: PointerEvent<HTMLDivElement>): void {
     // Stops the click from also reaching the canvas surface's
@@ -90,6 +104,11 @@ export function CanvasElement(props: CanvasElementProps): ReactNode {
   function handleKeyDown(event: KeyboardEvent<HTMLDivElement>): void {
     const big = event.shiftKey
     switch (event.key) {
+      case 'Enter':
+      case ' ':
+        event.preventDefault()
+        props.onSelect()
+        return
       case 'ArrowUp':
         event.preventDefault()
         props.onNudge('y', -1, big)
@@ -127,8 +146,11 @@ export function CanvasElement(props: CanvasElementProps): ReactNode {
     // content nested inside a `<button>` is invalid HTML, so `role="button"`
     // on a `Box` (a styled `div`) is the deliberate choice here, same
     // rationale as `react/Tooltip.tsx`'s `role="group"`.
-    <Box
+    <Card
       aria-label={props.accessibleName}
+      aria-pressed={props.selected}
+      aria-describedby={props.describedBy}
+      tone={props.selected ? 'primary' : 'default'}
       data-testid={`canvas-element-${props.elementKey}`}
       onClick={(event) => event.stopPropagation()}
       onKeyDown={handleKeyDown}
@@ -138,30 +160,55 @@ export function CanvasElement(props: CanvasElementProps): ReactNode {
       // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role
       role="button"
       style={{
+        ...anchorStyle,
         alignItems: 'center',
         cursor: 'grab',
         display: 'flex',
         gap: 4,
-        left: `${props.x}%`,
+        border:
+          props.kind === 'hotspot'
+            ? '2px solid var(--card-focus-ring-color, #2276fc)'
+            : '2px solid var(--card-border-color, #999)',
+        borderRadius: props.kind === 'hotspot' ? '50%' : 6,
+        boxSizing: 'border-box',
+        minHeight: props.kind === 'hotspot' ? 28 : 40,
+        width:
+          props.kind === 'hotspot'
+            ? 28
+            : props.kind === 'textOverlay'
+              ? `${props.width}%`
+              : props.width,
+        minWidth: 28,
+        maxWidth: '100%',
+        padding: props.kind === 'hotspot' ? 0 : '6px 14px 6px 8px',
+        justifyContent: 'center',
+        left: `clamp(min(50%, ${halfWidth}), var(--gt-anchor-x), max(50%, calc(100% - ${halfWidth})))`,
         outline: props.selected ? '2px solid var(--card-focus-ring-color, #2276fc)' : undefined,
         outlineOffset: 2,
         position: 'absolute',
-        top: `${props.y}%`,
+        top: 'clamp(20px, var(--gt-anchor-y), calc(100% - 20px))',
         transform: 'translate(-50%, -50%)',
       }}
       tabIndex={0}
     >
-      <Badge
+      <Box
         data-testid={`canvas-element-${props.elementKey}-badge`}
-        tone={props.selected ? 'primary' : 'default'}
+        style={{minWidth: 0, overflow: 'hidden'}}
       >
-        {KIND_ABBREVIATION[props.kind]}
-      </Badge>
+        {props.kind === 'hotspot' ? (
+          <span aria-hidden>●</span>
+        ) : (
+          <Text size={1} textOverflow="ellipsis" weight="semibold">
+            {props.accessibleName || KIND_LABEL[props.kind]}
+          </Text>
+        )}
+      </Box>
       {props.hasOverride && (
         <Badge
           data-testid={`canvas-element-${props.elementKey}-override`}
           title="Has a mobile override"
           tone="caution"
+          style={{position: 'absolute', top: -10, right: -8, pointerEvents: 'none'}}
         >
           M
         </Badge>
@@ -180,12 +227,15 @@ export function CanvasElement(props: CanvasElementProps): ReactNode {
             style={{
               background: 'var(--card-border-color, #999)',
               cursor: 'ew-resize',
-              height: 12,
-              marginLeft: 4,
-              width: 12,
+              position: 'absolute',
+              top: 0,
+              bottom: 0,
+              right: 0,
+              borderRadius: '0 4px 4px 0',
+              width: 8,
             }}
           />
         )}
-    </Box>
+    </Card>
   )
 }

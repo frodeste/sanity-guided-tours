@@ -44,22 +44,8 @@
 // mocking. `uploader === null` (no Studio client available, e.g. every
 // smoke test in this suite) hides the drop zone/button entirely — there's
 // nothing useful upload UI could do without one.
-import {
-  Badge,
-  Box,
-  Button,
-  Card,
-  Dialog,
-  Flex,
-  Inline,
-  Menu,
-  MenuButton,
-  MenuDivider,
-  MenuGroup,
-  MenuItem,
-  Stack,
-  Text,
-} from '@sanity/ui'
+import {Badge, Box, Button, Card, Dialog, Flex, Inline, Stack, Text} from '@sanity/ui'
+import {Menu, MenuButton, MenuDivider, MenuGroup, MenuItem} from '@sanity/ui/menu'
 import type {ChangeEvent, DragEvent, KeyboardEvent, ReactNode} from 'react'
 import {useRef, useState} from 'react'
 
@@ -211,6 +197,7 @@ function StepRow(props: StepRowProps): ReactNode {
   const elementCount = elementsOf(props.step).length
   const needsAttention = stepNeedsAttention(props.step)
   const assetRef = screenshotAssetRef(props.step)
+  const warning = assetRef ? 'No alt text' : 'No screenshot'
   const thumbnailUrl =
     assetRef && props.projectId && props.dataset
       ? assetRefToUrl(assetRef, props.projectId, props.dataset, 'w=160&auto=format')
@@ -223,7 +210,10 @@ function StepRow(props: StepRowProps): ReactNode {
   // schema `min(1)`, so the confirm flow removes the whole chapter too).
   const isLastStep = totalInChapter === 1
 
-  function handleRowKeyDown(event: KeyboardEvent<HTMLDivElement>): void {
+  function handleRowKeyDown(event: KeyboardEvent<HTMLButtonElement>): void {
+    // The menu has its own keyboard handling; only activate the row when
+    // the row itself has focus.
+    if (event.target !== event.currentTarget) return
     // Re-guards `stepKey` (already narrowed non-null above): TS doesn't
     // carry control-flow narrowing of an outer `const` into a nested
     // function DECLARATION's body (only into function expressions/arrows
@@ -236,70 +226,79 @@ function StepRow(props: StepRowProps): ReactNode {
   }
 
   return (
-    // A real `<button>` can't host this row: it nests a `MenuButton`
-    // (itself a real `<button>`), and interactive content nested inside a
-    // `<button>` is invalid HTML — the same rationale `CanvasElement.tsx`
-    // documents for its own `role="button"` chip below. `onKeyDown`
-    // (Enter/Space activates, same as a real button) plus `tabIndex` keeps
-    // this genuinely keyboard-operable rather than leaning on a blanket
-    // lint suppression.
+    // Selection and the action menu are sibling controls. Nesting the menu
+    // inside a button-like row hides it from some screen readers.
     <Card
-      aria-pressed={props.selected}
-      data-testid={`filmstrip-step-${chapterKey}-${stepKey}`}
       draggable
-      onClick={() => props.onSelectStep(chapterKey, stepKey)}
       onDragEnd={props.onDragEnd}
       onDragOver={(event) => props.onDragOver(event, chapterKey)}
       onDragStart={() => props.onDragStart(chapterKey, stepKey)}
       onDrop={(event) => props.onDrop(event, chapterKey, arrayIndex)}
-      onKeyDown={handleRowKeyDown}
       padding={2}
       radius={2}
-      // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role
-      role="button"
       style={{cursor: 'pointer', opacity: props.dragging ? 0.4 : 1}}
-      tabIndex={0}
       tone={props.selected ? 'primary' : 'default'}
     >
       <Flex align="center" gap={2}>
-        {thumbnailUrl ? (
-          <img
-            alt=""
-            data-testid={`filmstrip-thumbnail-${chapterKey}-${stepKey}`}
-            src={thumbnailUrl}
-            style={{borderRadius: 3, display: 'block', height: 40, objectFit: 'cover', width: 40}}
-          />
-        ) : (
-          <Box
-            data-testid={`filmstrip-thumbnail-placeholder-${chapterKey}-${stepKey}`}
-            style={{
-              background: 'var(--card-border-color, #ccc)',
-              borderRadius: 3,
-              flexShrink: 0,
-              height: 40,
-              width: 40,
-            }}
-          />
-        )}
-        <Stack flex={1} gap={2} style={{minWidth: 0}}>
-          <Text size={1} textOverflow="ellipsis">
-            {displayIndex}. {title}
-          </Text>
-          <Inline gap={2}>
-            <Badge data-testid={`filmstrip-count-${chapterKey}-${stepKey}`}>
-              {elementCount} element{elementCount === 1 ? '' : 's'}
-            </Badge>
-            {needsAttention && (
-              <Badge
-                data-testid={`filmstrip-warning-${chapterKey}-${stepKey}`}
-                title="Missing screenshot or alt text"
-                tone="caution"
-              >
-                Needs attention
+        <button
+          aria-pressed={props.selected}
+          data-testid={`filmstrip-step-${chapterKey}-${stepKey}`}
+          onClick={() => props.onSelectStep(chapterKey, stepKey)}
+          onKeyDown={handleRowKeyDown}
+          style={{
+            alignItems: 'center',
+            background: 'transparent',
+            border: 0,
+            color: 'inherit',
+            cursor: 'pointer',
+            display: 'flex',
+            flex: 1,
+            gap: 8,
+            minWidth: 0,
+            padding: 0,
+            textAlign: 'left',
+          }}
+          type="button"
+        >
+          {thumbnailUrl ? (
+            <img
+              alt=""
+              data-testid={`filmstrip-thumbnail-${chapterKey}-${stepKey}`}
+              src={thumbnailUrl}
+              style={{borderRadius: 3, display: 'block', height: 40, objectFit: 'cover', width: 40}}
+            />
+          ) : (
+            <Box
+              data-testid={`filmstrip-thumbnail-placeholder-${chapterKey}-${stepKey}`}
+              style={{
+                background: 'var(--card-border-color, #ccc)',
+                borderRadius: 3,
+                flexShrink: 0,
+                height: 40,
+                width: 40,
+              }}
+            />
+          )}
+          <Stack flex={1} gap={2} style={{minWidth: 0}}>
+            <Text size={1} textOverflow="ellipsis">
+              {displayIndex}. {title}
+            </Text>
+            <Inline gap={2}>
+              <Badge data-testid={`filmstrip-count-${chapterKey}-${stepKey}`}>
+                {elementCount} element{elementCount === 1 ? '' : 's'}
               </Badge>
-            )}
-          </Inline>
-        </Stack>
+              {needsAttention && (
+                <Badge
+                  data-testid={`filmstrip-warning-${chapterKey}-${stepKey}`}
+                  title={warning}
+                  tone="caution"
+                >
+                  {warning}
+                </Badge>
+              )}
+            </Inline>
+          </Stack>
+        </button>
         {/* Stops the menu button's own click from also selecting/activating
             the step row (this row's own onClick/onKeyDown, above) — pure
             event-bubbling isolation, not an interaction of its own, same
@@ -383,6 +382,7 @@ interface ChapterHeaderProps {
   stepCount: number
   onAddStep: (chapterKey: string) => void
   onAddChapter: (afterChapterKey: string | null) => void
+  onEditChapter?: (chapterKey: string) => void
   /** `null` outside a Studio client — hides the upload button/drop zone entirely (this file's module comment). */
   uploader: ((file: File) => Promise<UploadedAsset>) | null
   isDragOver: boolean
@@ -429,14 +429,24 @@ function ChapterHeader(props: ChapterHeaderProps): ReactNode {
         outlineOffset: -2,
       }}
     >
-      <Flex align="center" justify="space-between">
+      <Stack gap={2}>
         <Text data-testid={`filmstrip-chapter-${props.chapterKey}`} size={1} weight="semibold">
           {props.chapterTitle} ({props.stepCount})
         </Text>
         <Inline gap={1}>
+          {props.onEditChapter && (
+            <Button
+              aria-label={`Edit chapter ${props.chapterTitle}`}
+              fontSize={1}
+              mode="bleed"
+              onClick={() => props.onEditChapter?.(props.chapterKey)}
+              padding={2}
+              text="Edit chapter"
+            />
+          )}
           <Button
             data-testid={`filmstrip-add-step-${props.chapterKey}`}
-            fontSize={0}
+            fontSize={1}
             mode="bleed"
             onClick={() => props.onAddStep(props.chapterKey)}
             padding={2}
@@ -444,21 +454,22 @@ function ChapterHeader(props: ChapterHeaderProps): ReactNode {
           />
           <Button
             data-testid={`filmstrip-add-chapter-${props.chapterKey}`}
-            fontSize={0}
+            fontSize={1}
             mode="bleed"
             onClick={() => props.onAddChapter(props.chapterKey)}
             padding={2}
             text="+ Chapter"
           />
         </Inline>
-      </Flex>
+      </Stack>
       {props.uploader !== null && (
         <Flex align="center" gap={2}>
           <Button
             data-testid={`filmstrip-upload-button-${props.chapterKey}`}
             disabled={uploading}
-            fontSize={0}
-            mode="bleed"
+            fontSize={1}
+            mode="ghost"
+            tone="primary"
             onClick={() => fileInputRef.current?.click()}
             padding={2}
             text="Upload screenshots…"
@@ -468,6 +479,8 @@ function ChapterHeader(props: ChapterHeaderProps): ReactNode {
               button pattern always does; the visible `<Button>` above is
               the actual keyboard/click target (`fileInputRef.current?.click()`). */}
           <input
+            aria-label={`Upload screenshots to ${props.chapterTitle}`}
+            tabIndex={-1}
             accept="image/*"
             data-testid={`filmstrip-upload-input-${props.chapterKey}`}
             multiple
@@ -483,11 +496,22 @@ function ChapterHeader(props: ChapterHeaderProps): ReactNode {
             type="file"
           />
           {props.progressText !== null && (
-            <Text data-testid={`filmstrip-upload-progress-${props.chapterKey}`} muted size={1}>
+            <Text
+              data-testid={`filmstrip-upload-progress-${props.chapterKey}`}
+              muted
+              size={1}
+              as="output"
+              aria-live="polite"
+            >
               {props.progressText}
             </Text>
           )}
         </Flex>
+      )}
+      {props.uploader !== null && props.stepCount === 0 && (
+        <Text muted size={1}>
+          Upload or drop images here. Each image becomes a step.
+        </Text>
       )}
     </Stack>
   )
@@ -509,6 +533,7 @@ export interface FilmstripProps {
   projectId: string | null
   dataset: string | null
   onSelectStep: (chapterKey: string, stepKey: string) => void
+  onEditChapter?: (chapterKey: string) => void
   callbacks: StepMutationCallbacks
   /** Real client-backed uploader from `CanvasInput.tsx`'s `useUploader()`, a fake one in tests, or `null` (this file's module comment) — threaded down rather than this component calling `useClient()` itself. */
   uploader: ((file: File) => Promise<UploadedAsset>) | null
@@ -718,8 +743,13 @@ export function Filmstrip(props: FilmstripProps): ReactNode {
   }
 
   return (
-    <Card borderRight padding={2} style={{minWidth: 260, overflowY: 'auto'}}>
+    <Card borderRight padding={2} style={{minWidth: 0, overflowY: 'auto'}}>
       <Stack gap={3}>
+        <Box padding={2}>
+          <Text size={1} weight="semibold">
+            Tour steps
+          </Text>
+        </Box>
         {totalSteps === 0 && (
           <Text muted size={1}>
             No steps yet.
@@ -735,6 +765,7 @@ export function Filmstrip(props: FilmstripProps): ReactNode {
           return (
             <Stack data-testid={`filmstrip-group-${chapterKey}`} gap={2} key={chapterKey}>
               <ChapterHeader
+                onEditChapter={props.onEditChapter}
                 chapterKey={chapterKey}
                 chapterTitle={chapterTitle}
                 isDragOver={dragOverChapterKey === chapterKey}
@@ -788,12 +819,18 @@ export function Filmstrip(props: FilmstripProps): ReactNode {
           )
         })}
         {chapterOptions.length === 0 && (
-          <Button
-            data-testid="filmstrip-add-chapter-empty"
-            mode="bleed"
-            onClick={() => props.callbacks.onAddChapter(null)}
-            text="+ Chapter"
-          />
+          <Stack gap={3} padding={2}>
+            <Text muted size={1}>
+              Add your first chapter to group the screenshots in your tour.
+            </Text>
+            <Button
+              data-testid="filmstrip-add-chapter-empty"
+              mode="ghost"
+              tone="primary"
+              onClick={() => props.callbacks.onAddChapter(null)}
+              text="Add first chapter"
+            />
+          </Stack>
         )}
       </Stack>
 

@@ -219,6 +219,8 @@ function objectArrayFormNode(
     changed: false,
     compareValue: undefined,
     hasUpstreamVersion: false,
+    hasBaseVariant: false,
+    changedFromBaseVariant: false,
   }
 }
 
@@ -338,6 +340,8 @@ export function canvasInputProps(chapters: FixtureChapter[]): ArrayOfObjectsInpu
     }),
     changed: false,
     hasUpstreamVersion: false,
+    hasBaseVariant: false,
+    changedFromBaseVariant: false,
     onChange: () => {},
     onItemAppend: () => {},
     onItemPrepend: () => {},

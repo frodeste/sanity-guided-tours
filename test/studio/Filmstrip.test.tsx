@@ -11,6 +11,7 @@ import {afterEach, describe, expect, mock, spyOn, test} from 'bun:test'
 import {LayerProvider, ThemeProvider} from '@sanity/ui'
 import {buildTheme} from '@sanity/ui/theme'
 import {act, cleanup, fireEvent, render, screen, waitFor, within} from '@testing-library/react'
+import axe from 'axe-core'
 import type {ReactNode} from 'react'
 
 import type {UploadedAsset} from '../../src/studio/bulkUpload'
@@ -131,11 +132,9 @@ function openStepMenu(chapterKey: string, stepKey: string): void {
   fireEvent.click(screen.getByTestId(`filmstrip-step-menu-${chapterKey}-${stepKey}`))
 }
 
-/** The "Move to chapter" `MenuGroup` is itself a nested submenu trigger — its target-chapter `MenuItem`s only mount once it's clicked open (verified empirically: `@sanity/ui`'s `MenuGroup` doesn't eagerly render its `menu` children). Call after `openStepMenu`. */
+/** Open the visible submenu; UI 4 keeps closed menus mounted under React Activity. */
 function openMoveToChapterSubmenu(): void {
-  const trigger = screen.getByText('Move to chapter').closest('button')
-  if (!trigger) throw new Error('expected the Move to chapter trigger to be a <button>')
-  fireEvent.click(trigger)
+  fireEvent.click(screen.getByRole('button', {name: 'Move to chapter'}))
 }
 
 describe('Filmstrip: grouping and rendering', () => {
@@ -223,9 +222,24 @@ describe('Filmstrip: grouping and rendering', () => {
     fireEvent.click(screen.getByTestId('filmstrip-add-chapter-empty'))
     expect(onAddChapter).toHaveBeenCalledWith(null)
   })
+
+  test('keyboard events from a step menu do not also activate its parent row', () => {
+    const onSelectStep = mock((_chapterKey: string, _stepKey: string) => {})
+    renderWithTheme(<Filmstrip {...baseProps({onSelectStep})} />)
+
+    fireEvent.keyDown(screen.getByTestId('filmstrip-step-menu-c1-s2'), {key: 'Enter'})
+
+    expect(onSelectStep).not.toHaveBeenCalled()
+  })
 })
 
 describe('Filmstrip: the amended validation-warning heuristic', () => {
+  test('step selection and menus expose separate accessible controls', async () => {
+    const {container} = renderWithTheme(<Filmstrip {...baseProps()} />)
+    const results = await axe.run(container, {runOnly: ['nested-interactive', 'button-name']})
+    expect(results.violations).toEqual([])
+  })
+
   test('warns when the screenshot is missing entirely', () => {
     const chapters = [chapter({_key: 'c1', steps: [step({_key: 's1', screenshot: undefined})]})]
     renderWithTheme(<Filmstrip {...baseProps({chapters})} />)
@@ -404,13 +418,14 @@ describe('Filmstrip: HTML5 drag reorder', () => {
     renderWithTheme(<Filmstrip {...baseProps()} />)
 
     const source = screen.getByTestId('filmstrip-step-c1-s1')
-    expect(source.style.opacity).toBe('1')
+    const row = source.closest<HTMLElement>('[data-ui="Card"]')
+    expect(row?.style.opacity).toBe('1')
 
     fireEvent.dragStart(source)
-    expect(source.style.opacity).toBe('0.4')
+    expect(row?.style.opacity).toBe('0.4')
 
     fireEvent.dragEnd(source)
-    expect(source.style.opacity).toBe('1')
+    expect(row?.style.opacity).toBe('1')
   })
 })
 

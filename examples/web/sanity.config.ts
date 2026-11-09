@@ -1,6 +1,6 @@
 import {defineConfig} from 'sanity'
 import {structureTool} from 'sanity/structure'
-import {guidedTours} from 'sanity-plugin-guided-tours'
+import {guidedTours, GuidedTourPreviewView} from 'sanity-plugin-guided-tours'
 
 import examplePage from './schemas/page'
 
@@ -19,7 +19,18 @@ export default defineConfig({
   projectId,
   dataset,
   basePath: '/studio',
-  plugins: [structureTool(), guidedTours()],
+  plugins: [
+    structureTool({
+      defaultDocumentNode: (S, {schemaType}) =>
+        schemaType === 'guidedTour'
+          ? S.document().views([
+              S.view.form(),
+              S.view.component(GuidedTourPreviewView).title('Preview'),
+            ])
+          : S.document(),
+    }),
+    guidedTours(),
+  ],
   // `examplePage` (schemas/page.ts) is this example app's own document type
   // — the plugin registers `guidedTourEmbed` itself unconditionally; this is
   // just a consumer wiring it into a `body` field, same as any real app

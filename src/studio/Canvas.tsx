@@ -15,11 +15,11 @@
 // threading the resolved values down keeps `Canvas`/`CanvasElement` free of
 // any `sanity` runtime dependency, so smoke tests can render them with
 // nothing more than `@sanity/ui`'s `ThemeProvider`.
-import {Badge, Box, Button, Card, Flex, Inline, Text} from '@sanity/ui'
+import {Badge, Box, Button, Card, Flex, Inline, Stack, Text} from '@sanity/ui'
 import type {MouseEvent, ReactNode} from 'react'
-import {useRef, useState} from 'react'
+import {useId, useRef, useState} from 'react'
 
-import {assetRefToUrl} from './assetRef'
+import {assetRefDimensions, assetRefToUrl} from './assetRef'
 import {CanvasElement} from './CanvasElement'
 import {
   type ElementKind,
@@ -107,6 +107,10 @@ export interface CanvasProps {
   step: unknown
   device: 'desktop' | 'mobile'
   selectedElementKey: string | null
+  /** Opens the selected step's details pane without constructing form paths here. */
+  onEditStep?: () => void
+  /** Opens the real step form directly when its screenshot is missing. */
+  onAddScreenshot?: () => void
   onSelectElement: (elementKey: string | null) => void
   onInsertElement: (
     element: {_type: string; _key: string; x: number; y: number} & Record<string, unknown>,
@@ -124,6 +128,7 @@ export function Canvas(props: CanvasProps): ReactNode {
   const [dragPosition, setDragPosition] = useState<DragPosition | null>(null)
   const [resizeState, setResizeState] = useState<ResizeState | null>(null)
   const wrapperRef = useRef<HTMLDivElement>(null)
+  const hintId = useId()
 
   // A ref mirror of `resizeState`, updated in lockstep by every setter
   // below (`setResize`). React state updater callbacks must stay pure —
@@ -156,6 +161,11 @@ export function Canvas(props: CanvasProps): ReactNode {
     const rect = measureRect()
     if (!rect) return
     const pos = pointToPercent(event.clientX, event.clientY, rect)
+    placeElement(pos)
+  }
+
+  function placeElement(pos: {x: number; y: number}): void {
+    if (tool === 'select') return
     const element = elementDefaults(tool, randomKey(), pos)
     props.onInsertElement(element)
     props.onSelectElement(element._key)
@@ -246,15 +256,30 @@ export function Canvas(props: CanvasProps): ReactNode {
       ? assetRefToUrl(assetRef, props.projectId, props.dataset)
       : null
   const elements = elementsOf(props.step)
+  const selectedElement = elements.find((element) => element._key === props.selectedElementKey)
+  const dimensions = assetRef ? assetRefDimensions(assetRef) : null
+  const aspectRatio =
+    dimensions && dimensions.width > 0 && dimensions.height > 0
+      ? dimensions.width / dimensions.height
+      : null
 
   return (
     <Flex direction="column" flex={1} style={{minHeight: 0, minWidth: 0}}>
       <Card borderBottom padding={2}>
+        <Flex align="center" gap={2} justify="space-between" padding={2} wrap="wrap">
+          <Text size={1} weight="semibold">
+            {stepTitle || 'Screenshot canvas'}
+          </Text>
+          {props.step !== null && props.onEditStep && (
+            <Button mode="bleed" text="Step details" onClick={props.onEditStep} />
+          )}
+        </Flex>
         <Inline gap={1}>
           {TOOLS.map((entry) => (
             <Button
               aria-pressed={tool === entry.tool}
               data-testid={`canvas-tool-${entry.tool}`}
+              disabled={entry.tool !== 'select' && !assetRef}
               key={entry.tool}
               mode={tool === entry.tool ? 'default' : 'bleed'}
               onClick={() => setTool(entry.tool)}
@@ -262,129 +287,187 @@ export function Canvas(props: CanvasProps): ReactNode {
             />
           ))}
         </Inline>
-      </Card>
-      <Box flex={1} padding={4} style={{overflow: 'auto'}}>
-        {props.step === null ? (
-          <Text muted size={1}>
-            Select a step to see its screenshot.
-          </Text>
-        ) : !assetRef ? (
-          <Text muted size={1}>
-            This step has no screenshot yet.
-          </Text>
-        ) : (
-          // Click-to-place has no keyboard equivalent to delegate to — the
-          // whole point is the click's *coordinates* (converted to a
-          // percent position via `pointToPercent`), which a key event
-          // doesn't carry. Placement is still fully keyboard-reachable
-          // otherwise: an inserted element is auto-selected and nudgeable
-          // via `CanvasElement`'s arrow-key handling. No ARIA role fits a
-          // screenshot-with-overlays surface either, same
-          // `prefer-tag-over-role` false-positive shape as
-          // `react/GuidedTour.tsx`'s progress bar.
-          // oxlint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
-          <div
-            data-testid="canvas-surface"
-            onClick={handleSurfaceClick}
-            ref={wrapperRef}
-            style={{
-              cursor: tool === 'select' ? 'default' : 'crosshair',
-              display: 'inline-block',
-              position: 'relative',
-            }}
-          >
-            {url ? (
-              <img
-                alt={alt}
-                data-testid="canvas-screenshot"
-                src={url}
-                style={{display: 'block', height: 'auto', maxWidth: '100%'}}
-              />
-            ) : (
-              <Card padding={4} radius={2}>
-                <Text data-testid="canvas-screenshot-placeholder" muted size={1}>
-                  Screenshot: {assetRef}
+        {assetRef && (
+          <Stack gap={2} padding={2}>
+            <Text id={hintId} as="output" aria-live="polite" size={1} muted>
+              {tool === 'select'
+                ? selectedElement
+                  ? `${elementAccessibleName(selectedElement).split(':')[0]} selected. Drag to move; arrow keys nudge, Shift + arrow moves farther. Delete removes.`
+                  : 'Select an element to edit it, or choose a tool to add one.'
+                : `Click the screenshot to place ${tool === 'textOverlay' ? 'a text overlay' : `a ${tool}`}.`}
+            </Text>
+            {tool !== 'select' && (
+              <Inline gap={2}>
+                <Button
+                  text="Place in center"
+                  mode="ghost"
+                  tone="primary"
+                  onClick={() => placeElement({x: 50, y: 50})}
+                />
+                <Button text="Cancel placement" mode="bleed" onClick={() => setTool('select')} />
+              </Inline>
+            )}
+            {props.device === 'mobile' && (
+              <Card padding={3} radius={2} tone="caution">
+                <Text size={1}>
+                  Moving or resizing here changes only the mobile layout.
+                  {!isRecord(props.step) || !isRecord(props.step.screenshotMobile)
+                    ? ' Using the desktop screenshot until you add a mobile screenshot in Step details.'
+                    : ''}
                 </Text>
               </Card>
             )}
-            {hasVideoField(props.step) && (
-              // Decorative status marker, not a control — labelled by its
-              // own visible text (same convention `CanvasElement.tsx`'s "M"
-              // mobile-override badge uses: readable text + a `title`, no
-              // `aria-hidden`) rather than absorbing any pointer interaction
-              // of its own. `pointerEvents: 'none'` keeps it out of hit
-              // testing entirely so it can never swallow a click meant for
-              // the click-to-place surface beneath it, on top of never
-              // calling `stopPropagation`.
-              <Badge
-                data-testid="canvas-video-badge"
-                style={{left: 8, pointerEvents: 'none', position: 'absolute', top: 8}}
-                title="This step has a video"
-                tone="primary"
-              >
-                Video
-              </Badge>
-            )}
-            {elements.map((element) => {
-              const elementKeyValue = typeof element._key === 'string' ? element._key : undefined
-              const kind = elementKind(element._type)
-              if (!elementKeyValue || !kind) return null
-
-              const resizable = isResizableKind(kind)
-              const basePos = resolvedPosition(element, props.device)
-              const pos =
-                dragPosition && dragPosition.key === elementKeyValue
-                  ? {x: dragPosition.x, y: dragPosition.y}
-                  : basePos
-              const baseWidth = resizable
-                ? (resolvedWidth(element, props.device) ?? DEFAULT_WIDTH[kind])
-                : undefined
-              const width =
-                resizable && resizeState && resizeState.key === elementKeyValue
-                  ? resizeState.currentWidth
-                  : baseWidth
-
-              return (
-                <CanvasElement
-                  accessibleName={elementAccessibleName(element)}
-                  elementKey={elementKeyValue}
-                  hasOverride={hasMobileOverride(element)}
-                  key={elementKeyValue}
-                  kind={kind}
-                  onDelete={() => props.onRemoveElement(elementKeyValue)}
-                  onDeselect={() => props.onSelectElement(null)}
-                  onDragEnd={(clientX, clientY) => handleDragEnd(elementKeyValue, clientX, clientY)}
-                  onDragMove={(clientX, clientY) =>
-                    handleDragMove(elementKeyValue, clientX, clientY)
-                  }
-                  onNudge={(axis, direction, big) =>
-                    handleNudge(elementKeyValue, element, axis, direction, big)
-                  }
-                  onResizeEnd={handleResizeEnd}
-                  onResizeMove={handleResizeMove}
-                  onResizeStart={(clientX) => {
-                    // `baseWidth` is only ever `undefined` when `!resizable`
-                    // (line ~293) — and `CanvasElement` only wires up the
-                    // resize handle that fires this callback when
-                    // `resizable && width !== undefined` — so this guard
-                    // never actually fires; it's here so this closure
-                    // doesn't need a placeholder default (the old
-                    // `DEFAULT_WIDTH.tooltip` fallback was always dead code,
-                    // and wrong for textOverlay besides).
-                    if (baseWidth === undefined) return
-                    handleResizeStart(elementKeyValue, kind, baseWidth, clientX)
-                  }}
-                  onSelect={() => props.onSelectElement(elementKeyValue)}
-                  resizable={resizable}
-                  selected={props.selectedElementKey === elementKeyValue}
-                  width={width}
-                  x={pos.x}
-                  y={pos.y}
-                />
-              )
-            })}
-          </div>
+          </Stack>
         )}
+      </Card>
+      <Box flex={1} padding={3} style={{minHeight: 0, overflow: 'auto'}}>
+        <Box data-testid="canvas-stage" style={{height: '100%', containerType: 'size'}}>
+          {props.step === null ? (
+            <Stack gap={3}>
+              <Text weight="semibold" size={2}>
+                Build your tour from screenshots
+              </Text>
+              <Text muted size={1}>
+                Select a step to see its screenshot.
+              </Text>
+              <Text muted size={1}>
+                Start in Steps: add a chapter, then upload screenshots. Each screenshot becomes a
+                step.
+              </Text>
+            </Stack>
+          ) : !assetRef ? (
+            <Stack gap={3}>
+              <Text weight="semibold" size={2}>
+                Add a screenshot to this step
+              </Text>
+              <Text muted size={1}>
+                This step has no screenshot yet.
+              </Text>
+              <Text muted size={1}>
+                Upload a screenshot and add descriptive alt text in this step's fields.
+              </Text>
+              {props.onAddScreenshot && (
+                <Button
+                  text="Add screenshot"
+                  mode="ghost"
+                  tone="primary"
+                  onClick={props.onAddScreenshot}
+                />
+              )}
+            </Stack>
+          ) : (
+            // Pointer placement supplies exact coordinates. Keyboard users
+            // can use Place in center above, then nudge via the element.
+            // oxlint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
+            <div
+              data-testid="canvas-surface"
+              onClick={handleSurfaceClick}
+              ref={wrapperRef}
+              style={{
+                cursor: tool === 'select' ? 'default' : 'crosshair',
+                display: 'block',
+                marginInline: 'auto',
+                width: aspectRatio ? `min(100%, ${aspectRatio * 100}cqh)` : '100%',
+                aspectRatio: aspectRatio ?? undefined,
+                position: 'relative',
+              }}
+            >
+              {url ? (
+                <img
+                  alt={alt}
+                  data-testid="canvas-screenshot"
+                  src={url}
+                  style={{display: 'block', height: 'auto', width: '100%'}}
+                />
+              ) : (
+                <Card padding={4} radius={2}>
+                  <Text data-testid="canvas-screenshot-placeholder" muted size={1}>
+                    Screenshot: {assetRef}
+                  </Text>
+                </Card>
+              )}
+              {hasVideoField(props.step) && (
+                // Decorative status marker, not a control — labelled by its
+                // own visible text (same convention `CanvasElement.tsx`'s "M"
+                // mobile-override badge uses: readable text + a `title`, no
+                // `aria-hidden`) rather than absorbing any pointer interaction
+                // of its own. `pointerEvents: 'none'` keeps it out of hit
+                // testing entirely so it can never swallow a click meant for
+                // the click-to-place surface beneath it, on top of never
+                // calling `stopPropagation`.
+                <Badge
+                  data-testid="canvas-video-badge"
+                  style={{left: 8, pointerEvents: 'none', position: 'absolute', top: 8}}
+                  title="This step has a video"
+                  tone="primary"
+                >
+                  Video
+                </Badge>
+              )}
+              {elements.map((element) => {
+                const elementKeyValue = typeof element._key === 'string' ? element._key : undefined
+                const kind = elementKind(element._type)
+                if (!elementKeyValue || !kind) return null
+
+                const resizable = isResizableKind(kind)
+                const basePos = resolvedPosition(element, props.device)
+                const pos =
+                  dragPosition && dragPosition.key === elementKeyValue
+                    ? {x: dragPosition.x, y: dragPosition.y}
+                    : basePos
+                const baseWidth = resizable
+                  ? (resolvedWidth(element, props.device) ?? DEFAULT_WIDTH[kind])
+                  : undefined
+                const width =
+                  resizable && resizeState && resizeState.key === elementKeyValue
+                    ? resizeState.currentWidth
+                    : baseWidth
+
+                return (
+                  <CanvasElement
+                    accessibleName={elementAccessibleName(element)}
+                    describedBy={hintId}
+                    elementKey={elementKeyValue}
+                    hasOverride={hasMobileOverride(element)}
+                    key={elementKeyValue}
+                    kind={kind}
+                    onDelete={() => props.onRemoveElement(elementKeyValue)}
+                    onDeselect={() => props.onSelectElement(null)}
+                    onDragEnd={(clientX, clientY) =>
+                      handleDragEnd(elementKeyValue, clientX, clientY)
+                    }
+                    onDragMove={(clientX, clientY) =>
+                      handleDragMove(elementKeyValue, clientX, clientY)
+                    }
+                    onNudge={(axis, direction, big) =>
+                      handleNudge(elementKeyValue, element, axis, direction, big)
+                    }
+                    onResizeEnd={handleResizeEnd}
+                    onResizeMove={handleResizeMove}
+                    onResizeStart={(clientX) => {
+                      // `baseWidth` is only ever `undefined` when `!resizable`
+                      // (line ~293) — and `CanvasElement` only wires up the
+                      // resize handle that fires this callback when
+                      // `resizable && width !== undefined` — so this guard
+                      // never actually fires; it's here so this closure
+                      // doesn't need a placeholder default (the old
+                      // `DEFAULT_WIDTH.tooltip` fallback was always dead code,
+                      // and wrong for textOverlay besides).
+                      if (baseWidth === undefined) return
+                      handleResizeStart(elementKeyValue, kind, baseWidth, clientX)
+                    }}
+                    onSelect={() => props.onSelectElement(elementKeyValue)}
+                    resizable={resizable}
+                    selected={props.selectedElementKey === elementKeyValue}
+                    width={width}
+                    x={pos.x}
+                    y={pos.y}
+                  />
+                )
+              })}
+            </div>
+          )}
+        </Box>
       </Box>
     </Flex>
   )

@@ -130,7 +130,7 @@ function findFieldMember(members: ObjectMember[], name: string): FieldMember | n
  * Chapter item -> `steps` field -> step item, or `null` if any hop doesn't
  * resolve (see this module's ORPHAN SELECTION note above).
  */
-function drillToStep(
+export function drillToStep(
   members: ArrayOfObjectsMember[],
   chapterKey: string,
   stepKey: string,
@@ -165,10 +165,10 @@ function elementSummary(value: unknown): string {
 
 function NeutralPane({message, testId}: {message: string; testId: string}): ReactNode {
   return (
-    <Card borderLeft data-testid={testId} padding={3} style={{minWidth: 260}}>
+    <Card borderLeft data-testid={testId} padding={3} style={{minWidth: 0, overflowY: 'auto'}}>
       <Stack gap={3}>
         <Text size={1} weight="semibold">
-          Inspector
+          Details
         </Text>
         <Text muted size={1}>
           {message}
@@ -198,32 +198,95 @@ export interface InspectorProps {
    */
   arrayProps: ArrayOfObjectsInputProps
   selection: EditorSelection
+  onSelectElement?: (elementKey: string | null) => void
+  onRemoveElement?: (elementKey: string) => void
+}
+
+function ElementList({
+  value,
+  selectedKey,
+  onSelectElement,
+}: {
+  value: unknown
+  selectedKey: string | null
+  onSelectElement: (elementKey: string | null) => void
+}): ReactNode {
+  const elements = isRecord(value) && Array.isArray(value.elements) ? value.elements : []
+  return (
+    <Stack gap={2}>
+      <Text size={1} weight="semibold">
+        Elements on this step
+      </Text>
+      {elements.length === 0 && (
+        <Text muted size={1}>
+          Choose a tool on the canvas to add a hotspot, tooltip, or text overlay.
+        </Text>
+      )}
+      {elements.map((element) => {
+        if (!isRecord(element) || typeof element._key !== 'string') return null
+        const key = element._key
+        return (
+          <Button
+            aria-pressed={selectedKey === key}
+            key={key}
+            justify="flex-start"
+            mode={selectedKey === key ? 'default' : 'ghost'}
+            onClick={() => onSelectElement(key)}
+            text={elementSummary(element)}
+          />
+        )
+      })}
+    </Stack>
+  )
 }
 
 /** The inspector pane: selected element's or step's real member, opened via Sanity's own item dialog — see this module's doc comment for the chosen mechanism and its tradeoff. */
-export function Inspector({arrayProps, selection}: InspectorProps): ReactNode {
+export function Inspector({
+  arrayProps,
+  selection,
+  onSelectElement,
+  onRemoveElement,
+}: InspectorProps): ReactNode {
   const {chapterKey, stepKey, elementKey} = selection
 
   if (chapterKey === null || stepKey === null) {
-    return <NeutralPane message="Select an element to edit its fields." testId="inspector-empty" />
+    return (
+      <NeutralPane
+        message="Select a step to edit its screenshot, then select an element to edit its content."
+        testId="inspector-empty"
+      />
+    )
   }
 
   const stepNode = drillToStep(arrayProps.members, chapterKey, stepKey)
   if (!stepNode) {
-    return <NeutralPane message="Nothing selected — syncing…" testId="inspector-syncing" />
+    return <NeutralPane message="Details are updating…" testId="inspector-syncing" />
   }
 
   if (elementKey !== null) {
     const elementNode = drillToElement(stepNode, elementKey)
     if (!elementNode) {
-      return <NeutralPane message="Nothing selected — syncing…" testId="inspector-syncing" />
+      return <NeutralPane message="Details are updating…" testId="inspector-syncing" />
     }
 
     return (
-      <Card borderLeft data-testid="inspector-element" padding={3} style={{minWidth: 260}}>
+      <Card
+        borderLeft
+        data-testid="inspector-element"
+        padding={3}
+        style={{minWidth: 0, overflowY: 'auto'}}
+      >
         <Stack gap={3}>
+          {onSelectElement && (
+            <Button
+              mode="bleed"
+              justify="flex-start"
+              text="Back to step details"
+              onClick={() => onSelectElement(null)}
+            />
+          )}
           <Text size={1} weight="semibold">
-            Inspector
+            Element details
           </Text>
           <Stack gap={2}>
             <Text data-testid="inspector-element-label" size={1}>
@@ -234,19 +297,42 @@ export function Inspector({arrayProps, selection}: InspectorProps): ReactNode {
           <Button
             data-testid="inspector-edit-element"
             onClick={() => arrayProps.onItemOpen(elementNode.path)}
-            text="Edit fields"
+            text={`Edit ${elementSummary(elementNode.value).split(':')[0].toLowerCase()}`}
+            mode="ghost"
             tone="primary"
+            disabled={arrayProps.readOnly}
           />
+          {onRemoveElement && (
+            <Button
+              mode="bleed"
+              tone="critical"
+              text="Remove element"
+              disabled={arrayProps.readOnly}
+              onClick={() => onRemoveElement(elementKey)}
+            />
+          )}
+          {onSelectElement && (
+            <ElementList
+              value={stepNode.value}
+              selectedKey={elementKey}
+              onSelectElement={onSelectElement}
+            />
+          )}
         </Stack>
       </Card>
     )
   }
 
   return (
-    <Card borderLeft data-testid="inspector-step" padding={3} style={{minWidth: 260}}>
+    <Card
+      borderLeft
+      data-testid="inspector-step"
+      padding={3}
+      style={{minWidth: 0, overflowY: 'auto'}}
+    >
       <Stack gap={3}>
         <Text size={1} weight="semibold">
-          Inspector
+          Step details
         </Text>
         <Stack gap={2}>
           <Text data-testid="inspector-step-title" size={1}>
@@ -254,12 +340,24 @@ export function Inspector({arrayProps, selection}: InspectorProps): ReactNode {
           </Text>
           <ValidationBadge count={stepNode.validation.length} />
         </Stack>
+        <Text muted size={1}>
+          Edit the title, screenshots, alt text, and how this step advances.
+        </Text>
         <Button
           data-testid="inspector-edit-step"
           onClick={() => arrayProps.onItemOpen(stepNode.path)}
-          text="Edit step fields"
+          text="Edit step"
+          mode="ghost"
           tone="primary"
+          disabled={arrayProps.readOnly}
         />
+        {onSelectElement && (
+          <ElementList
+            value={stepNode.value}
+            selectedKey={null}
+            onSelectElement={onSelectElement}
+          />
+        )}
       </Stack>
     </Card>
   )

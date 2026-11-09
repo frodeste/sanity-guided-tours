@@ -6,7 +6,8 @@ covers what we're building and why.
 
 ## Development setup
 
-[Bun](https://bun.sh) is the package manager and test runner.
+[Bun](https://bun.sh) is the package manager and test runner. Use Bun 1.4.2
+(`packageManager` in package.json) and Node 24.19.0, matching CI and release.
 
 ```bash
 bun install                  # workspace root — installs plugin + example apps
@@ -68,6 +69,9 @@ Releases are cut by semantic-release from commits on `main`, following
 | `feat:` | minor |
 | `feat!:` / `BREAKING CHANGE:` footer | major |
 | `docs:`, `chore:`, `test:`, `ci:`, `refactor:`, `style:`, `build:` | none |
+
+See [the release runbook](docs/releasing.md) for release planning, npm
+authentication, and the manual publish workflow.
 
 There is no manual version bumping — never edit `version` in `package.json`.
 
