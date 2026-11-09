@@ -46,6 +46,39 @@ function baseProps(overrides: Partial<CanvasProps> = {}): CanvasProps {
 }
 
 describe('Canvas', () => {
+  test('read-only canvases expose the layout without emitting mutations', () => {
+    const onInsertElement = mock((_element: {_type: string; _key: string}) => {})
+    const onMoveElement = mock((_elementKey: string, _pos: {x: number; y: number}) => {})
+    const onRemoveElement = mock((_elementKey: string) => {})
+    renderWithTheme(
+      <Canvas
+        {...baseProps({
+          onInsertElement,
+          onMoveElement,
+          onRemoveElement,
+          readOnly: true,
+          selectedElementKey: 'e1',
+          step: {
+            screenshot: {asset: {_ref: 'image-abc123-800x600-png'}},
+            elements: [{_key: 'e1', _type: 'guidedTourHotspot', x: 50, y: 50}],
+          },
+        })}
+      />,
+    )
+
+    expect(screen.getByTestId('canvas-tool-hotspot').hasAttribute('disabled')).toBe(true)
+    const chip = screen.getByTestId('canvas-element-e1')
+    fireEvent.keyDown(chip, {key: 'ArrowRight'})
+    fireEvent.keyDown(chip, {key: 'Delete'})
+    fireEvent.pointerDown(chip, {pointerId: 1, clientX: 10, clientY: 10})
+    fireEvent.pointerMove(chip, {pointerId: 1, clientX: 50, clientY: 50})
+    fireEvent.pointerUp(chip, {pointerId: 1, clientX: 50, clientY: 50})
+
+    expect(onInsertElement).not.toHaveBeenCalled()
+    expect(onMoveElement).not.toHaveBeenCalled()
+    expect(onRemoveElement).not.toHaveBeenCalled()
+  })
+
   test('selected element controls expose selection and describe movement and removal', () => {
     renderWithTheme(
       <Canvas

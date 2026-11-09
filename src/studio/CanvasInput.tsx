@@ -262,6 +262,7 @@ function CanvasPanes({
               setPanel('details')
             }}
             projectId={projectId}
+            readOnly={arrayProps.readOnly === true}
             selectedElementKey={selection.elementKey}
             step={step}
           />

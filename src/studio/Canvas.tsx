@@ -120,6 +120,8 @@ export interface CanvasProps {
   onRemoveElement: (elementKey: string) => void
   projectId: string | null
   dataset: string | null
+  /** Prevent document mutations while still allowing editors to inspect the layout. */
+  readOnly?: boolean
 }
 
 /** The canvas pane: tool palette, screenshot, and every element positioned on top of it. */
@@ -157,7 +159,7 @@ export function Canvas(props: CanvasProps): ReactNode {
   }
 
   function handleSurfaceClick(event: MouseEvent<HTMLDivElement>): void {
-    if (tool === 'select') return
+    if (props.readOnly || tool === 'select') return
     const rect = measureRect()
     if (!rect) return
     const pos = pointToPercent(event.clientX, event.clientY, rect)
@@ -165,7 +167,7 @@ export function Canvas(props: CanvasProps): ReactNode {
   }
 
   function placeElement(pos: {x: number; y: number}): void {
-    if (tool === 'select') return
+    if (props.readOnly || tool === 'select') return
     const element = elementDefaults(tool, randomKey(), pos)
     props.onInsertElement(element)
     props.onSelectElement(element._key)
@@ -173,6 +175,7 @@ export function Canvas(props: CanvasProps): ReactNode {
   }
 
   function handleDragMove(elementKey: string, clientX: number, clientY: number): void {
+    if (props.readOnly) return
     const rect = measureRect()
     if (!rect) return
     const pos = pointToPercent(clientX, clientY, rect)
@@ -182,7 +185,7 @@ export function Canvas(props: CanvasProps): ReactNode {
   function handleDragEnd(elementKey: string, clientX: number, clientY: number): void {
     const rect = measureRect()
     setDragPosition(null)
-    if (!rect) return
+    if (props.readOnly || !rect) return
     const pos = pointToPercent(clientX, clientY, rect)
     props.onMoveElement(elementKey, pos)
   }
@@ -193,7 +196,7 @@ export function Canvas(props: CanvasProps): ReactNode {
     startWidth: number,
     clientX: number,
   ): void {
-    if (!isResizableKind(kind)) return
+    if (props.readOnly || !isResizableKind(kind)) return
     setResize({
       key: elementKey,
       kind,
@@ -204,6 +207,7 @@ export function Canvas(props: CanvasProps): ReactNode {
   }
 
   function handleResizeMove(clientX: number): void {
+    if (props.readOnly) return
     const current = resizeStateRef.current
     if (!current) return
     const rect = measureRect()
@@ -220,7 +224,7 @@ export function Canvas(props: CanvasProps): ReactNode {
   function handleResizeEnd(clientX: number): void {
     const current = resizeStateRef.current
     setResize(null)
-    if (!current) return
+    if (props.readOnly || !current) return
     const rect = measureRect()
     const rectWidth = rect ? rect.width : 0
     const width = resizeWidth(
@@ -239,6 +243,7 @@ export function Canvas(props: CanvasProps): ReactNode {
     direction: -1 | 1,
     big: boolean,
   ): void {
+    if (props.readOnly) return
     const pos = resolvedPosition(element, props.device)
     const nextPos =
       axis === 'x'
@@ -279,7 +284,7 @@ export function Canvas(props: CanvasProps): ReactNode {
             <Button
               aria-pressed={tool === entry.tool}
               data-testid={`canvas-tool-${entry.tool}`}
-              disabled={entry.tool !== 'select' && !assetRef}
+              disabled={entry.tool !== 'select' && (!assetRef || props.readOnly)}
               key={entry.tool}
               mode={tool === entry.tool ? 'default' : 'bleed'}
               onClick={() => setTool(entry.tool)}
@@ -302,6 +307,7 @@ export function Canvas(props: CanvasProps): ReactNode {
                   text="Place in center"
                   mode="ghost"
                   tone="primary"
+                  disabled={props.readOnly}
                   onClick={() => placeElement({x: 50, y: 50})}
                 />
                 <Button text="Cancel placement" mode="bleed" onClick={() => setTool('select')} />
@@ -321,7 +327,10 @@ export function Canvas(props: CanvasProps): ReactNode {
         )}
       </Card>
       <Box flex={1} padding={3} style={{minHeight: 0, overflow: 'auto'}}>
-        <Box data-testid="canvas-stage" style={{height: '100%', containerType: 'size'}}>
+        <Box
+          data-testid="canvas-stage"
+          style={{containerType: 'size', height: '100%', minHeight: 240}}
+        >
           {props.step === null ? (
             <Stack gap={3}>
               <Text weight="semibold" size={2}>
@@ -364,7 +373,7 @@ export function Canvas(props: CanvasProps): ReactNode {
               onClick={handleSurfaceClick}
               ref={wrapperRef}
               style={{
-                cursor: tool === 'select' ? 'default' : 'crosshair',
+                cursor: props.readOnly || tool === 'select' ? 'default' : 'crosshair',
                 display: 'block',
                 marginInline: 'auto',
                 width: aspectRatio ? `min(100%, ${aspectRatio * 100}cqh)` : '100%',
@@ -431,7 +440,9 @@ export function Canvas(props: CanvasProps): ReactNode {
                     hasOverride={hasMobileOverride(element)}
                     key={elementKeyValue}
                     kind={kind}
-                    onDelete={() => props.onRemoveElement(elementKeyValue)}
+                    onDelete={() => {
+                      if (!props.readOnly) props.onRemoveElement(elementKeyValue)
+                    }}
                     onDeselect={() => props.onSelectElement(null)}
                     onDragEnd={(clientX, clientY) =>
                       handleDragEnd(elementKeyValue, clientX, clientY)

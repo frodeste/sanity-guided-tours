@@ -5,6 +5,15 @@ Release workflow. Semantic-release determines the version from Conventional
 Commits, publishes the package with provenance, and creates the GitHub release.
 Keep `package.json` at `0.0.0-development` in Git; do not bump it manually.
 
+## Compatibility baseline
+
+The public 1.0 Studio entry point requires Sanity 6.16+ and Sanity UI 4.2.7+.
+It intentionally does not support Sanity UI 3 because the editor uses UI 4
+subpath exports. This is a breaking change for pre-release or local consumers
+that used UI 3, and the first release notes must call it out. There is no
+published version to migrate from, so the compatibility baseline is established
+before the first 1.0.0 release.
+
 ## Verify the package
 
 Use Node 24.19.0 and Bun 1.4.2, matching the workflows and committed lockfile:
