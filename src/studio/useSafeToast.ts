@@ -10,9 +10,9 @@
 // `ThemeProvider`/`LayerProvider`. Catching that here means a batch upload
 // completing without a `ToastProvider` present silently skips the toast
 // (there's nothing to show it in) rather than throwing; see
-// `useSafeToast.test.ts` for the no-provider case exercised directly.
-import {useToast} from '@sanity/ui'
-import type {ToastParams} from '@sanity/ui'
+// `useSafeToast.test.tsx` for the no-provider case exercised directly.
+import {useToast} from '@sanity/ui/toast'
+import type {ToastParams} from '@sanity/ui/toast'
 
 /** `push`, or a no-op outside a `ToastProvider` ancestor (see this module's doc comment). */
 export function useSafeToast(): {push: (params: ToastParams) => void} {

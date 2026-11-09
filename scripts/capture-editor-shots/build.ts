@@ -109,6 +109,7 @@ const INDEX_HTML = (title: string) => `<!doctype html>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>${title}</title>
+    <link rel="stylesheet" href="/entry.css" />
     <link rel="stylesheet" href="/styles.css" />
     <style>
       html, body, #root { height: 100%; margin: 0; }
@@ -171,7 +172,7 @@ export async function buildAndServe(): Promise<CaptureHarness> {
     outdir: outDir,
     target: 'browser',
     format: 'esm',
-    naming: 'entry.js',
+    naming: {entry: 'entry.[ext]', asset: '[name].[ext]'},
     define: {
       __DEMO_ASSET_REFS_JSON__: JSON.stringify(JSON.stringify(refs)),
     },

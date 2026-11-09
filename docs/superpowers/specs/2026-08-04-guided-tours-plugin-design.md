@@ -67,14 +67,20 @@ personalization tokens — is sound and is carried forward.
 
 ## 4. Target versions
 
-- `sanity` ^6.8 (optional peer)
-- `@sanity/ui` ^3.5 (optional peer)
+- `sanity` ^6.16 (optional peer)
+- `@sanity/ui` ^4.2.7 (optional peer)
 - `styled-components` ^6 (optional peer, required by Sanity UI)
 - `react` ^18.3 || ^19 for the `/react` entry; the Studio entry inherits
   Sanity's own React 19 requirement
 - `next` 16, App Router — for the example app only; the plugin does not depend
   on Next
 - Build: `@sanity/pkg-utils` via `@sanity/plugin-kit` ^10
+
+The public 1.0 Studio entry point targets Sanity UI 4.2.7 or later. This is a
+breaking compatibility change for any pre-release or local consumer using UI 3:
+the editor imports UI 4 subpaths and cannot be installed alongside UI 3. The
+package has not had a public release, so this compatibility baseline is set
+before the first 1.0.0 publication.
 
 ## 5. Architecture
 

@@ -10,6 +10,9 @@ form pages with a `guidedTourEmbed` object embedded in their Portable Text
 ["Embedding tours in Portable Text"](../../README.md#embedding-tours-in-portable-text),
 which this app's `/pages/[slug]` route implements.
 
+The Studio includes a live Preview view for guided-tour documents and loads
+the Sanity UI 4 and tour viewer stylesheets.
+
 ## Run locally
 
 This app depends on the plugin via `file:../..`, and `next build`/`next dev`

@@ -46,6 +46,110 @@ function baseProps(overrides: Partial<CanvasProps> = {}): CanvasProps {
 }
 
 describe('Canvas', () => {
+  test('read-only canvases expose the layout without emitting mutations', () => {
+    const onInsertElement = mock((_element: {_type: string; _key: string}) => {})
+    const onMoveElement = mock((_elementKey: string, _pos: {x: number; y: number}) => {})
+    const onRemoveElement = mock((_elementKey: string) => {})
+    renderWithTheme(
+      <Canvas
+        {...baseProps({
+          onInsertElement,
+          onMoveElement,
+          onRemoveElement,
+          readOnly: true,
+          selectedElementKey: 'e1',
+          step: {
+            screenshot: {asset: {_ref: 'image-abc123-800x600-png'}},
+            elements: [{_key: 'e1', _type: 'guidedTourHotspot', x: 50, y: 50}],
+          },
+        })}
+      />,
+    )
+
+    expect(screen.getByTestId('canvas-tool-hotspot').hasAttribute('disabled')).toBe(true)
+    const chip = screen.getByTestId('canvas-element-e1')
+    fireEvent.keyDown(chip, {key: 'ArrowRight'})
+    fireEvent.keyDown(chip, {key: 'Delete'})
+    fireEvent.pointerDown(chip, {pointerId: 1, clientX: 10, clientY: 10})
+    fireEvent.pointerMove(chip, {pointerId: 1, clientX: 50, clientY: 50})
+    fireEvent.pointerUp(chip, {pointerId: 1, clientX: 50, clientY: 50})
+
+    expect(onInsertElement).not.toHaveBeenCalled()
+    expect(onMoveElement).not.toHaveBeenCalled()
+    expect(onRemoveElement).not.toHaveBeenCalled()
+  })
+
+  test('selected element controls expose selection and describe movement and removal', () => {
+    renderWithTheme(
+      <Canvas
+        {...baseProps({
+          step: {
+            screenshot: {asset: {_ref: 'image-abc123-800x600-png'}},
+            elements: [{_key: 't1', _type: 'guidedTourTooltip', x: 50, y: 50, width: 280}],
+          },
+          selectedElementKey: 't1',
+        })}
+      />,
+    )
+    const element = screen.getByRole('button', {name: 'Tooltip'})
+    expect(element.getAttribute('aria-pressed')).toBe('true')
+    const hint = document.getElementById(element.getAttribute('aria-describedby') ?? '')
+    expect(hint?.textContent).toContain('Tooltip selected.')
+    expect(hint?.textContent).toContain('Delete removes.')
+    expect(screen.getByTestId('canvas-element-t1-badge').textContent).toBe('Tooltip')
+  })
+
+  test('keyboard users can place an element in the center and return to selection mode', () => {
+    const onInsertElement = mock((_element: {_type: string; _key: string}) => {})
+    const onSelectElement = mock((_key: string | null) => {})
+    renderWithTheme(
+      <Canvas
+        {...baseProps({
+          step: {title: 'Welcome', screenshot: {asset: {_ref: 'image-abc123-800x600-png'}}},
+          onInsertElement,
+          onSelectElement,
+        })}
+      />,
+    )
+
+    fireEvent.click(screen.getByTestId('canvas-tool-tooltip'))
+    expect(screen.getByText('Click the screenshot to place a tooltip.')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', {name: 'Place in center'}))
+
+    expect(onInsertElement).toHaveBeenCalledTimes(1)
+    expect(onInsertElement.mock.calls[0][0]).toMatchObject({
+      _type: 'guidedTourTooltip',
+      x: 50,
+      y: 50,
+    })
+    expect(onSelectElement).toHaveBeenCalledWith(onInsertElement.mock.calls[0][0]._key)
+    expect(screen.getByTestId('canvas-tool-select').getAttribute('aria-pressed')).toBe('true')
+  })
+
+  test('cancelling placement never inserts an element', () => {
+    const onInsertElement = mock((_element: {_type: string; _key: string}) => {})
+    renderWithTheme(
+      <Canvas
+        {...baseProps({
+          step: {screenshot: {asset: {_ref: 'image-abc123-800x600-png'}}},
+          onInsertElement,
+        })}
+      />,
+    )
+    fireEvent.click(screen.getByTestId('canvas-tool-textOverlay'))
+    expect(screen.getByText('Click the screenshot to place a text overlay.')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', {name: 'Cancel placement'}))
+    expect(onInsertElement).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button', {name: 'Place in center'})).toBeNull()
+  })
+
+  test('placement tools are unavailable until the selected step has a screenshot', () => {
+    renderWithTheme(<Canvas {...baseProps({step: {title: 'Empty step'}})} />)
+    expect(screen.getByTestId('canvas-tool-hotspot').hasAttribute('disabled')).toBe(true)
+    expect(screen.getByTestId('canvas-tool-tooltip').hasAttribute('disabled')).toBe(true)
+    expect(screen.getByTestId('canvas-tool-textOverlay').hasAttribute('disabled')).toBe(true)
+  })
+
   test('renders a real <img> with a CDN URL when projectId/dataset resolve a well-formed ref', () => {
     const step = {
       _key: 's1',
@@ -103,9 +207,7 @@ describe('Canvas', () => {
   test('shows "no screenshot yet" when the step has no screenshot field at all (as opposed to a malformed ref)', () => {
     const step = {_key: 's1', title: 'Welcome', elements: []}
 
-    renderWithTheme(
-      <Canvas {...baseProps({dataset: 'production', projectId: 'proj123', step})} />,
-    )
+    renderWithTheme(<Canvas {...baseProps({dataset: 'production', projectId: 'proj123', step})} />)
 
     expect(screen.queryByTestId('canvas-screenshot')).toBeNull()
     expect(screen.queryByTestId('canvas-screenshot-placeholder')).toBeNull()
@@ -154,7 +256,9 @@ describe('Canvas: video badge', () => {
 
   test('the badge is styled non-interactive (pointerEvents none) and never blocks the click-to-place surface beneath it', () => {
     const onInsertElement = mock((_element: {_type: string; _key: string}) => {})
-    const step = stepWithScreenshot({video: {source: 'file', file: {asset: {_ref: 'file-abc-mp4'}}}})
+    const step = stepWithScreenshot({
+      video: {source: 'file', file: {asset: {_ref: 'file-abc-mp4'}}},
+    })
     renderWithTheme(
       <Canvas
         {...baseProps({dataset: 'production', projectId: 'proj123', step, onInsertElement})}
@@ -209,7 +313,7 @@ describe('Canvas: element chip drag and keyboard nudge', () => {
     )
 
     const chip = screen.getByTestId('canvas-element-e1')
-    expect(chip.style.left).toBe('10%')
+    expect(chip.style.getPropertyValue('--gt-anchor-x')).toBe('10%')
 
     fireEvent.pointerDown(chip, {pointerId: 1, clientX: 10, clientY: 10})
     // happy-dom's `getBoundingClientRect()` always returns an all-zero rect
@@ -219,8 +323,8 @@ describe('Canvas: element chip drag and keyboard nudge', () => {
     // clientX/clientY: the point under test is that a live drag re-renders
     // the chip at the reported position at all, not the exact coordinate.
     fireEvent.pointerMove(chip, {pointerId: 1, clientX: 50, clientY: 50})
-    expect(chip.style.left).toBe('0%')
-    expect(chip.style.top).toBe('0%')
+    expect(chip.style.getPropertyValue('--gt-anchor-x')).toBe('0%')
+    expect(chip.style.getPropertyValue('--gt-anchor-y')).toBe('0%')
 
     fireEvent.pointerUp(chip, {pointerId: 1, clientX: 50, clientY: 50})
     expect(onMoveElement).toHaveBeenCalledTimes(1)
@@ -229,7 +333,7 @@ describe('Canvas: element chip drag and keyboard nudge', () => {
     // reverts to its prop-derived position — this bare harness's `step` is
     // a static fixture, not fed a new value from `onMoveElement` the way a
     // real form-builder round-trip would.
-    expect(chip.style.left).toBe('10%')
+    expect(chip.style.getPropertyValue('--gt-anchor-x')).toBe('10%')
   })
 
   test('ArrowUp/ArrowLeft nudge the selected element up/left by the small (0.5%) step', () => {
@@ -256,7 +360,7 @@ describe('Canvas: element chip drag and keyboard nudge', () => {
     expect(onMoveElement).toHaveBeenCalledTimes(2)
   })
 
-  test('clicking an existing chip does not also trigger the surface\'s click-to-place handler', () => {
+  test("clicking an existing chip does not also trigger the surface's click-to-place handler", () => {
     // CanvasElement.tsx's own doc comment: the chip's `onClick` stops the
     // click from also reaching `Canvas.tsx`'s click-to-place surface
     // handler — "selecting/dragging an existing element must never also

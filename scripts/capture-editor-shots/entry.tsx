@@ -27,8 +27,10 @@
 // the fixture directly instead of simulating the click that would insert
 // it — see `fixtures.ts`'s `fixtureChapters` for exactly which elements
 // each capture state relies on already being present.
-import {LayerProvider, ThemeProvider, ToastProvider} from '@sanity/ui'
+import '@sanity/ui/styles.css'
+import {LayerProvider, ThemeProvider} from '@sanity/ui'
 import {buildTheme} from '@sanity/ui/theme'
+import {ToastProvider} from '@sanity/ui/toast'
 import type {ReactNode} from 'react'
 import {createRoot} from 'react-dom/client'
 
@@ -40,7 +42,12 @@ const theme = buildTheme()
 
 function Shell({children}: {children: ReactNode}): ReactNode {
   return (
-    <ThemeProvider theme={theme}>
+    <ThemeProvider
+      theme={theme}
+      scheme={
+        new URLSearchParams(window.location.search).get('scheme') === 'dark' ? 'dark' : 'light'
+      }
+    >
       <LayerProvider>
         <ToastProvider>{children}</ToastProvider>
       </LayerProvider>
@@ -50,7 +57,7 @@ function Shell({children}: {children: ReactNode}): ReactNode {
 
 /** `canvas`/`upload`/`filmstrip`/`inspector` all render the same three-pane editor — `capture.ts` tells the four apart entirely through which elements it clicks before screenshotting, not through anything rendered differently here. */
 function CanvasCapture(): ReactNode {
-  const chapters = fixtureChapters(demoAssetRefs())
+  const chapters = readState() === 'empty' ? [] : fixtureChapters(demoAssetRefs())
   return (
     <div
       data-capture-ready="canvas"

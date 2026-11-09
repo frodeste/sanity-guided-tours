@@ -1,12 +1,10 @@
 # Release: computes the next version from conventional commits on `main`
 # and publishes to npm + GitHub Releases via semantic-release (spec §11).
 #
-# Prerequisite: an `NPM_TOKEN` repository secret with publish rights for
-# `sanity-plugin-guided-tours` (owner must create it — see npm's "Automation"
-# token type, which supports 2FA-protected accounts). Its absence is not
-# checked ahead of time; the job simply fails cleanly at the semantic-release
-# step. That's acceptable because this workflow only ever runs on manual
-# dispatch, so a failed run costs nothing but a red check.
+# The first publish needs an NPM_TOKEN granular access token with publish
+# rights. Subsequent releases can use npm trusted publishing for this workflow.
+# The default dispatch computes release notes without npm authentication or
+# publishing. See docs/releasing.md for bootstrap and trusted publisher setup.
 #
 # Trigger: workflow_dispatch ONLY. This is an INTENTIONAL deviation from spec
 # §11 ("semantic-release on main", i.e. push-triggered) — a temporary safety
@@ -19,7 +17,13 @@
 name: Release
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Compute the next release without publishing
+        type: boolean
+        default: true
+        required: true
   # Enable after 1.0.0 sign-off — see spec §11.
   # push:
   #   branches: [main]
@@ -50,6 +54,7 @@ jobs:
     name: semantic-release
     needs: gates
     runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -58,13 +63,15 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: 1.4.2
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24.19.0
 
       - run: bun install --frozen-lockfile
+
+      - run: bun run check:quality
 
       # `dist/` is what `@semantic-release/npm` actually publishes — this
       # job's own build, not an artifact from the `gates` job above (a
@@ -77,11 +84,17 @@ jobs:
 
       - run: bun test
 
-      # Pinned to the current major (24) so a semantic-release major bump
-      # can't silently change release behavior on this gated-but-still-live
-      # workflow.
-      - name: Run semantic-release
-        run: npx --yes semantic-release@24
+      - name: Plan release
+        if: inputs.dry_run
+        run: bun run release:plan
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Installed from the committed lockfile; @semantic-release/npm supports
+      # OIDC trusted publishing, with NPM_TOKEN used for the first publish.
+      - name: Publish release
+        if: ${{ !inputs.dry_run }}
+        run: bun run release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}

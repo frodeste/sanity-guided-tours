@@ -25,7 +25,6 @@ import {buildTheme} from '@sanity/ui/theme'
 import {act, cleanup, fireEvent, render, screen, within} from '@testing-library/react'
 import {StrictMode, type ReactNode} from 'react'
 import {PatchEvent, setIfMissing} from 'sanity'
-import {SourceContext} from 'sanity/_singletons'
 import type {
   ArrayOfObjectsInputProps,
   ArrayOfObjectsItemMember,
@@ -36,6 +35,7 @@ import type {
   ObjectArrayFormNode,
   ObjectMember,
 } from 'sanity'
+import {SourceContext} from 'sanity/_singletons'
 
 import {CanvasInput} from '../../src/studio/CanvasInput'
 import {
@@ -114,6 +114,8 @@ function baseInputProps(): ArrayOfObjectsInputProps {
     }),
     changed: false,
     hasUpstreamVersion: false,
+    hasBaseVariant: false,
+    changedFromBaseVariant: false,
     onChange: () => {},
     onItemAppend: () => {},
     onItemPrepend: () => {},
@@ -282,6 +284,8 @@ function objectArrayFormNode(
     changed: false,
     compareValue: undefined,
     hasUpstreamVersion: false,
+    hasBaseVariant: false,
+    changedFromBaseVariant: false,
   }
 }
 
@@ -444,12 +448,13 @@ describe('CanvasInput', () => {
     // Collapsed and expanded are mutually exclusive — the inline card's
     // copy of the panes isn't also left mounted behind the dialog.
     expect(screen.getAllByTestId('filmstrip-step-c1-s1')).toHaveLength(1)
+    expect(screen.queryByTestId('open-full-editor')).toBeNull()
   })
 
   test('renders the collapsed "Plain editor" escape hatch via renderDefault', () => {
     renderWithTheme(<CanvasInput {...baseInputProps()} value={fixtureChapters} />)
 
-    expect(screen.getByText('Plain editor')).toBeTruthy()
+    expect(screen.getByText('All chapter and step fields')).toBeTruthy()
     expect(screen.getByTestId('plain-editor-stub')).toBeTruthy()
   })
 
@@ -458,7 +463,11 @@ describe('CanvasInput', () => {
 
     expect(screen.getByText('No steps yet.')).toBeTruthy()
     expect(screen.getByText('Select a step to see its screenshot.')).toBeTruthy()
-    expect(screen.getByText('Select an element to edit its fields.')).toBeTruthy()
+    expect(
+      screen.getByText(
+        'Select a step to edit its screenshot, then select an element to edit its content.',
+      ),
+    ).toBeTruthy()
   })
 })
 
@@ -703,11 +712,9 @@ function openStepMenu(chapterKey: string, stepKey: string): void {
   fireEvent.click(screen.getByTestId(`filmstrip-step-menu-${chapterKey}-${stepKey}`))
 }
 
-/** The "Move to chapter" `MenuGroup` doesn't eagerly render its target-chapter `MenuItem`s — its own submenu popover only mounts once its trigger is clicked (see `Filmstrip.test.tsx`'s identical helper). Call after `openStepMenu`. */
+/** Open the visible submenu; UI 4 keeps closed menus mounted under React Activity. */
 function openMoveToChapterSubmenu(): void {
-  const trigger = screen.getByText('Move to chapter').closest('button')
-  if (!trigger) throw new Error('expected the Move to chapter trigger to be a <button>')
-  fireEvent.click(trigger)
+  fireEvent.click(screen.getByRole('button', {name: 'Move to chapter'}))
 }
 
 // Master plan Task 6 / post-review gap: the smoke tests above (Tasks 4-5)
@@ -1047,6 +1054,109 @@ describe('CanvasInput: bulk upload -> handleUploadBatch (Task 8 seam)', () => {
 // plan's Task 7 test note asks for, adapted to this component's actual
 // mechanism.
 describe('Inspector (Task 7): member drilling + delegation to the platform', () => {
+  test('Remove element emits the keyed removal patch and returns to step details', () => {
+    const onChange = mock((_patch: FormPatch | FormPatch[] | PatchEvent) => {})
+    renderWithTheme(
+      <CanvasInput
+        {...baseInputProps()}
+        members={buildMembers(fixtureChapters)}
+        value={fixtureChapters}
+        onChange={onChange}
+      />,
+    )
+    fireEvent.keyDown(screen.getByTestId('canvas-element-e2'), {key: 'Enter'})
+    fireEvent.click(screen.getByTestId('editor-panel-details'))
+    expect(screen.getByRole('button', {name: 'Edit tooltip'})).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', {name: 'Remove element'}))
+    expect(onChange).toHaveBeenCalledTimes(1)
+    const event = onChange.mock.calls[0][0]
+    expect(event instanceof PatchEvent).toBe(true)
+    if (!(event instanceof PatchEvent)) throw new Error('Expected a PatchEvent')
+    expect(event.patches).toEqual(removeElementPatch('c1', 's1', 'e2'))
+    expect(screen.getByTestId('inspector-step')).toBeTruthy()
+    expect(screen.getByTestId('canvas-element-e2').getAttribute('aria-pressed')).toBe('false')
+  })
+
+  test('Add screenshot opens the missing-image step directly at its real member path', () => {
+    const chapters = [
+      chapter({_key: 'c1', title: 'Intro', steps: [step({_key: 's1', title: 'Needs image'})]}),
+    ]
+    const onItemOpen = mock((_path: unknown) => {})
+    renderWithTheme(
+      <CanvasInput
+        {...baseInputProps()}
+        members={buildMembers(chapters)}
+        value={chapters}
+        onItemOpen={onItemOpen}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', {name: 'Add screenshot'}))
+    expect(onItemOpen).toHaveBeenCalledTimes(1)
+    expect(onItemOpen).toHaveBeenCalledWith([{_key: 'c1'}, 'steps', {_key: 's1'}])
+  })
+
+  test('the element list supports keyboard-style selection and returning to step details without patches', () => {
+    const onChange = mock((_patch: FormPatch | FormPatch[] | PatchEvent) => {})
+    renderWithTheme(
+      <CanvasInput
+        {...baseInputProps()}
+        members={buildMembers(fixtureChapters)}
+        onChange={onChange}
+        value={fixtureChapters}
+      />,
+    )
+
+    fireEvent.click(screen.getByTestId('editor-panel-details'))
+    fireEvent.click(
+      within(screen.getByTestId('inspector-step')).getByRole('button', {name: /Hotspot/}),
+    )
+    expect(screen.getByTestId('inspector-element-label').textContent).toContain('Hotspot')
+    fireEvent.click(screen.getByRole('button', {name: 'Back to step details'}))
+    expect(screen.getByTestId('inspector-step')).toBeTruthy()
+    fireEvent.keyDown(screen.getByTestId('canvas-element-e2'), {key: 'Enter'})
+    expect(screen.getByTestId('inspector-element-label').textContent).toContain('Tooltip')
+    fireEvent.click(screen.getByRole('button', {name: 'Back to step details'}))
+    fireEvent.keyDown(screen.getByTestId('canvas-element-e1'), {key: ' '})
+    expect(screen.getByTestId('inspector-element-label').textContent).toContain('Hotspot')
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  test('chapter editing delegates to the chapter member path', () => {
+    const onItemOpen = mock((_path: unknown) => {})
+    renderWithTheme(
+      <CanvasInput
+        {...baseInputProps()}
+        members={buildMembers(fixtureChapters)}
+        onItemOpen={onItemOpen}
+        value={fixtureChapters}
+      />,
+    )
+    fireEvent.click(screen.getByTestId('editor-panel-steps'))
+    fireEvent.click(screen.getByRole('button', {name: 'Edit chapter Intro'}))
+    expect(onItemOpen).toHaveBeenCalledWith([{_key: 'c1'}])
+  })
+
+  test('panel navigation retains the selection and Step details returns from an element to its step', () => {
+    renderWithTheme(
+      <CanvasInput
+        {...baseInputProps()}
+        members={buildMembers(fixtureChapters)}
+        value={fixtureChapters}
+      />,
+    )
+    fireEvent.click(screen.getByTestId('editor-panel-steps'))
+    expect(screen.getByTestId('editor-panel-steps').getAttribute('aria-selected')).toBe('true')
+    fireEvent.click(screen.getByTestId('filmstrip-step-c1-s2'))
+    expect(screen.getByTestId('editor-panel-canvas').getAttribute('aria-selected')).toBe('true')
+    fireEvent.click(screen.getByTestId('editor-panel-details'))
+    expect(screen.getByTestId('inspector-step-title').textContent).toContain('Features')
+    fireEvent.click(screen.getByTestId('filmstrip-step-c1-s1'))
+    fireEvent.keyDown(screen.getByTestId('canvas-element-e1'), {key: 'Enter'})
+    fireEvent.click(screen.getByRole('button', {name: 'Step details'}))
+    expect(screen.getByTestId('editor-panel-details').getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByTestId('inspector-step')).toBeTruthy()
+  })
+
   test('selecting an element renders its summary from the member tree; Edit fields delegates via onItemOpen at the drilled path', () => {
     const onItemOpen = mock((_path: unknown) => {})
     renderWithTheme(
@@ -1147,6 +1257,10 @@ describe('Inspector (Task 7): member drilling + delegation to the platform', () 
     renderWithTheme(<CanvasInput {...baseInputProps()} />)
 
     expect(screen.getByTestId('inspector-empty')).toBeTruthy()
-    expect(screen.getByText('Select an element to edit its fields.')).toBeTruthy()
+    expect(
+      screen.getByText(
+        'Select a step to edit its screenshot, then select an element to edit its content.',
+      ),
+    ).toBeTruthy()
   })
 })

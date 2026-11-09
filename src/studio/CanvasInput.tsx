@@ -42,8 +42,9 @@
 // `stepCountOf` and `src/studio/patches.ts`'s `isRecord` use, rather than
 // trusting the field's own default generic (`{_key: string}` — see the doc
 // comment on `CanvasInputProps` below for why it isn't parametrized).
-import {Box, Button, Card, Dialog, Flex, Inline} from '@sanity/ui'
+import {Box, Button, Card, Dialog, Flex, Inline, Tab, TabList, TabPanel, Text} from '@sanity/ui'
 import type {ReactNode} from 'react'
+import {useId, useState} from 'react'
 import {PatchEvent} from 'sanity'
 import type {ArrayOfObjectsInputProps, FormPatch} from 'sanity'
 
@@ -51,7 +52,7 @@ import type {UploadedAsset} from './bulkUpload'
 import {stepsFromAssets, summarizeUploadOutcome} from './bulkUpload'
 import {Canvas} from './Canvas'
 import {Filmstrip, type StepMutationCallbacks} from './Filmstrip'
-import {Inspector} from './Inspector'
+import {drillToStep, Inspector} from './Inspector'
 import {randomKey} from './keys'
 import {
   duplicateStepPatch,
@@ -89,6 +90,25 @@ import {useUploader} from './useUploader'
  * plan's Task 4 notes anticipate.
  */
 type CanvasInputProps = ArrayOfObjectsInputProps
+
+// Respond to the document pane's width, including when desk navigation is
+// open. Consumers do not need another stylesheet import for the editor.
+const EDITOR_LAYOUT = `
+  .gt-editor-panes.gt-editor-panes { display: grid; grid-template-columns: 260px minmax(0, 1fr) 260px; grid-template-rows: minmax(0, 1fr); min-height: 0; }
+  .gt-editor-panel.gt-editor-panel { display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: auto; }
+  .gt-editor-panel.gt-editor-panel > * { flex: 1; min-height: 0; }
+  .gt-editor-navigation.gt-editor-navigation { display: none; }
+  @container guided-tour-editor (max-width: 959px) {
+    .gt-editor-navigation.gt-editor-navigation { display: block; }
+    .gt-editor-panes.gt-editor-panes { grid-template-columns: minmax(0, 1fr); }
+    .gt-editor-panel.gt-editor-panel[data-active="false"] { display: none; }
+  }
+  @supports not (container-type: inline-size) {
+    .gt-editor-navigation.gt-editor-navigation { display: block; }
+    .gt-editor-panes.gt-editor-panes { grid-template-columns: minmax(0, 1fr); }
+    .gt-editor-panel.gt-editor-panel[data-active="false"] { display: none; }
+  }
+`
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
@@ -166,32 +186,101 @@ function CanvasPanes({
   onUploadBatch: (chapterKey: string, ok: UploadedAsset[], failed: number) => void
 }): ReactNode {
   const step = findStep(chapters, selection.chapterKey, selection.stepKey)
+  const [panel, setPanel] = useState<'steps' | 'canvas' | 'details'>(step ? 'canvas' : 'steps')
+  const panelId = useId()
+  const stepNode =
+    selection.chapterKey !== null && selection.stepKey !== null
+      ? drillToStep(arrayProps.members, selection.chapterKey, selection.stepKey)
+      : null
 
   return (
-    <Flex style={{height: '100%', minHeight: 0}}>
-      <Filmstrip
-        callbacks={stepCallbacks}
-        chapters={chapters}
-        dataset={dataset}
-        onSelectStep={onSelectStep}
-        onUploadBatch={onUploadBatch}
-        projectId={projectId}
-        selection={selection}
-        uploader={uploader}
-      />
-      <Canvas
-        dataset={dataset}
-        device={device}
-        onInsertElement={elementCallbacks.onInsertElement}
-        onMoveElement={elementCallbacks.onMoveElement}
-        onRemoveElement={elementCallbacks.onRemoveElement}
-        onResizeElement={elementCallbacks.onResizeElement}
-        onSelectElement={onSelectElement}
-        projectId={projectId}
-        selectedElementKey={selection.elementKey}
-        step={step}
-      />
-      <Inspector arrayProps={arrayProps} selection={selection} />
+    <Flex direction="column" style={{height: '100%', minHeight: 0}}>
+      <Box className="gt-editor-navigation" padding={2}>
+        <TabList gap={1} aria-label="Tour editor panels">
+          {(['steps', 'canvas', 'details'] as const).map((name) => (
+            <Tab
+              aria-controls={`${panelId}-${name}`}
+              id={`${panelId}-tab-${name}`}
+              selected={panel === name}
+              data-testid={`editor-panel-${name}`}
+              key={name}
+              onClick={() => setPanel(name)}
+              label={name === 'steps' ? 'Steps' : name === 'canvas' ? 'Canvas' : 'Details'}
+            />
+          ))}
+        </TabList>
+      </Box>
+      <Box className="gt-editor-panes" flex={1}>
+        <TabPanel
+          id={`${panelId}-steps`}
+          aria-labelledby={`${panelId}-tab-steps`}
+          className="gt-editor-panel"
+          data-active={panel === 'steps'}
+        >
+          <Filmstrip
+            callbacks={stepCallbacks}
+            chapters={chapters}
+            dataset={dataset}
+            onSelectStep={(chapterKey, stepKey) => {
+              onSelectStep(chapterKey, stepKey)
+              setPanel('canvas')
+            }}
+            onUploadBatch={onUploadBatch}
+            onEditChapter={(chapterKey) => {
+              const member = arrayProps.members.find(
+                (item) => item.kind === 'item' && item.key === chapterKey,
+              )
+              if (member?.kind === 'item') arrayProps.onItemOpen(member.item.path)
+            }}
+            projectId={projectId}
+            selection={selection}
+            uploader={uploader}
+          />
+        </TabPanel>
+        <TabPanel
+          id={`${panelId}-canvas`}
+          aria-labelledby={`${panelId}-tab-canvas`}
+          className="gt-editor-panel"
+          data-active={panel === 'canvas'}
+        >
+          <Canvas
+            key={JSON.stringify([selection.chapterKey, selection.stepKey])}
+            dataset={dataset}
+            device={device}
+            onInsertElement={elementCallbacks.onInsertElement}
+            onMoveElement={elementCallbacks.onMoveElement}
+            onRemoveElement={elementCallbacks.onRemoveElement}
+            onResizeElement={elementCallbacks.onResizeElement}
+            onSelectElement={onSelectElement}
+            onAddScreenshot={
+              stepNode && !arrayProps.readOnly
+                ? () => arrayProps.onItemOpen(stepNode.path)
+                : undefined
+            }
+            onEditStep={() => {
+              onSelectElement(null)
+              setPanel('details')
+            }}
+            projectId={projectId}
+            readOnly={arrayProps.readOnly === true}
+            selectedElementKey={selection.elementKey}
+            step={step}
+          />
+        </TabPanel>
+        <TabPanel
+          id={`${panelId}-details`}
+          aria-labelledby={`${panelId}-tab-details`}
+          className="gt-editor-panel"
+          data-active={panel === 'details'}
+        >
+          <Inspector
+            arrayProps={arrayProps}
+            onSelectElement={onSelectElement}
+            onRemoveElement={elementCallbacks.onRemoveElement}
+            selection={selection}
+          />
+        </TabPanel>
+      </Box>
     </Flex>
   )
 }
@@ -200,14 +289,21 @@ function Toolbar({
   device,
   onSetDevice,
   onOpenFullEditor,
+  expanded,
 }: {
   device: 'desktop' | 'mobile'
   onSetDevice: (d: 'desktop' | 'mobile') => void
   onOpenFullEditor: () => void
+  expanded: boolean
 }): ReactNode {
   return (
-    <Flex align="center" justify="space-between" padding={2} paddingX={3}>
+    <Flex align="center" justify="space-between" padding={2} paddingX={3} wrap="wrap" gap={2}>
       <Inline gap={1}>
+        <Box padding={2}>
+          <Text muted size={1}>
+            Edit layout
+          </Text>
+        </Box>
         <Button
           aria-pressed={device === 'desktop'}
           data-testid="device-desktop"
@@ -223,12 +319,15 @@ function Toolbar({
           text="Mobile"
         />
       </Inline>
-      <Button
-        data-testid="open-full-editor"
-        onClick={onOpenFullEditor}
-        text="Open full editor"
-        tone="primary"
-      />
+      {!expanded && (
+        <Button
+          data-testid="open-full-editor"
+          onClick={onOpenFullEditor}
+          text="Open full editor"
+          mode="ghost"
+          tone="primary"
+        />
+      )}
     </Flex>
   )
 }
@@ -286,6 +385,7 @@ export function CanvasInput(props: CanvasInputProps): ReactNode {
       if (selection.chapterKey === null || selection.stepKey === null) return
       emit(removeElementPatch(selection.chapterKey, selection.stepKey, elementKey))
       selectElement(null)
+      toast.push({status: 'success', title: 'Element removed'})
     },
   }
 
@@ -354,9 +454,21 @@ export function CanvasInput(props: CanvasInputProps): ReactNode {
   // interactive element (a filmstrip step, a device toggle) is ever
   // duplicated in the DOM.
   const body = (
-    <Box>
-      <Toolbar device={device} onOpenFullEditor={() => setExpanded(true)} onSetDevice={setDevice} />
-      <Card borderTop style={{height: expanded ? undefined : 420, flex: expanded ? 1 : undefined}}>
+    <Flex
+      direction="column"
+      style={{height: '100%', minHeight: 0, container: 'guided-tour-editor / inline-size'}}
+    >
+      <style>{EDITOR_LAYOUT}</style>
+      <Toolbar
+        device={device}
+        expanded={expanded}
+        onOpenFullEditor={() => setExpanded(true)}
+        onSetDevice={setDevice}
+      />
+      <Card
+        borderTop
+        style={{height: expanded ? undefined : 520, flex: expanded ? 1 : undefined, minHeight: 0}}
+      >
         <CanvasPanes
           arrayProps={props}
           chapters={chapters}
@@ -372,7 +484,7 @@ export function CanvasInput(props: CanvasInputProps): ReactNode {
           uploader={uploader}
         />
       </Card>
-    </Box>
+    </Flex>
   )
 
   return (
@@ -386,7 +498,7 @@ export function CanvasInput(props: CanvasInputProps): ReactNode {
           width="auto"
         >
           {/*
-            No `style` override on <Dialog> itself: per @sanity/ui 3.5.1,
+            No `style` override on <Dialog> itself: per @sanity/ui,
             `width="auto"` already makes the DialogCard fill the backdrop,
             and the backdrop (Dialog's own outer restProps-styled Layer)
             already stretches full-viewport on its own — sizing it again
@@ -406,7 +518,7 @@ export function CanvasInput(props: CanvasInputProps): ReactNode {
 
       {!expanded && (
         <details style={{marginTop: '1rem'}}>
-          <summary style={{cursor: 'pointer'}}>Plain editor</summary>
+          <summary style={{cursor: 'pointer'}}>All chapter and step fields</summary>
           <Box marginTop={2}>{props.renderDefault(props)}</Box>
         </details>
       )}
